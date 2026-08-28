@@ -433,19 +433,19 @@ def info(
         # Show some cached entries
         console.print(table)
         console.print("\n[bold]Cached Entries:[/]")
-        entries = cache.list_entries()
+        profiles = cache.get_all_profiles()
         entry_table = Table(box=box.SIMPLE)
-        entry_table.add_column("Track ID", style="dim", max_width=20)
+        entry_table.add_column("Track", style="cyan", max_width=35)
         entry_table.add_column("BPM", justify="right")
         entry_table.add_column("Key")
         entry_table.add_column("LUFS", justify="right")
 
-        for entry in entries[:20]:
+        for p in profiles[:20]:
             entry_table.add_row(
-                entry.get("track_id", "?")[:20],
-                f"{entry.get('bpm', 0):.1f}" if entry.get("bpm") else "—",
-                entry.get("camelot", "—") or "—",
-                f"{entry.get('lufs', 0):.1f}" if entry.get("lufs") else "—",
+                p.title[:35],
+                f"{p.bpm:.1f}" if p.bpm else "—",
+                p.camelot or "—",
+                f"{p.analysis.integrated_lufs:.1f}" if p.analysis else "—",
             )
 
         console.print(entry_table)
