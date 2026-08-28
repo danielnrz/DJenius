@@ -466,5 +466,86 @@ def _format_duration(seconds: float) -> str:
     return f"{minutes}:{secs:02d}"
 
 
+@app.command()
+def doctor():
+    """Check system health and dependencies."""
+    import shutil
+    import sys
+
+    checks: list[tuple[str, bool, str]] = []
+
+    # Python version
+    py_ok = sys.version_info >= (3, 11)
+    py_ver = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
+    checks.append(("Python >= 3.11", py_ok, py_ver))
+
+    # Core dependencies
+    core_deps = [
+        "librosa", "numpy", "scipy", "soundfile",
+        "pyloudnorm", "pyrubberband", "xxhash", "mutagen",
+        "typer", "rich",
+    ]
+    for dep in core_deps:
+        try:
+            mod = __import__(dep)
+            ver = getattr(mod, "__version__", "ok")
+            checks.append((f"Import {dep}", True, str(ver)))
+        except ImportError:
+            checks.append((f"Import {dep}", False, "not installed"))
+
+    # System binaries
+    for binary in ("ffmpeg", "ffprobe", "rubberband"):
+        path = shutil.which(binary)
+        checks.append((f"Binary: {binary}", path is not None, path or "not found"))
+
+    # Writable working directory
+    cwd = Path.cwd()
+    writable = cwd.is_dir() and os.access(cwd, os.W_OK)
+    checks.append(("Writable cwd", writable, str(cwd)))
+
+    # SQLite
+    try:
+        import sqlite3 as _sqlite3
+        _sqlite3.connect(":memory:").close()
+        checks.append(("SQLite", True, "ok"))
+    except Exception as e:
+        checks.append(("SQLite", False, str(e)))
+
+    # Ollama (optional)
+    ollama_ok = False
+    ollama_detail = "not found"
+    try:
+        import urllib.request
+        req = urllib.request.Request("http://127.0.0.1:11434/api/tags", method="GET")
+        with urllib.request.urlopen(req, timeout=2) as resp:
+            if resp.status == 200:
+                ollama_ok = True
+                ollama_detail = "running"
+    except Exception:
+        ollama_detail = "not running (optional)"
+    checks.append(("Ollama (optional)", ollama_ok, ollama_detail))
+
+    # Display
+    table = Table(title="DJenius Doctor", box=box.ROUNDED)
+    table.add_column("Check", style="cyan")
+    table.add_column("Status")
+    table.add_column("Detail", style="dim")
+
+    all_critical_pass = True
+    for label, ok, detail in checks:
+        status = "[green]PASS[/]" if ok else "[red]FAIL[/]"
+        if not ok and "optional" not in label.lower():
+            all_critical_pass = False
+        table.add_row(label, status, detail)
+
+    console.print(table)
+
+    if all_critical_pass:
+        console.print("\n[green]All critical checks passed.[/]")
+    else:
+        console.print("\n[red]Some critical checks failed. See above for details.[/]")
+        raise typer.Exit(1)
+
+
 if __name__ == "__main__":
     app()
