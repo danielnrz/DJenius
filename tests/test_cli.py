@@ -21,6 +21,7 @@ class TestHelpText:
         assert "mix" in result.stdout
         assert "info" in result.stdout
         assert "doctor" in result.stdout
+        assert "transitions" in result.stdout
 
     def test_scan_help(self):
         result = runner.invoke(app, ["scan", "--help"])
@@ -97,3 +98,25 @@ class TestDoctorCommand:
     def test_checks_ffmpeg(self):
         result = runner.invoke(app, ["doctor"])
         assert "ffmpeg" in result.stdout.lower()
+
+
+class TestTransitionsCommand:
+    def test_help(self):
+        result = runner.invoke(app, ["transitions", "--help"])
+        assert result.exit_code == 0
+        assert "transition" in result.stdout.lower()
+
+    def test_generates_output(self, tmp_path):
+        result = runner.invoke(app, ["transitions", "--output-dir", str(tmp_path)])
+        assert result.exit_code == 0
+        assert "Done" in result.stdout or "Generated" in result.stdout
+
+    def test_json_diagnostic_file(self, tmp_path):
+        runner.invoke(app, ["transitions", "--output-dir", str(tmp_path)])
+        json_path = tmp_path / "transition_diagnostics.json"
+        assert json_path.exists()
+        import json
+        with open(json_path) as f:
+            data = json.load(f)
+        assert "transitions" in data
+        assert len(data["transitions"]) == 5

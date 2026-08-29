@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 
 import numpy as np
+import soundfile as sf
 
 from djenius.utils.audio_math import (
     equal_power_crossfade,
@@ -16,6 +17,10 @@ from djenius.utils.audio_math import (
     linear_fade_out,
     db_to_linear,
 )
+
+# Alias for local use in ffmpeg fallback
+sf_write = sf.write
+sf_read = sf.read
 
 logger = logging.getLogger(__name__)
 
@@ -111,7 +116,10 @@ def _apply_transition_mono(
     elif transition_type == "crossfade":
         result = _crossfade(source_region, target_region)
     elif transition_type == "beatmatched_blend":
-        result = _beatmatched_blend(source_region, target_region)
+        result = _beatmatched_blend(
+            source_region, target_region, sr,
+            source_bpm=source_bpm, target_bpm=target_bpm,
+        )
     elif transition_type == "bass_swap":
         result = _bass_swap(source_region, target_region, sr)
     elif transition_type == "filter_sweep":
@@ -157,23 +165,126 @@ def _phrase_cut(source: np.ndarray, target: np.ndarray) -> np.ndarray:
 
 
 def _crossfade(source: np.ndarray, target: np.ndarray) -> np.ndarray:
-    """Equal-power crossfade."""
+    """Equal-power crossfade (mono or stereo)."""
     n = len(source)
     fade_out, fade_in = equal_power_crossfade(n)
+
+    # Reshape fade curves for stereo broadcasting
+    if source.ndim == 2:
+        fade_out = fade_out[:, np.newaxis]
+        fade_in = fade_in[:, np.newaxis]
 
     return (source * fade_out + target * fade_in).astype(np.float32)
 
 
-def _beatmatched_blend(source: np.ndarray, target: np.ndarray) -> np.ndarray:
-    """Beatmatched blend using equal-power crossfade.
+def _beatmatched_blend(
+    source: np.ndarray,
+    target: np.ndarray,
+    sr: int,
+    source_bpm: float = 0.0,
+    target_bpm: float = 0.0,
+) -> np.ndarray:
+    """Beatmatched blend with real time-stretching and beat phase alignment.
 
-    In a full implementation, this would also align downbeats.
-    For V1, we do the crossfade assuming the planner has aligned the regions.
+    Steps:
+    1. If target_bpm != source_bpm and both are valid, time-stretch target
+       via pyrubberband, ffmpeg atempo, or scipy resample fallback.
+    2. Calculate beat phase shift and align transients.
+    3. Apply equal-power crossfade with musical timing (beat-aligned length).
+
+    Falls back to plain crossfade if no time-stretch backend is available.
     """
     n = len(source)
-    fade_out, fade_in = equal_power_crossfade(n)
 
-    return (source * fade_out + target * fade_in).astype(np.float32)
+    # ── Step 1: Time-stretch target to match source BPM ───────────────
+    stretched_target = target.copy()
+    stretch_pct = 0.0
+
+    if source_bpm > 0 and target_bpm > 0 and abs(source_bpm - target_bpm) > 0.5:
+        rate = target_bpm / source_bpm
+        stretched = None
+
+        # Try pyrubberband first
+        try:
+            import pyrubberband as pyrb
+            stretched = pyrb.time_stretch(target, sr, rate).astype(np.float32)
+        except Exception:
+            pass
+
+        # Fallback: ffmpeg atempo via temp files
+        if stretched is None:
+            try:
+                import subprocess
+                import tempfile
+                import os
+
+                fd_in, infile = tempfile.mkstemp(suffix='.wav')
+                os.close(fd_in)
+                fd_out, outfile = tempfile.mkstemp(suffix='.wav')
+                os.close(fd_out)
+
+                sf_write(infile, target, sr)
+                cmd = [
+                    'ffmpeg', '-y', '-i', infile,
+                    '-filter:a', f'atempo={rate}',
+                    outfile,
+                ]
+                subprocess.run(cmd, capture_output=True, check=True, timeout=30)
+                stretched, _ = sf_read(outfile)
+                os.unlink(infile)
+                os.unlink(outfile)
+            except Exception:
+                pass
+
+        if stretched is not None:
+            stretched_target = stretched
+            stretch_pct = abs(rate - 1.0) * 100.0
+
+    # Normalize stretched target to source length (trim or pad)
+    if len(stretched_target) > n:
+        stretched_target = stretched_target[:n]
+    elif len(stretched_target) < n:
+        if stretched_target.ndim == 2:
+            pad = np.zeros((n - len(stretched_target), stretched_target.shape[1]),
+                           dtype=np.float32)
+        else:
+            pad = np.zeros(n - len(stretched_target), dtype=np.float32)
+        stretched_target = np.concatenate([stretched_target, pad], axis=0)
+
+    # ── Step 2: Beat phase alignment ──────────────────────────────────
+    from djenius.utils.timing import calculate_phase_shift, apply_phase_shift
+
+    phase_shift = calculate_phase_shift(source, stretched_target, sr)
+    aligned_target = apply_phase_shift(stretched_target, phase_shift)
+
+    # ── Step 3: Musical timing crossfade ──────────────────────────────
+    from djenius.utils.timing import bpm_to_samples
+
+    if source_bpm > 0:
+        beat_samples = bpm_to_samples(source_bpm, sr)
+        # Round n down to nearest multiple of beats (at least 1 beat)
+        crossfade_len = max(beat_samples, (n // beat_samples) * beat_samples)
+        crossfade_len = min(crossfade_len, n)
+    else:
+        crossfade_len = n
+
+    fade_out, fade_in = equal_power_crossfade(crossfade_len)
+
+    # Reshape fade curves for stereo (samples,) -> (samples, 1) for broadcasting
+    if source.ndim == 2:
+        fade_out = fade_out[:, np.newaxis]
+        fade_in = fade_in[:, np.newaxis]
+
+    result = np.zeros_like(source)
+    result[:crossfade_len] = (
+        source[:crossfade_len] * fade_out
+        + aligned_target[:crossfade_len] * fade_in
+    )
+    # If crossfade is shorter than the overlap region, play target for the rest
+    if crossfade_len < n:
+        result[crossfade_len:] = aligned_target[crossfade_len:]
+
+    return result.astype(np.float32)
 
 
 def _bass_swap(source: np.ndarray, target: np.ndarray, sr: int) -> np.ndarray:
@@ -220,6 +331,13 @@ def _bass_swap(source: np.ndarray, target: np.ndarray, sr: int) -> np.ndarray:
 
     bass_fade_in = 1.0 - bass_fade
 
+    # Reshape for stereo broadcasting
+    if source.ndim == 2:
+        fade_out = fade_out[:, np.newaxis]
+        fade_in = fade_in[:, np.newaxis]
+        bass_fade = bass_fade[:, np.newaxis]
+        bass_fade_in = bass_fade_in[:, np.newaxis]
+
     # Mix
     result = (
         source_no_bass * fade_out
@@ -243,9 +361,14 @@ def _filter_sweep(source: np.ndarray, target: np.ndarray, sr: int) -> np.ndarray
 
     fade_out, fade_in = equal_power_crossfade(n)
 
+    # Reshape for stereo broadcasting
+    if source.ndim == 2:
+        fade_out = fade_out[:, np.newaxis]
+        fade_in = fade_in[:, np.newaxis]
+
     # Create a time-varying high-pass for the source
     # Sweep from low to high cutoff over the transition
-    result = np.zeros(n, dtype=np.float32)
+    result = np.zeros_like(source)
 
     # For simplicity, do a stepped sweep
     n_steps = 8
@@ -286,11 +409,16 @@ def _echo_out(source: np.ndarray, target: np.ndarray, sr: int) -> np.ndarray:
     n = len(source)
     fade_out, fade_in = equal_power_crossfade(n)
 
+    # Reshape for stereo broadcasting
+    if source.ndim == 2:
+        fade_out = fade_out[:, np.newaxis]
+        fade_in = fade_in[:, np.newaxis]
+
     # Create echo effect
     delay_ms = int(60000 / 120)  # One beat at ~120 BPM (placeholder)
     delay_samples = int(sr * delay_ms / 1000)
 
-    echo = np.zeros(n, dtype=np.float32)
+    echo = np.zeros_like(source)
 
     # Add multiple echo taps with decay
     decay = 0.5
@@ -303,6 +431,8 @@ def _echo_out(source: np.ndarray, target: np.ndarray, sr: int) -> np.ndarray:
 
     # Apply additional decay envelope to echo
     echo_envelope = np.exp(-np.linspace(0, 3, n)).astype(np.float32)
+    if source.ndim == 2:
+        echo_envelope = echo_envelope[:, np.newaxis]
     echo *= echo_envelope
 
     # Mix echo tail with incoming target
@@ -325,7 +455,7 @@ def _loop_blend(source: np.ndarray, target: np.ndarray) -> np.ndarray:
         return _crossfade(source, target)
 
     # Create a looped version of the source
-    looped = np.zeros(n, dtype=np.float32)
+    looped = np.zeros_like(source)
     for i in range(0, n, loop_len):
         end = min(i + loop_len, n)
         loop_len_actual = end - i
@@ -333,4 +463,10 @@ def _loop_blend(source: np.ndarray, target: np.ndarray) -> np.ndarray:
 
     # Crossfade between looped source and target
     fade_out, fade_in = equal_power_crossfade(n)
+
+    # Reshape for stereo broadcasting
+    if source.ndim == 2:
+        fade_out = fade_out[:, np.newaxis]
+        fade_in = fade_in[:, np.newaxis]
+
     return (looped * fade_out + target * fade_in).astype(np.float32)

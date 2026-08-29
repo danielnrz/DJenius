@@ -736,5 +736,61 @@ def auto(
     console.print(f"\n[green]Done! Your mix is ready at {result['output_path']}[/]")
 
 
+@app.command()
+def transitions(
+    output_dir: str = typer.Option(
+        "outputs/transition_auditions",
+        help="Directory to write audition WAVs and diagnostics JSON."
+    ),
+    stereo: bool = typer.Option(
+        True,
+        help="Generate stereo auditions."
+    ),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Verbose logging."),
+):
+    """Generate audition WAV files and diagnostics for all transition types.
+
+    Creates WAV previews of each transition (crossfade, beatmatched_blend,
+    bass_swap, filter_sweep, echo_out) with a transition_diagnostics.json
+    file containing metadata about each.
+    """
+    _setup_logging(verbose)
+    console.print("[bold]DJenius - Transition Diagnostics[/]\n")
+
+    from djenius.audio.diagnostics import generate_transition_auditions
+
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        console=console,
+    ) as progress:
+        task = progress.add_task("Generating transition auditions...", total=None)
+        result = generate_transition_auditions(output_dir, stereo=stereo)
+        progress.update(task, description="Done!")
+
+    console.print(f"\n[green]Generated {len(result['files'])} files in {result['output_dir']}[/]\n")
+
+    # Display diagnostics table
+    table = Table(title="Transition Diagnostics", box=box.ROUNDED)
+    table.add_column("Type", style="cyan")
+    table.add_column("Channels", justify="right")
+    table.add_column("Output Samples", justify="right")
+    table.add_column("RMS Energy", justify="right")
+    table.add_column("Peak dB", justify="right")
+
+    for d in result["diagnostics"]:
+        table.add_row(
+            d["type"],
+            str(d["channels"]),
+            f"{d['output_samples']:,}",
+            f"{d['rms_energy']:.4f}",
+            f"{d['peak_db']:.1f}",
+        )
+
+    console.print(table)
+
+    console.print(f"\n[dim]Diagnostics JSON: {result['json_path']}[/]")
+
+
 if __name__ == "__main__":
     app()
