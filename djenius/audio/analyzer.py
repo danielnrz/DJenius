@@ -323,6 +323,35 @@ def analyze_track(
         logger.warning("Vocal detection failed for %s: %s", filepath, e)
         analysis.vocal_regions = []
 
+    # --- Stem Separation (optional) ---
+    try:
+        from djenius.audio.stems import stems_available, separate_stems, load_stems, stems_cached
+        if stems_available():
+            # Check if stems are already cached
+            stem_paths = None
+            if stems_cached(filepath):
+                # load_stems returns dict[str, np.ndarray] but we need paths for TrackAnalysis.stems
+                # separate_stems returns dict[str, str] — use it to get/cached paths
+                stem_paths = separate_stems(filepath, sr=sr)
+            else:
+                # Separate stems (this is the expensive step)
+                logger.info("Separating stems for %s (this may take a while)...", Path(filepath).name)
+                stem_paths = separate_stems(filepath, sr=sr)
+            if stem_paths:
+                analysis.stems = stem_paths
+                # Use stem-based vocal detection for more accurate regions
+                try:
+                    from djenius.audio.vocals import estimate_vocal_regions_from_stem
+                    stem_audio = load_stems(filepath, sr=sr)
+                    if stem_audio and 'vocals' in stem_audio:
+                        stem_vocal_regions = estimate_vocal_regions_from_stem(stem_audio['vocals'], sr)
+                        if stem_vocal_regions:
+                            analysis.vocal_regions = stem_vocal_regions
+                except Exception:
+                    pass  # Keep heuristic vocal regions
+    except Exception as e:
+        logger.debug("Stem separation skipped for %s: %s", Path(filepath).name, e)
+
     # --- Overall Confidence ---
     confidence_factors = [
         analysis.bpm_confidence,

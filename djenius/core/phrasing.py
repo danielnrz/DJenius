@@ -406,7 +406,11 @@ def compute_transition_length_bars(
     """
     avg_score = (source_score + target_score) / 2
 
-    if avg_score > 0.75:
+    if avg_score > 0.85 and max_bars >= 24:
+        bars = 24
+    elif avg_score > 0.75 and max_bars >= 20:
+        bars = 20
+    elif avg_score > 0.75:
         bars = 16
     elif avg_score > 0.6:
         bars = 12

@@ -27,8 +27,14 @@ dependencies = [
 gui = [
     "PySide6>=6.6.0",
 ]
+stems = [
+    "demucs>=4.0.0",
+    "torch>=2.0.0",
+]
 all = [
     "PySide6>=6.6.0",
+    "demucs>=4.0.0",
+    "torch>=2.0.0",
 ]
 dev = [
     "pytest>=7.4.0",

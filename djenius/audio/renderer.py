@@ -57,6 +57,7 @@ def render_mix(
     # Load all tracks
     logger.info("Loading %d tracks...", len(plan.tracks))
     track_audio = {}
+    track_stems = {}  # stem audio arrays per track (if available)
     for i, track in enumerate(plan.tracks):
         if progress_callback:
             progress_callback(
@@ -71,6 +72,17 @@ def render_mix(
             # Create silence as placeholder
             duration_samples = int(track.duration_sec * sample_rate)
             track_audio[track.id] = (np.zeros(duration_samples, dtype=np.float32), sample_rate)
+
+        # Load stem audio if available
+        if track.analysis.stems:
+            try:
+                from djenius.audio.stems import load_stems
+                stems = load_stems(track.filepath, sr=sample_rate)
+                if stems:
+                    # load_stems returns dict[str, np.ndarray] — already audio arrays
+                    track_stems[track.id] = stems
+            except Exception as e:
+                logger.debug("Could not load stems for %s: %s", track.title, e)
 
     if progress_callback:
         progress_callback(30, "Assembling mix...")
@@ -131,6 +143,10 @@ def render_mix(
                     prev_track = plan.tracks[i - 1]
                     prev_audio = track_audio.get(prev_track.id, (np.zeros(1, dtype=np.float32), sr))[0]
 
+                    # Get stem audio for source and target (if available)
+                    src_stems_audio = track_stems.get(prev_track.id)
+                    tgt_stems_audio = track_stems.get(track.id)
+
                     transition_audio = apply_transition(
                         source_audio=prev_audio,
                         target_audio=audio,
@@ -145,6 +161,8 @@ def render_mix(
                         source_mid_energy=prev_track.analysis.mid_energy,
                         target_low_energy=track.analysis.low_energy,
                         target_mid_energy=track.analysis.mid_energy,
+                        source_stems=src_stems_audio,
+                        target_stems=tgt_stems_audio,
                     )
 
                     # Place transition in mix

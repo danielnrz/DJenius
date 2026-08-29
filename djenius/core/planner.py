@@ -441,6 +441,9 @@ def _build_set_plan(
         source_exit_candidates = source.analysis.possible_exit_points
         target_entry_candidates = target.analysis.possible_entry_points
 
+        # MASHUP transitions benefit from longer overlaps for smoother vocal/instrumental blending
+        is_mashup = (ttype == TransitionType.MASHUP)
+
         # Score the best exit/entry points
         best_exit_score = 0.0
         best_exit_time = source.duration_sec * 0.85
@@ -466,7 +469,7 @@ def _build_set_plan(
 
         length_bars = compute_transition_length_bars(
             best_exit_score, best_entry_score, avg_bpm,
-            max_bars=max_transition_bars,
+            max_bars=max_transition_bars + (8 if is_mashup else 0),
         )
         overlap = bar_duration * length_bars
 

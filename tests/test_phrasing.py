@@ -343,3 +343,18 @@ class TestComputeTransitionLengthBars:
         assert 4 <= bars <= 16
         bars = compute_transition_length_bars(1.0, 1.0, 120.0)
         assert 4 <= bars <= 16
+
+    def test_mashup_high_scores_get_24_bars(self):
+        """With max_bars=24 and very high scores, should return 24 bars."""
+        bars = compute_transition_length_bars(0.95, 0.90, 120.0, max_bars=24)
+        assert bars == 24
+
+    def test_mashup_medium_scores_get_20_bars(self):
+        """With max_bars=24 and good scores, should return 20 bars."""
+        bars = compute_transition_length_bars(0.85, 0.80, 120.0, max_bars=24)
+        assert bars == 20
+
+    def test_default_max_bars_caps_at_16(self):
+        """Without extended max_bars, high scores still cap at 16."""
+        bars = compute_transition_length_bars(0.95, 0.95, 120.0, max_bars=16)
+        assert bars == 16

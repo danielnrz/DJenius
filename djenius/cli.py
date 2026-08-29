@@ -555,6 +555,19 @@ def doctor():
         ollama_detail = "not running (optional)"
     checks.append(("Ollama (optional)", ollama_ok, ollama_detail))
 
+    # Stem separation (optional)
+    try:
+        from djenius.audio.stems import stems_available, gpu_available
+        stems_ok = stems_available()
+        gpu_ok = gpu_available()
+        if stems_ok:
+            stem_detail = f"demucs installed, GPU={'yes' if gpu_ok else 'no (CPU only)'}"
+        else:
+            stem_detail = "not installed (install with: pip install djenius[stems])"
+        checks.append(("Stem separation (optional)", stems_ok, stem_detail))
+    except Exception as e:
+        checks.append(("Stem separation (optional)", False, str(e)))
+
     # Display
     table = Table(title="DJenius Doctor", box=box.ROUNDED)
     table.add_column("Check", style="cyan")

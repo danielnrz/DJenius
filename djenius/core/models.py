@@ -22,6 +22,7 @@ class TransitionType(Enum):
     FILTER_SWEEP = "filter_sweep"
     ECHO_OUT = "echo_out"
     LOOP_BLEND = "loop_blend"
+    MASHUP = "mashup"
 
 
 class EnergyProfile(Enum):
@@ -91,6 +92,9 @@ class TrackAnalysis:
 
     # Vocal regions
     vocal_regions: list[tuple[float, float]] = field(default_factory=list)  # (start, end) in sec
+
+    # Stem file paths (optional — None when stems not extracted)
+    stems: dict[str, str] | None = None  # e.g. {"vocals": "/path/to/vocals.wav", ...}
 
     # Transition regions
     possible_exit_points: list[float] = field(default_factory=list)

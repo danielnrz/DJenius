@@ -9,6 +9,10 @@ and harmonic patterns. We detect these regions via:
 1. Spectral flatness in the vocal band (vocals are harmonic = low flatness)
 2. Mid-energy ratio relative to broadband energy
 3. Temporal continuity (vocals come in phrases, not single frames)
+
+When stem separation is available, ``estimate_vocal_regions_from_stem``
+provides ground-truth vocal regions by analysing the separated vocal stem
+directly — far more accurate than any spectral heuristic.
 """
 
 from __future__ import annotations
@@ -261,3 +265,140 @@ def _time_in_regions(
         if overlap_end > overlap_start:
             total += overlap_end - overlap_start
     return total
+
+
+# ---------------------------------------------------------------------------
+# Stem-based vocal detection (Phase 13)
+# ---------------------------------------------------------------------------
+
+def estimate_vocal_regions_from_stem(
+    vocal_stem: np.ndarray,
+    sr: int,
+    hop_length: int = 512,
+    threshold_db: float = -40.0,
+    min_region_sec: float = 0.5,
+) -> list[tuple[float, float]]:
+    """Detect vocal regions from a separated vocal stem.
+
+    This is far more accurate than the heuristic ``estimate_vocal_regions``
+    because Demucs gives us the actual vocal signal.  We simply look at
+    the RMS energy of the vocal stem in short frames and threshold it.
+
+    Args:
+        vocal_stem: Audio array of the vocal stem (1D mono or 2D stereo).
+        sr: Sample rate.
+        hop_length: Frame hop size in samples.
+        threshold_db: Minimum RMS level (dB) to count as "vocal active".
+        min_region_sec: Ignore regions shorter than this.
+
+    Returns:
+        List of (start_sec, end_sec) vocal regions.
+    """
+    if len(vocal_stem) == 0 or sr <= 0:
+        return []
+
+    # Flatten to mono
+    if vocal_stem.ndim == 2:
+        audio = np.mean(vocal_stem, axis=1).astype(np.float32)
+    else:
+        audio = vocal_stem.astype(np.float32)
+
+    # Compute frame-level RMS energy
+    frame_len = 2048
+    n_frames = max(1, (len(audio) - frame_len) // hop_length + 1)
+    rms_values = np.zeros(n_frames, dtype=np.float32)
+
+    for i in range(n_frames):
+        start = i * hop_length
+        end = min(start + frame_len, len(audio))
+        frame = audio[start:end]
+        if len(frame) > 0:
+            rms_values[i] = float(np.sqrt(np.mean(frame ** 2)))
+
+    # Convert to dB
+    rms_db = 20.0 * np.log10(rms_values + 1e-10)
+
+    # Detect active frames
+    is_active = rms_db > threshold_db
+
+    # Convert to time regions
+    regions = _frames_to_regions(is_active, sr, hop_length)
+
+    # Filter short regions
+    regions = [(s, e) for s, e in regions if (e - s) >= min_region_sec]
+
+    # Merge close regions (gap < 0.3 sec — tighter than heuristic)
+    regions = _merge_close_regions(regions, min_gap_sec=0.3)
+
+    return regions
+
+
+def score_vocal_overlap_stem(
+    source_vocal_stem: np.ndarray,
+    target_vocal_stem: np.ndarray,
+    sr: int,
+    source_exit_sample: int,
+    target_entry_sample: int,
+    overlap_samples: int,
+) -> float:
+    """Score vocal clash risk using actual stem audio.
+
+    Computes the RMS overlap between source and target vocal stems
+    in the transition region.  This is the ground-truth version of
+    ``score_vocal_overlap`` when stems are available.
+
+    Args:
+        source_vocal_stem: Vocal stem audio of the outgoing track.
+        target_vocal_stem: Vocal stem audio of the incoming track.
+        sr: Sample rate.
+        source_exit_sample: Sample offset where transition starts in source.
+        target_entry_sample: Sample offset where transition starts in target.
+        overlap_samples: Number of overlapping samples.
+
+    Returns:
+        0.0 = high vocal clash risk, 1.0 = safe (no vocal overlap).
+    """
+    if overlap_samples <= 0:
+        return 1.0
+
+    # Downmix stereo to mono (average channels, don't flatten which interleaves)
+    src = source_vocal_stem.mean(axis=1).astype(np.float32) if source_vocal_stem.ndim == 2 else source_vocal_stem.astype(np.float32)
+    tgt = target_vocal_stem.mean(axis=1).astype(np.float32) if target_vocal_stem.ndim == 2 else target_vocal_stem.astype(np.float32)
+
+    # Extract overlap regions
+    src_start = source_exit_sample
+    src_end = min(src_start + overlap_samples, len(src))
+    tgt_start = target_entry_sample
+    tgt_end = min(tgt_start + overlap_samples, len(tgt))
+
+    src_region = src[src_start:src_end]
+    tgt_region = tgt[tgt_start:tgt_end]
+
+    min_len = min(len(src_region), len(tgt_region))
+    if min_len == 0:
+        return 1.0
+
+    src_region = src_region[:min_len]
+    tgt_region = tgt_region[:min_len]
+
+    # Compute RMS of each stem in the overlap region
+    src_rms = float(np.sqrt(np.mean(src_region ** 2)))
+    tgt_rms = float(np.sqrt(np.mean(tgt_region ** 2)))
+
+    # Both stems active = high risk
+    src_active = src_rms > 0.01  # ~-40 dB
+    tgt_active = tgt_rms > 0.01
+
+    if src_active and tgt_active:
+        # Scale risk by how loud both are
+        clash_intensity = min(src_rms, tgt_rms) / max(src_rms, tgt_rms, 1e-6)
+        if clash_intensity > 0.7:
+            return 0.2   # Both loud = high risk
+        elif clash_intensity > 0.3:
+            return 0.5   # Moderate risk
+        else:
+            return 0.7   # One much louder — less risky
+    elif src_active or tgt_active:
+        return 0.9  # Only one vocal — safe
+    else:
+        return 1.0  # Neither active — completely safe

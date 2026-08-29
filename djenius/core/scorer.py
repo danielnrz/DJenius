@@ -191,6 +191,11 @@ def recommend_transition_type(
 
     candidates = []
 
+    # Check if both tracks have stems available (enables stem-based transitions)
+    source_has_stems = bool(source.analysis.stems)
+    target_has_stems = bool(target.analysis.stems)
+    both_have_stems = source_has_stems and target_has_stems
+
     # Evaluate each transition type with context-aware scoring
     for ttype in TransitionType:
         q = score_transition_quality(source, target, ttype, overlap_duration=8.0)
@@ -250,6 +255,20 @@ def recommend_transition_type(
             # Needs very stable energy and similar structure
             if is_energy_similar and source_exit_section == "verse":
                 q *= 1.15
+
+        elif ttype == TransitionType.MASHUP:
+            # MASHUP requires stems — give it a strong bonus when both have stems
+            if both_have_stems:
+                q *= 1.4  # Strong bonus: stem separation makes this transition viable
+                # Extra bonus when both have vocals (mashup shines when combining vocals + instrumentals)
+                if source_has_vocals and target_has_vocals:
+                    q *= 1.2
+                # Bonus when energy levels are complementary
+                if abs(source.mean_energy - target.mean_energy) > 0.15:
+                    q *= 1.1
+            else:
+                # No stems — cannot do a real mashup, only crossfade fallback
+                q *= 0.3
 
         # --- Vocal safety modifiers ---
         if source_has_vocals and target_has_vocals:
