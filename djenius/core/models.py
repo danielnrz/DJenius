@@ -87,6 +87,10 @@ class TrackAnalysis:
     structural_sections: list[tuple[float, float, str]] = field(default_factory=list)
     intro_end: float = 0.0
     outro_start: float = 0.0
+    bar_energies: list[float] = field(default_factory=list)  # mean energy per bar
+
+    # Vocal regions
+    vocal_regions: list[tuple[float, float]] = field(default_factory=list)  # (start, end) in sec
 
     # Transition regions
     possible_exit_points: list[float] = field(default_factory=list)

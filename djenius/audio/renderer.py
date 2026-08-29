@@ -141,6 +141,10 @@ def render_mix(
                         target_entry_sample=target_entry,
                         source_bpm=prev_track.bpm,
                         target_bpm=incoming_transition.target_bpm,
+                        source_low_energy=prev_track.analysis.low_energy,
+                        source_mid_energy=prev_track.analysis.mid_energy,
+                        target_low_energy=track.analysis.low_energy,
+                        target_mid_energy=track.analysis.mid_energy,
                     )
 
                     # Place transition in mix

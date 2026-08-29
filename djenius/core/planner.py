@@ -199,7 +199,9 @@ def _beam_search(
         path_ids, score, duration = item
         duration_fit = 1.0 - abs(duration - target_duration) / max(target_duration, 1)
         avg_score = score / max(len(path_ids), 1)
-        return avg_score * 0.7 + duration_fit * 0.3
+        # Add energy trajectory bonus
+        trajectory_bonus = _score_energy_trajectory(path_ids, track_by_id, energy_profile)
+        return avg_score * 0.7 + duration_fit * 0.2 + trajectory_bonus * 0.1
 
     best_paths.sort(key=path_key, reverse=True)
     best_path_ids = best_paths[0][0]
@@ -233,7 +235,10 @@ def _energy_progression_bonus(
     from_energy: float,
     to_energy: float,
 ) -> float:
-    """Score the energy change based on the set profile."""
+    """Score the energy change based on the set profile.
+
+    Uses position-aware scoring to guide the energy journey.
+    """
     progress = position / max(total - 1, 1)
     energy_change = to_energy - from_energy
 
@@ -281,6 +286,127 @@ def _energy_progression_bonus(
     return 0.0
 
 
+def _score_energy_trajectory(
+    path_ids: list[str],
+    track_by_id: dict[str, TrackProfile],
+    energy_profile: EnergyProfile,
+) -> float:
+    """Score the overall energy trajectory of a path against the profile.
+
+    Computes the full energy curve and penalizes deviations from the
+    expected shape. Returns a bonus/penalty to add to the path score.
+    """
+    if len(path_ids) < 3:
+        return 0.0
+
+    energies = [track_by_id[tid].mean_energy for tid in path_ids]
+    n = len(energies)
+    score = 0.0
+
+    if energy_profile == EnergyProfile.STEADY:
+        # Penalize variance
+        variance = np.var(energies)
+        score = -variance * 0.2
+
+    elif energy_profile == EnergyProfile.WARMUP_TO_PEAK:
+        # Expect: start low, peak around 70%, stay or drop slightly
+        peak_expected_pos = int(n * 0.7)
+        # Penalty if peak is too early
+        actual_peak_pos = int(np.argmax(energies))
+        if actual_peak_pos < peak_expected_pos * 0.6:
+            score -= 0.1  # Peaked too early
+        # Penalty if start is too high
+        if energies[0] > 0.6:
+            score -= (energies[0] - 0.6) * 0.3
+        # Reward gradual build
+        diffs = np.diff(energies)
+        early_increases = diffs[:peak_expected_pos]
+        if len(early_increases) > 0:
+            positive = np.sum(early_increases > 0) / len(early_increases)
+            score += positive * 0.1
+
+    elif energy_profile == EnergyProfile.COOLDOWN:
+        # Expect: peak early, then decrease
+        # Penalty if energy rises at the end
+        end_diff = energies[-1] - energies[-2] if len(energies) >= 2 else 0
+        if end_diff > 0.1:
+            score -= 0.15  # Energy rising in cooldown
+        # Penalize if start is too low (should already be moderate-high)
+        if energies[0] < 0.3:
+            score -= (0.3 - energies[0]) * 0.2
+
+    elif energy_profile == EnergyProfile.WAVE:
+        # Reward oscillation
+        diffs = np.diff(energies)
+        sign_changes = np.sum(np.diff(np.sign(diffs)) != 0) if len(diffs) >= 2 else 0
+        score = sign_changes * 0.02  # More oscillations = better
+
+    elif energy_profile == EnergyProfile.PEAK_LATE:
+        peak_expected_pos = int(n * 0.75)
+        actual_peak_pos = int(np.argmax(energies))
+        # Penalty if peak is too early
+        if actual_peak_pos < peak_expected_pos * 0.5:
+            score -= 0.12
+        # Reward: energy should increase after midpoint
+        mid = n // 2
+        if len(energies) > mid + 1:
+            late_trend = energies[-1] - energies[mid]
+            if late_trend > 0:
+                score += 0.08
+
+    elif energy_profile == EnergyProfile.PEAK_EARLY:
+        peak_expected_pos = int(n * 0.25)
+        actual_peak_pos = int(np.argmax(energies))
+        if actual_peak_pos > peak_expected_pos * 2:
+            score -= 0.1  # Peak too late
+
+    return score
+
+
+def _compute_set_energy_profile(
+    path_ids: list[str],
+    track_by_id: dict[str, TrackProfile],
+) -> dict:
+    """Compute the energy trajectory of a set path for diagnostics.
+
+    Returns a dict with energy values at each position plus expected
+    trajectory for the given profile.
+    """
+    energies = [track_by_id[tid].mean_energy for tid in path_ids]
+    n = len(energies)
+
+    # Compute expected trajectory shape
+    expected = [0.5] * n
+    x = np.linspace(0, 1, n)
+
+    return {
+        "energies": energies,
+        "expected_shapes": {
+            "steady": [0.5] * n,
+            "warmup_to_peak": list(
+                np.clip(0.3 + 0.6 * np.minimum(x / 0.7, 1.0), 0, 1)
+            ),
+            "cooldown": list(
+                np.clip(0.7 - 0.5 * np.maximum((x - 0.3) / 0.7, 0), 0, 1)
+            ),
+            "wave": list(0.5 + 0.3 * np.sin(2 * np.pi * x)),
+            "slow_build": list(0.3 + 0.5 * x),
+            "peak_early": list(
+                np.clip(
+                    0.4 + 0.5 * np.where(x < 0.3, x / 0.3, 1.0 - (x - 0.3) / 0.7),
+                    0, 1,
+                )
+            ),
+            "peak_late": list(
+                np.clip(
+                    0.4 + 0.5 * np.where(x < 0.6, x / 0.6 * 0.5, (x - 0.6) / 0.4),
+                    0, 1,
+                )
+            ),
+        },
+    }
+
+
 def _build_set_plan(
     best_path: list[TrackProfile],
     compat_matrix: dict[tuple[str, str], CompatibilityScore],
@@ -308,32 +434,45 @@ def _build_set_plan(
         avg_bpm = (source.bpm + target.bpm) / 2
         bar_duration = 4 * 60.0 / max(avg_bpm, 60)
 
-        # Determine transition length based on compatibility
-        if compat.overall_score > 0.8:
-            length_bars = min(16, max_transition_bars)
-        elif compat.overall_score > 0.6:
-            length_bars = min(8, max_transition_bars)
-        else:
-            length_bars = min(4, max_transition_bars)
+        # Determine transition length using phrase-aware scoring
+        from djenius.core.phrasing import (
+            score_entry_point, score_exit_point, compute_transition_length_bars,
+        )
+        source_exit_candidates = source.analysis.possible_exit_points
+        target_entry_candidates = target.analysis.possible_entry_points
 
+        # Score the best exit/entry points
+        best_exit_score = 0.0
+        best_exit_time = source.duration_sec * 0.85
+        for t in source_exit_candidates:
+            s = score_exit_point(
+                t, source.analysis.bar_times, source.analysis.bar_energies,
+                source.analysis.outro_start, source.duration_sec, source.bpm,
+            )
+            if s > best_exit_score:
+                best_exit_score = s
+                best_exit_time = t
+
+        best_entry_score = 0.0
+        best_entry_time = target.analysis.intro_end + 5.0
+        for t in target_entry_candidates:
+            s = score_entry_point(
+                t, target.analysis.bar_times, target.analysis.bar_energies,
+                target.analysis.intro_end, target.duration_sec, target.bpm,
+            )
+            if s > best_entry_score:
+                best_entry_score = s
+                best_entry_time = t
+
+        length_bars = compute_transition_length_bars(
+            best_exit_score, best_entry_score, avg_bpm,
+            max_bars=max_transition_bars,
+        )
         overlap = bar_duration * length_bars
 
-        # Source exit point
-        exit_points = source.analysis.possible_exit_points
-        if exit_points:
-            # Pick the latest valid exit point
-            valid_exits = [e for e in exit_points if e < source.duration_sec - 5]
-            source_exit = valid_exits[-1] if valid_exits else source.duration_sec * 0.85
-        else:
-            source_exit = source.duration_sec * 0.85
-
-        # Target entry point
-        entry_points = target.analysis.possible_entry_points
-        if entry_points:
-            valid_entries = [e for e in entry_points if e < target.duration_sec - overlap]
-            target_entry = valid_entries[0] if valid_entries else target.analysis.intro_end + 5
-        else:
-            target_entry = target.analysis.intro_end + 5
+        # Use best scored points
+        source_exit = best_exit_time
+        target_entry = best_entry_time
 
         # Determine if time-stretching is needed
         bpm_delta_pct = abs(source.bpm - target.bpm) / max(source.bpm, 1.0) * 100

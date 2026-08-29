@@ -142,16 +142,127 @@ def recommend_transition_type(
 ) -> tuple[TransitionType, float, str]:
     """Recommend the best transition type for a pair of tracks.
 
+    Uses phrase/structural awareness, energy patterns, and section context.
     Returns (transition_type, confidence, reasoning).
     """
     compat = score_compatibility(source, target)
     bpm_delta = abs(source.bpm - target.bpm) / max(source.bpm, 1.0)
 
+    # Gather structural context
+    source_sections = source.analysis.structural_sections or []
+    target_sections = target.analysis.structural_sections or []
+
+    # Determine source section type at exit
+    source_exit_section = "verse"  # default
+    if source_sections:
+        # Find the section that contains the exit point
+        exit_points = source.analysis.possible_exit_points
+        if exit_points:
+            exit_t = exit_points[-1] if exit_points else source.duration_sec * 0.85
+        else:
+            exit_t = source.duration_sec * 0.85
+        for start, end, label in source_sections:
+            if start <= exit_t <= end:
+                source_exit_section = label
+                break
+
+    # Determine target section type at entry
+    target_entry_section = "verse"  # default
+    if target_sections:
+        entry_points = target.analysis.possible_entry_points
+        if entry_points:
+            entry_t = entry_points[0] if entry_points else target.analysis.intro_end + 5
+        else:
+            entry_t = target.analysis.intro_end + 5
+        for start, end, label in target_sections:
+            if start <= entry_t <= end:
+                target_entry_section = label
+                break
+
+    # Score energy change direction
+    energy_change = target.mean_energy - source.mean_energy
+    is_energy_rising = energy_change > 0.1
+    is_energy_dropping = energy_change < -0.1
+    is_energy_similar = abs(energy_change) <= 0.1
+
+    # Vocal context: penalize transitions that are risky during vocals
+    source_has_vocals = bool(source.analysis.vocal_regions)
+    target_has_vocals = bool(target.analysis.vocal_regions)
+
     candidates = []
 
-    # Evaluate each transition type
+    # Evaluate each transition type with context-aware scoring
     for ttype in TransitionType:
         q = score_transition_quality(source, target, ttype, overlap_duration=8.0)
+
+        # --- Phrase/Structure modifiers ---
+        if ttype == TransitionType.BEATMATCHED_BLEND:
+            # Best when: similar energy, both in verse/groove sections
+            if is_energy_similar:
+                q *= 1.2
+            if source_exit_section == "verse" and target_entry_section == "verse":
+                q *= 1.1
+
+        elif ttype == TransitionType.BASS_SWAP:
+            # Best when: energy is rising (bass swap creates energy lift)
+            if is_energy_rising:
+                q *= 1.2
+            # Good for chorus-to-chorus or verse-to-chorus
+            if target_entry_section == "chorus":
+                q *= 1.15
+            # Risky if source has very heavy bass and target does too
+            if (source.analysis.low_energy > 0.45 and target.analysis.low_energy > 0.45):
+                q *= 0.6
+
+        elif ttype == TransitionType.FILTER_SWEEP:
+            # Good for building tension (energy rising into chorus)
+            if is_energy_rising and target_entry_section == "chorus":
+                q *= 1.3
+            # Good for verse-to-verse transitions
+            if source_exit_section == "verse" and target_entry_section == "verse":
+                q *= 1.1
+
+        elif ttype == TransitionType.ECHO_OUT:
+            # Best when: energy is dropping, or source is in outro
+            if is_energy_dropping:
+                q *= 1.2
+            if source_exit_section == "outro":
+                q *= 1.3
+            # Good fallback when BPM mismatch is large
+            if bpm_delta > 0.10:
+                q *= 1.15
+
+        elif ttype == TransitionType.PHRASE_CUT:
+            # Clean cut at phrase boundary — good for contrasting sections
+            if source_exit_section != target_entry_section:
+                q *= 1.1
+            # Works well when both tracks have clear phrase boundaries
+            if (len(source.analysis.phrase_boundaries) > 3 and
+                    len(target.analysis.phrase_boundaries) > 3):
+                q *= 1.1
+
+        elif ttype == TransitionType.CROSSFADE:
+            # Safe fallback — penalize slightly when better options exist
+            if bpm_delta < 0.05 and is_energy_similar:
+                q *= 0.85  # Blend would be better
+
+        elif ttype == TransitionType.LOOP_BLEND:
+            # Needs very stable energy and similar structure
+            if is_energy_similar and source_exit_section == "verse":
+                q *= 1.15
+
+        # --- Vocal safety modifiers ---
+        if source_has_vocals and target_has_vocals:
+            # Both tracks have vocals — prefer transitions that handle overlap well
+            if ttype == TransitionType.BASS_SWAP:
+                q *= 1.1  # Bass swap allows vocals to coexist
+            elif ttype == TransitionType.PHRASE_CUT:
+                q *= 1.1  # Clean cut avoids vocal overlap
+            elif ttype == TransitionType.CROSSFADE:
+                q *= 0.8  # Crossfade overlaps vocals
+            elif ttype == TransitionType.LOOP_BLEND:
+                q *= 0.75  # Loop blend also overlaps vocals
+
         candidates.append((ttype, q))
 
     candidates.sort(key=lambda x: x[1], reverse=True)
@@ -161,6 +272,7 @@ def recommend_transition_type(
 
     best_type, best_score = candidates[0]
 
+    # Build reasoning with structural context
     reasoning_parts = []
     if bpm_delta < 0.03:
         reasoning_parts.append("very close tempos")
@@ -174,14 +286,21 @@ def recommend_transition_type(
     elif compat.key_score < 0.3:
         reasoning_parts.append("key clash risk")
 
-    if compat.energy_score > 0.8:
-        reasoning_parts.append("similar energy levels")
-    elif compat.energy_score < 0.4:
-        reasoning_parts.append("energy level change")
+    if is_energy_rising:
+        reasoning_parts.append("energy rising")
+    elif is_energy_dropping:
+        reasoning_parts.append("energy dropping")
+    else:
+        reasoning_parts.append("similar energy")
+
+    if source_exit_section != "verse":
+        reasoning_parts.append(f"source in {source_exit_section}")
+    if target_entry_section != "verse":
+        reasoning_parts.append(f"target in {target_entry_section}")
 
     reasoning = f"{best_type.value}: {', '.join(reasoning_parts)}"
 
-    return (best_type, best_score, reasoning)
+    return (best_type, min(1.0, best_score), reasoning)
 
 
 def rank_candidates(
@@ -294,20 +413,36 @@ def _score_spectral(source: TrackProfile, target: TrackProfile) -> float:
 def _score_vocal_safety(source: TrackProfile, target: TrackProfile) -> float:
     """Estimate risk of vocal-on-vocal clash.
 
-    Without stem separation, we use heuristic spectral analysis.
-    Vocal energy typically sits in the 300-3000Hz range with specific patterns.
+    Uses spectral mid-energy heuristic for compatibility scoring,
+    plus the detailed vocal_regions data when available for transition-specific scoring.
     """
-    # High mid energy suggests vocals
+    # Quick spectral heuristic for compatibility scoring
     s1_mid = source.analysis.mid_energy
     s2_mid = target.analysis.mid_energy
 
-    # If both tracks have high mid energy, there's more vocal clash risk
     if s1_mid > 0.5 and s2_mid > 0.5:
-        return 0.6
+        base_score = 0.6
     elif s1_mid > 0.5 or s2_mid > 0.5:
-        return 0.75
+        base_score = 0.75
     else:
-        return 0.9  # Low vocal presence in both
+        base_score = 0.9
+
+    # If both have vocal_regions, use the detailed heuristic for better accuracy
+    if source.analysis.vocal_regions and target.analysis.vocal_regions:
+        from djenius.audio.vocals import score_vocal_overlap
+        # Use default transition timing estimate
+        src_exit = source.analysis.possible_exit_points[-1] if source.analysis.possible_exit_points else source.duration_sec * 0.85
+        tgt_entry = target.analysis.possible_entry_points[0] if target.analysis.possible_entry_points else target.analysis.intro_end + 5
+        overlap = 8.0  # typical overlap estimate
+        detailed_score = score_vocal_overlap(
+            source.analysis.vocal_regions,
+            target.analysis.vocal_regions,
+            src_exit, tgt_entry, overlap,
+        )
+        # Blend: weighted average favoring the detailed score
+        base_score = 0.4 * base_score + 0.6 * detailed_score
+
+    return base_score
 
 
 def _build_reasoning(

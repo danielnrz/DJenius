@@ -2,6 +2,7 @@
 
 Generates WAV previews of each transition type with synthetic test signals,
 along with JSON metadata describing the transition parameters and results.
+Also provides V4 set-level diagnostics with phrase, vocal, and energy info.
 """
 
 from __future__ import annotations
@@ -245,4 +246,142 @@ def generate_transition_auditions(
         "files": files_written,
         "diagnostics": diagnostics,
         "json_path": str(json_path),
+    }
+
+
+# ── V4 Set-Level Diagnostics ─────────────────────────────────────────
+
+
+def generate_set_diagnostic_report(
+    set_plan,
+    output_dir: str = "outputs/diagnostics",
+) -> dict:
+    """Generate a V4 diagnostic report for a complete set plan.
+
+    Produces a JSON file with per-track analysis details and per-transition
+    V4 info (phrase/structural context, vocal regions, energy profile,
+    EQ/bass management status).
+
+    Args:
+        set_plan: A SetPlan object from the planner.
+        output_dir: Directory to write the diagnostic JSON.
+
+    Returns:
+        Dict with paths and the full diagnostic data.
+    """
+    from djenius.core.planner import _compute_set_energy_profile
+
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    # Build track lookup
+    track_by_id = {t.id: t for t in set_plan.tracks}
+
+    # Per-track diagnostics
+    track_diagnostics = []
+    for track in set_plan.tracks:
+        analysis = track.analysis
+        td = {
+            "id": track.id,
+            "title": track.title,
+            "filepath": track.filepath,
+            "bpm": round(analysis.bpm, 1),
+            "key": analysis.key,
+            "camelot": analysis.camelot,
+            "duration_sec": round(track.duration_sec, 1),
+            "mean_energy": round(analysis.mean_energy, 3),
+            "low_energy": round(analysis.low_energy, 3),
+            "mid_energy": round(analysis.mid_energy, 3),
+            "high_energy": round(analysis.high_energy, 3),
+            "intro_end": round(analysis.intro_end, 1),
+            "outro_start": round(analysis.outro_start, 1),
+            "phrase_count": len(analysis.phrase_boundaries),
+            "bar_count": len(analysis.bar_times),
+            "structural_sections": [
+                {"start": round(s, 1), "end": round(e, 1), "label": l}
+                for s, e, l in analysis.structural_sections
+            ],
+            "vocal_regions": [
+                {"start": round(s, 1), "end": round(e, 1)}
+                for s, e in analysis.vocal_regions
+            ],
+            "exit_points_count": len(analysis.possible_exit_points),
+            "entry_points_count": len(analysis.possible_entry_points),
+        }
+        track_diagnostics.append(td)
+
+    # Per-transition diagnostics
+    transition_diagnostics = []
+    for trans in set_plan.transitions:
+        source = track_by_id.get(trans.source_track_id)
+        target = track_by_id.get(trans.target_track_id)
+
+        td = {
+            "source_title": source.title if source else "?",
+            "target_title": target.title if target else "?",
+            "transition_type": trans.transition_type.value,
+            "source_exit_time": trans.source_exit_time,
+            "target_entry_time": trans.target_entry_time,
+            "overlap_duration": trans.overlap_duration,
+            "length_bars": trans.length_bars,
+            "confidence": trans.confidence,
+            "reasoning": trans.reasoning,
+            "bpm_match": {
+                "source_bpm": round(source.bpm, 1) if source else 0,
+                "target_bpm": round(target.bpm, 1) if target else 0,
+                "requires_stretch": trans.requires_stretch,
+                "stretch_pct": trans.stretch_amount_pct,
+            },
+            "energy": {
+                "source_mean": round(source.mean_energy, 3) if source else 0,
+                "target_mean": round(target.mean_energy, 3) if target else 0,
+                "direction": (
+                    "rising" if (target and source and target.mean_energy > source.mean_energy + 0.1)
+                    else "dropping" if (target and source and target.mean_energy < source.mean_energy - 0.1)
+                    else "similar"
+                ),
+            },
+            "vocal": {
+                "source_has_vocals": bool(source.analysis.vocal_regions) if source else False,
+                "target_has_vocals": bool(target.analysis.vocal_regions) if target else False,
+                "source_vocal_region_count": len(source.analysis.vocal_regions) if source else 0,
+                "target_vocal_region_count": len(target.analysis.vocal_regions) if target else 0,
+            },
+            "structure": {
+                "source_outro_region": source.mean_energy > 0 and source.analysis.outro_start < source.duration_sec if source else False,
+                "target_intro_bypassed": target.analysis.intro_end > 0 and trans.target_entry_time > target.analysis.intro_end if target else False,
+            },
+        }
+        transition_diagnostics.append(td)
+
+    # Energy trajectory
+    energy_trajectory = _compute_set_energy_profile(
+        [t.id for t in set_plan.tracks], track_by_id,
+    )
+
+    report = {
+        "set_plan_summary": {
+            "track_count": len(set_plan.tracks),
+            "transition_count": len(set_plan.transitions),
+            "total_duration_sec": set_plan.total_duration_sec,
+            "target_duration_sec": set_plan.target_duration_sec,
+            "energy_profile": set_plan.energy_profile.value,
+            "avg_confidence": set_plan.avg_transition_confidence,
+            "overall_score": set_plan.score,
+        },
+        "energy_trajectory": energy_trajectory,
+        "tracks": track_diagnostics,
+        "transitions": transition_diagnostics,
+    }
+
+    # Write JSON
+    json_path = output_path / "set_diagnostic_report.json"
+    with open(json_path, "w") as f:
+        json.dump(report, f, indent=2)
+
+    logger.info("Set diagnostic report written to %s", json_path)
+
+    return {
+        "json_path": str(json_path),
+        "report": report,
     }

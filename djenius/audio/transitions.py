@@ -35,11 +35,16 @@ def apply_transition(
     target_entry_sample: int,
     target_bpm: float = 0.0,
     source_bpm: float = 0.0,
+    source_low_energy: float = 0.0,
+    source_mid_energy: float = 0.0,
+    target_low_energy: float = 0.0,
+    target_mid_energy: float = 0.0,
 ) -> np.ndarray:
     """Apply a transition between source and target audio.
 
     All operations happen on the overlap region. Outside the overlap,
     source and target play normally. Stereo is preserved end-to-end.
+    Bass/EQ management is applied when energy profiles indicate risk.
 
     Args:
         source_audio: Full source track audio (1D or 2D [samples, channels]).
@@ -51,6 +56,10 @@ def apply_transition(
         target_entry_sample: Sample in target where it starts playing.
         target_bpm: Target BPM for beatmatching (0 = don't stretch).
         source_bpm: Source BPM.
+        source_low_energy: Source low frequency energy (0-1).
+        source_mid_energy: Source mid frequency energy (0-1).
+        target_low_energy: Target low frequency energy (0-1).
+        target_mid_energy: Target mid frequency energy (0-1).
 
     Returns:
         Audio of the overlap region (source tail + target head mixed).
@@ -69,6 +78,8 @@ def apply_transition(
                 sr, transition_type, overlap_samples,
                 source_exit_sample, target_entry_sample,
                 target_bpm, source_bpm,
+                source_low_energy, source_mid_energy,
+                target_low_energy, target_mid_energy,
             )
             channel_results.append(ch_result)
         return np.column_stack(channel_results).astype(np.float32)
@@ -79,6 +90,8 @@ def apply_transition(
             sr, transition_type, overlap_samples,
             source_exit_sample, target_entry_sample,
             target_bpm, source_bpm,
+            source_low_energy, source_mid_energy,
+            target_low_energy, target_mid_energy,
         ).astype(np.float32)
 
 
@@ -92,6 +105,10 @@ def _apply_transition_mono(
     target_entry_sample: int,
     target_bpm: float = 0.0,
     source_bpm: float = 0.0,
+    source_low_energy: float = 0.0,
+    source_mid_energy: float = 0.0,
+    target_low_energy: float = 0.0,
+    target_mid_energy: float = 0.0,
 ) -> np.ndarray:
     """Apply a transition on a single channel."""
     # Extract the relevant regions
@@ -109,6 +126,23 @@ def _apply_transition_mono(
 
     source_region = source_region[:min_len]
     target_region = target_region[:min_len]
+
+    # Apply bass/EQ management for transitions that mix both tracks
+    needs_bass_mgmt = transition_type not in ("phrase_cut",)
+    if needs_bass_mgmt:
+        has_bass_risk = (
+            source_low_energy > 0.25 or target_low_energy > 0.25
+            or source_mid_energy > 0.35 or target_mid_energy > 0.35
+        )
+        if has_bass_risk:
+            from djenius.audio.eq import apply_bass_management
+            bpm_for_eq = source_bpm if source_bpm > 0 else target_bpm
+            if bpm_for_eq > 0:
+                source_region, target_region = apply_bass_management(
+                    source_region, target_region, sr, bpm_for_eq,
+                    source_low_energy, target_low_energy,
+                    source_mid_energy, target_mid_energy,
+                )
 
     # Apply the specific transition type
     if transition_type == "phrase_cut":

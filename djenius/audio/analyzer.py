@@ -22,6 +22,7 @@ from djenius.utils.audio_math import (
     compute_spectral_energy_bands,
     detect_intro_outro,
 )
+from djenius.audio.vocals import estimate_vocal_regions
 
 logger = logging.getLogger(__name__)
 
@@ -241,12 +242,44 @@ def analyze_track(
         analysis.mid_energy = 0.34
         analysis.high_energy = 0.33
 
-    # --- Phrase Boundaries ---
+    # --- Phrase Boundaries and Structural Analysis ---
     try:
-        phrases = _detect_phrase_boundaries(y, sr, analysis.beat_times, analysis.bpm)
-        analysis.phrase_boundaries = phrases
+        from djenius.core.phrasing import (
+            build_bar_grid, compute_bar_energies, detect_bar_grouped_phrases,
+            label_structural_sections,
+        )
+
+        # Build bar grid and compute per-bar energies
+        bar_times_grid = build_bar_grid(analysis.beat_times, analysis.bpm, duration)
+        analysis.bar_times = bar_times_grid
+
+        bar_energies = compute_bar_energies(
+            np.array(analysis.energy_curve),
+            bar_times_grid,
+            analysis.bpm,
+            resolution_hz=1.0,
+        )
+        analysis.bar_energies = bar_energies
+
+        # Detect phrase boundaries from energy discontinuities
+        phrase_boundaries = detect_bar_grouped_phrases(
+            bar_times_grid, bar_energies, analysis.bpm,
+            min_phrase_bars=8,
+            max_phrase_bars=32,
+            energy_change_threshold=0.15,
+        )
+        analysis.phrase_boundaries = [pb.time_sec for pb in phrase_boundaries]
+
+        # Label structural sections
+        sections = label_structural_sections(
+            bar_times_grid, bar_energies, phrase_boundaries, duration,
+        )
+        analysis.structural_sections = [
+            (s.start_sec, s.end_sec, s.label) for s in sections
+        ]
+
     except Exception as e:
-        logger.warning("Phrase detection failed for %s: %s", filepath, e)
+        logger.warning("Phrase/structural analysis failed for %s: %s", filepath, e)
         # Fallback: group beats into 8-bar phrases
         if len(beat_times) >= 32:
             bar_duration = 4 * (60.0 / analysis.bpm) if analysis.bpm > 0 else 8.0
@@ -282,6 +315,13 @@ def analyze_track(
     except Exception:
         analysis.possible_exit_points = []
         analysis.possible_entry_points = []
+
+    # --- Vocal Regions ---
+    try:
+        analysis.vocal_regions = estimate_vocal_regions(y, sr)
+    except Exception as e:
+        logger.warning("Vocal detection failed for %s: %s", filepath, e)
+        analysis.vocal_regions = []
 
     # --- Overall Confidence ---
     confidence_factors = [
@@ -417,34 +457,53 @@ def _find_transition_points(
     duration: float,
     is_exit: bool = True,
 ) -> list[float]:
-    """Find good points in a track for transitions.
+    """Find scored transition points using phrase-aware scoring.
 
-    Exit points: where the outgoing track can leave.
-    Entry points: where the incoming track can enter.
+    Exit points: where the outgoing track can leave (prefer outro, energy drops).
+    Entry points: where the incoming track can enter (prefer after intro, stable).
     """
-    points = []
+    from djenius.core.phrasing import score_entry_point, score_exit_point
+
+    if not analysis.bar_times or analysis.bpm <= 0:
+        return []
+
+    scored_points = []
 
     if is_exit:
-        # Good exit points are at phrase boundaries in the outro region
-        outro_region_start = analysis.outro_start if analysis.outro_start > 0 else duration * 0.7
+        # Score all phrase boundaries and bar times as potential exit points
+        candidates = set(analysis.phrase_boundaries)
+        candidates.update(analysis.bar_times)
+        # Also consider the track end region
+        for t in [duration * 0.7, duration * 0.75, duration * 0.8, duration * 0.85, duration * 0.9]:
+            candidates.add(round(t, 3))
 
-        for phrase in analysis.phrase_boundaries:
-            if phrase >= outro_region_start:
-                points.append(phrase)
-
-        # Also add some general phrase boundaries in the later part
-        for phrase in analysis.phrase_boundaries:
-            if phrase >= duration * 0.5:
-                points.append(phrase)
+        for t in candidates:
+            if t <= 0 or t >= duration - 2.0:
+                continue
+            score = score_exit_point(
+                t, analysis.bar_times, analysis.bar_energies,
+                analysis.outro_start, duration, analysis.bpm,
+            )
+            if score > 0.2:
+                scored_points.append((t, score))
     else:
-        # Good entry points are at phrase boundaries after the intro
-        intro_end = analysis.intro_end if analysis.intro_end > 0 else duration * 0.15
+        # Score all phrase boundaries and bar times as potential entry points
+        candidates = set(analysis.phrase_boundaries)
+        candidates.update(analysis.bar_times)
 
-        for phrase in analysis.phrase_boundaries:
-            if phrase >= intro_end:
-                points.append(phrase)
+        for t in candidates:
+            if t <= 0 or t >= duration:
+                continue
+            score = score_entry_point(
+                t, analysis.bar_times, analysis.bar_energies,
+                analysis.intro_end, duration, analysis.bpm,
+            )
+            if score > 0.2:
+                scored_points.append((t, score))
 
-    # Remove duplicates and sort
-    points = sorted(set(round(p, 3) for p in points))
+    # Sort by score (best first), return top points sorted by time
+    scored_points.sort(key=lambda x: -x[1])
+    # Keep up to 20 best candidates
+    top_points = [round(t, 3) for t, _ in scored_points[:20]]
 
-    return points
+    return sorted(set(top_points))

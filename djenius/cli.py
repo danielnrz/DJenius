@@ -792,5 +792,70 @@ def transitions(
     console.print(f"\n[dim]Diagnostics JSON: {result['json_path']}[/]")
 
 
+@app.command()
+def report(
+    set_plan_path: str = typer.Argument(
+        help="Path to a SetPlan JSON file (from djenius auto --save-plan)."
+    ),
+    output_dir: str = typer.Option(
+        "outputs/diagnostics",
+        help="Directory to write the diagnostic report JSON."
+    ),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Verbose logging."),
+):
+    """Generate a V4 diagnostic report for a completed set plan.
+
+    Reads a SetPlan JSON file and produces a detailed diagnostic report
+    with per-track analysis, per-transition V4 context, and energy
+    trajectory visualization.
+    """
+    _setup_logging(verbose)
+    console.print("[bold]DJenius - Set Diagnostic Report[/]\n")
+
+    from djenius.core.models import SetPlan
+    from djenius.audio.diagnostics import generate_set_diagnostic_report
+
+    with open(set_plan_path) as f:
+        plan_data = json.load(f)
+
+    set_plan = SetPlan.from_dict(plan_data)
+
+    result = generate_set_diagnostic_report(set_plan, output_dir)
+
+    report = result["report"]
+    summary = report["set_plan_summary"]
+
+    console.print(f"[green]Report written to {result['json_path']}[/]\n")
+    console.print(f"Tracks: {summary['track_count']}")
+    console.print(f"Transitions: {summary['transition_count']}")
+    console.print(f"Duration: {summary['total_duration_sec']:.0f}s / {summary['target_duration_sec']:.0f}s target")
+    console.print(f"Energy Profile: {summary['energy_profile']}")
+    console.print(f"Avg Confidence: {summary['avg_confidence']:.3f}")
+
+    # Show energy trajectory
+    energies = report["energy_trajectory"]["energies"]
+    console.print(f"\n[bold]Energy Trajectory:[/]")
+    for i, e in enumerate(energies):
+        bar_len = int(e * 30)
+        bar = "█" * bar_len + "░" * (30 - bar_len)
+        console.print(f"  Track {i+1}: [{bar}] {e:.3f}")
+
+    # Show transitions summary
+    if report["transitions"]:
+        console.print(f"\n[bold]Transitions:[/]")
+        for t in report["transitions"]:
+            vocal_info = ""
+            if t["vocal"]["source_has_vocals"] and t["vocal"]["target_has_vocals"]:
+                vocal_info = " [yellow]🎤🎤[/]"
+            elif t["vocal"]["source_has_vocals"] or t["vocal"]["target_has_vocals"]:
+                vocal_info = " [yellow]🎤[/]"
+
+            console.print(
+                f"  {t['source_title']} → {t['target_title']}: "
+                f"{t['transition_type']} (conf={t['confidence']:.2f})"
+                f"{vocal_info}"
+            )
+
+
 if __name__ == "__main__":
     app()
