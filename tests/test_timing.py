@@ -12,6 +12,7 @@ import pytest
 from djenius.utils.timing import (
     bpm_to_samples,
     bpm_to_beat_period,
+    _to_mono,
     _envelope,
     calculate_phase_shift,
     apply_phase_shift,
@@ -324,3 +325,297 @@ class TestEnvelope:
         env = _envelope(audio, hop)
         expected_len = len(audio) // hop
         assert len(env) == expected_len
+
+
+# ── Tests: _to_mono stereo conversion ─────────────────────────────────
+
+class TestToMono:
+    """Verify _to_mono properly averages channels without interleaving."""
+
+    def test_mono_passthrough(self):
+        """1D audio should pass through unchanged."""
+        audio = np.array([0.1, 0.2, 0.3], dtype=np.float32)
+        result = _to_mono(audio)
+        np.testing.assert_array_equal(result, audio)
+
+    def test_stereo_averages_channels(self):
+        """Stereo (N,2) should be mean of both channels."""
+        stereo = np.array([[1.0, 3.0], [2.0, 4.0]], dtype=np.float32)
+        result = _to_mono(stereo)
+        expected = np.array([2.0, 3.0], dtype=np.float32)
+        np.testing.assert_array_almost_equal(result, expected)
+
+    def test_stereo_impulse_preserved_unlike_flatten(self):
+        """Impulse on left channel only should stay at correct index.
+
+        This is the regression test for the flatten() bug:
+        flatten() interleaves L/R → doubles length, moves impulse position.
+        _to_mono averages → preserves time axis.
+        """
+        sr = SR
+        n = 1000
+        stereo = np.zeros((n, 2), dtype=np.float32)
+        stereo[500, 0] = 1.0  # impulse only on left
+
+        result = _to_mono(stereo)
+        assert result.shape == (n,), f"_to_mono shape {result.shape} != ({n},)"
+        assert np.argmax(result) == 500, f"Impulse at {np.argmax(result)}, expected 500"
+
+        # Confirm flatten() would have been wrong
+        flat = stereo.flatten()
+        assert flat.shape == (n * 2,), "flatten() doubles length for stereo"
+        assert np.argmax(flat) == 1000, "flatten() moves impulse to wrong position"
+
+    def test_asymmetric_stereo_content(self):
+        """Asymmetric stereo: loud click on left, quiet click on right at different times.
+
+        _to_mono must produce a clean mono signal where both transients
+        are visible at their original time positions.
+        """
+        sr = SR
+        n = sr  # 1 second
+        stereo = np.zeros((n, 2), dtype=np.float32)
+
+        # Loud click on left at 200ms
+        left_pos = int(sr * 0.2)
+        click_len = 256
+        t = np.linspace(0, click_len / sr, click_len, endpoint=False, dtype=np.float32)
+        left_click = 0.9 * np.sin(2 * np.pi * 1000 * t) * np.exp(-np.linspace(0, 4, click_len)).astype(np.float32)
+        end = min(left_pos + click_len, n)
+        stereo[left_pos:end, 0] = left_click[:end - left_pos]
+
+        # Click on right at 500ms (lower amplitude than left but still detectable)
+        right_pos = int(sr * 0.5)
+        right_click = 0.4 * np.sin(2 * np.pi * 800 * t) * np.exp(-np.linspace(0, 4, click_len)).astype(np.float32)
+        end = min(right_pos + click_len, n)
+        stereo[right_pos:end, 1] = right_click[:end - right_pos]
+
+        mono = _to_mono(stereo)
+        assert mono.shape == (n,), f"Mono shape {mono.shape} != ({n},)"
+
+        # Verify left transient is visible around 200ms
+        env = _envelope(mono, hop=256)
+        onset_frames = np.where(env > env.max() * 0.1)[0]
+        onset_times_ms = (onset_frames * 256 / sr) * 1000
+        # Left click at 200ms should be detected
+        assert any(150 < t < 300 for t in onset_times_ms), \
+            f"Left click not found in mono envelope at ~200ms, onsets: {onset_times_ms}"
+        # Right click at 500ms should also be detected
+        assert any(400 < t < 600 for t in onset_times_ms), \
+            f"Right click not found in mono envelope at ~500ms, onsets: {onset_times_ms}"
+
+
+# ── Tests: Beat alignment BPM × offset matrix ──────────────────────────
+
+TARGET_BPM = [90, 120, 128, 140]
+TARGET_OFFSETS_MS = [20, 50, 100, 175, 250]
+
+
+def _make_stereo_click_track(bpm: float, duration: float = 5.0, sr: int = SR) -> np.ndarray:
+    """Generate a stereo click track with clicks primarily on the left channel.
+
+    This provides asymmetric stereo content for testing _to_mono behavior
+    in the context of real beat alignment.
+    """
+    n_samples = int(sr * duration)
+    stereo = np.zeros((n_samples, 2), dtype=np.float32)
+    samples_per_beat = int(sr * 60.0 / bpm)
+    click_len = min(256, samples_per_beat // 4)
+
+    for i in range(0, n_samples, samples_per_beat):
+        end = min(i + click_len, n_samples)
+        t = np.linspace(0, click_len / sr, click_len, endpoint=False, dtype=np.float32)
+        click = 0.8 * np.sin(2 * np.pi * 1000 * t)
+        click *= np.exp(-np.linspace(0, 4, click_len)).astype(np.float32)
+        # Left channel: full amplitude; Right channel: 30% amplitude
+        stereo[i:end, 0] = click[:end - i]
+        stereo[i:end, 1] = (0.3 * click[:end - i]).astype(np.float32)
+
+    return stereo
+
+
+class TestBeatAlignmentMatrix:
+    """Comprehensive matrix: BPM × offset → verify after-correction error < 20ms.
+
+    This is the primary validation that the beat-phase alignment system
+    achieves the required <20ms tolerance after correction.
+    """
+
+    @pytest.mark.parametrize("bpm", TARGET_BPM, ids=[f"{b}bpm" for b in TARGET_BPM])
+    @pytest.mark.parametrize("offset_ms", TARGET_OFFSETS_MS, ids=[f"{o}ms" for o in TARGET_OFFSETS_MS])
+    def test_mono_alignment_error_below_20ms(self, bpm, offset_ms):
+        """Mono click track alignment: error after correction < 20ms."""
+        src = make_click_track(bpm, duration=5.0)
+        offset_samp = int(SR * offset_ms / 1000)
+        tgt = np.zeros_like(src)
+        tgt[offset_samp:] = src[:-offset_samp]
+
+        err_before = measure_phase_error(src, tgt, SR)
+        shift = calculate_phase_shift(src, tgt, SR, bpm=bpm)
+        corrected = apply_phase_shift(tgt, shift)
+        err_after = measure_phase_error(src, corrected, SR, bpm=bpm)
+
+        err_after_ms = err_after / SR * 1000
+        assert err_after_ms < 20.0, \
+            f"{bpm}BPM {offset_ms}ms: after={err_after_ms:.1f}ms (must be <20ms), " \
+            f"shift={shift}, before={err_before/SR*1000:.1f}ms"
+        # Also verify improvement (or at least not worse)
+        assert err_after <= err_before + 200, \
+            f"{bpm}BPM {offset_ms}ms: after ({err_after}) much worse than before ({err_before})"
+
+    @pytest.mark.parametrize("bpm", TARGET_BPM, ids=[f"{b}bpm" for b in TARGET_BPM])
+    @pytest.mark.parametrize("offset_ms", TARGET_OFFSETS_MS, ids=[f"{o}ms" for o in TARGET_OFFSETS_MS])
+    def test_stereo_alignment_error_below_20ms(self, bpm, offset_ms):
+        """Stereo click track (asymmetric): error after correction < 20ms.
+
+        Regression test for the flatten() bug. With the old flatten()-based
+        stereo→mono, these tests would fail because interleaving corrupts
+        the temporal representation.
+        """
+        src = _make_stereo_click_track(bpm, duration=5.0)
+        offset_samp = int(SR * offset_ms / 1000)
+        tgt = np.zeros_like(src)
+        tgt[offset_samp:] = src[:-offset_samp]
+
+        err_before = measure_phase_error(src, tgt, SR)
+        shift = calculate_phase_shift(src, tgt, SR, bpm=bpm)
+        corrected = apply_phase_shift(tgt, shift)
+        err_after = measure_phase_error(src, corrected, SR, bpm=bpm)
+
+        err_after_ms = err_after / SR * 1000
+        assert err_after_ms < 20.0, \
+            f"Stereo {bpm}BPM {offset_ms}ms: after={err_after_ms:.1f}ms (must be <20ms), " \
+            f"shift={shift}, before={err_before/SR*1000:.1f}ms"
+        assert err_after <= err_before + 200, \
+            f"Stereo {bpm}BPM {offset_ms}ms: after ({err_after}) much worse than before ({err_before})"
+
+    @pytest.mark.parametrize("bpm", TARGET_BPM, ids=[f"{b}bpm" for b in TARGET_BPM])
+    @pytest.mark.parametrize("offset_ms", TARGET_OFFSETS_MS, ids=[f"{o}ms" for o in TARGET_OFFSETS_MS])
+    def test_alignment_round_trip(self, bpm, offset_ms):
+        """Full round trip: misaligned → detect → shift → verify.
+
+        Exercises the real sequence: create misaligned signal,
+        calculate_phase_shift, apply_phase_shift, measure_phase_error.
+        The corrected error must always be substantially lower than before.
+        """
+        src = make_click_track(bpm, duration=5.0)
+        offset_samp = int(SR * offset_ms / 1000)
+        tgt = np.zeros_like(src)
+        tgt[offset_samp:] = src[:-offset_samp]
+
+        # Step 1: measure error before correction
+        err_before_samples = measure_phase_error(src, tgt, SR, bpm=bpm)
+        err_before_ms = err_before_samples / SR * 1000
+
+        # Step 2: detect shift
+        shift = calculate_phase_shift(src, tgt, SR, bpm=bpm)
+
+        # Step 3: apply correction
+        corrected = apply_phase_shift(tgt, shift)
+
+        # Step 4: measure error after correction
+        err_after_samples = measure_phase_error(src, corrected, SR, bpm=bpm)
+        err_after_ms = err_after_samples / SR * 1000
+
+        # Assertions
+        assert err_after_ms < 20.0, \
+            f"{bpm}BPM {offset_ms}ms round-trip: after={err_after_ms:.1f}ms (must be <20ms)"
+        assert err_before_ms > err_after_ms, \
+            f"{bpm}BPM {offset_ms}ms: before ({err_before_ms:.1f}ms) should be > after ({err_after_ms:.1f}ms)"
+        # Substantial improvement: after should be at least 5x better
+        if err_before_ms > 10:
+            assert err_before_ms / max(err_after_ms, 0.001) >= 5.0, \
+                f"{bpm}BPM {offset_ms}ms: improvement ratio {err_before_ms/err_after_ms:.1f}x (need >=5x)"
+
+
+# ── Tests: Asymmetric stereo regression ────────────────────────────────
+
+class TestAsymmetricStereoRegression:
+    """Regression tests for the flatten() bug with asymmetric stereo content.
+
+    The old code used ndarray.flatten() for stereo-to-mono conversion in
+    calculate_phase_shift. For a (N, 2) array, flatten() interleaves
+    L/R samples, producing a 2N-length array that corrupts the temporal
+    representation and causes incorrect phase shift detection.
+    """
+
+    def test_asymmetric_stereo_detects_correct_shift(self):
+        """Stereo audio with only left-channel content: shift detection must
+        match mono-equivalent behavior."""
+        sr = SR
+        mono = make_click_track(120.0, duration=5.0)
+        n = len(mono)
+
+        # Create stereo version: left = mono, right = silence
+        stereo_left_only = np.zeros((n, 2), dtype=np.float32)
+        stereo_left_only[:, 0] = mono
+        # right channel = 0 (asymmetric)
+
+        # Shift both by same amount
+        offset_samp = int(sr * 0.1)  # 100ms
+        shifted_mono = np.zeros_like(mono)
+        shifted_mono[offset_samp:] = mono[:-offset_samp]
+        shifted_stereo = np.zeros_like(stereo_left_only)
+        shifted_stereo[offset_samp:] = stereo_left_only[:-offset_samp]
+
+        # Phase shift detection should be consistent
+        shift_mono = calculate_phase_shift(mono, shifted_mono, sr)
+        shift_stereo = calculate_phase_shift(stereo_left_only, shifted_stereo, sr)
+
+        # Both should detect ~same shift (within 500 samples)
+        assert abs(shift_mono - shift_stereo) <= 500, \
+            f"Mono shift {shift_mono} != stereo shift {shift_stereo}"
+
+    def test_asymmetric_stereo_both_channels_detected(self):
+        """Stereo with clicks on different channels at different times:
+        mono mix must preserve both transient positions."""
+        sr = SR
+        n = sr * 3  # 3 seconds
+        stereo = np.zeros((n, 2), dtype=np.float32)
+
+        # Click on left at 500ms
+        left_pos = int(sr * 0.5)
+        click_len = 256
+        t = np.linspace(0, click_len / sr, click_len, endpoint=False, dtype=np.float32)
+        left_click = 0.8 * np.sin(2 * np.pi * 1000 * t)
+        left_click *= np.exp(-np.linspace(0, 4, click_len)).astype(np.float32)
+        end = min(left_pos + click_len, n)
+        stereo[left_pos:end, 0] = left_click[:end - left_pos]
+
+        # Click on right at 1500ms
+        right_pos = int(sr * 1.5)
+        right_click = 0.8 * np.sin(2 * np.pi * 600 * t)
+        right_click *= np.exp(-np.linspace(0, 4, click_len)).astype(np.float32)
+        end = min(right_pos + click_len, n)
+        stereo[right_pos:end, 1] = right_click[:end - right_pos]
+
+        # Convert to mono via _to_mono
+        mono = _to_mono(stereo)
+
+        # Detect onsets in mono signal
+        env = _envelope(mono, hop=256)
+        threshold = env.max() * 0.2
+        onset_frames = np.where(env > threshold)[0]
+
+        if len(onset_frames) == 0:
+            pytest.skip("No onsets detected")
+
+        # Cluster
+        clusters = []
+        current = [onset_frames[0]]
+        for f in onset_frames[1:]:
+            if f - current[-1] <= 2:
+                current.append(f)
+            else:
+                clusters.append(int(np.mean(current)))
+                current = [f]
+        clusters.append(int(np.mean(current)))
+
+        onset_times_ms = [(c * 256 / sr) * 1000 for c in clusters]
+
+        # Must find onsets near 500ms (left channel) and 1500ms (right channel)
+        left_found = any(350 < t < 700 for t in onset_times_ms)
+        right_found = any(1300 < t < 1700 for t in onset_times_ms)
+
+        assert left_found, f"Left channel onset not found at ~500ms, onsets: {onset_times_ms}"
+        assert right_found, f"Right channel onset not found at ~1500ms, onsets: {onset_times_ms}"
