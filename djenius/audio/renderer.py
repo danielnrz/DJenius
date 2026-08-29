@@ -17,6 +17,7 @@ import numpy as np
 import soundfile as sf
 
 from djenius.core.models import SetPlan, TransitionPlan, TrackProfile, TransitionType
+from djenius.core.errors import DecodeError
 from djenius.audio.transitions import apply_transition
 from djenius.utils.audio_math import normalize_lufs, soft_clip, db_to_linear
 
@@ -67,9 +68,12 @@ def render_mix(
         try:
             y, sr = _load_audio(track.filepath, sample_rate)
             track_audio[track.id] = (y, sr)
+        except DecodeError:
+            # Allow DecodeError to propagate - total failure should abort render
+            raise
         except Exception as e:
             logger.error("Failed to load %s: %s", track.filepath, e)
-            # Create silence as placeholder
+            # Create silence as placeholder for non-critical failures
             duration_samples = int(track.duration_sec * sample_rate)
             track_audio[track.id] = (np.zeros(duration_samples, dtype=np.float32), sample_rate)
 
@@ -98,6 +102,8 @@ def render_mix(
     transitions_rendered = 0
 
     # Render each track with transitions
+    timeline_events = []
+    
     for i, track in enumerate(plan.tracks):
         if track.id not in track_audio:
             continue
@@ -115,28 +121,32 @@ def render_mix(
             incoming_transition = plan.transitions[i - 1]
 
         if i == 0:
-            # First track: play from start
-            overlap_start = 0
-            if exit_transition:
-                # Calculate exit point in samples
-                exit_sample = int(exit_transition.source_exit_time * sr)
-                overlap_start = min(exit_sample, track_duration)
-            else:
-                overlap_start = track_duration
-
+            # First track: play from start to exit point (or end of track)
+            source_exit_sample = int(exit_transition.source_exit_time * sr) if exit_transition else track_duration
+            source_exit_sample = min(source_exit_sample, track_duration)
+            
             # Add track to mix
-            end_sample = min(current_sample + overlap_start, total_duration)
+            end_sample = min(current_sample + source_exit_sample, total_duration)
             length = end_sample - current_sample
             if length > 0:
                 track_stereo = _to_stereo(audio)[:length]
                 mix[current_sample:end_sample] += track_stereo
+                timeline_events.append({
+                    "type": "track",
+                    "track_id": track.id,
+                    "track_title": track.title,
+                    "mix_start_sample": current_sample,
+                    "mix_end_sample": end_sample,
+                    "source_start_sample": 0,
+                    "source_end_sample": source_exit_sample,
+                })
             current_sample = end_sample
 
         else:
             # Subsequent tracks: handle transition
             if incoming_transition and incoming_transition.transition_type:
                 overlap_samples = int(incoming_transition.overlap_duration * sr)
-                target_entry = int(incoming_transition.target_entry_time * sr)
+                target_entry_sample = int(incoming_transition.target_entry_time * sr)
 
                 # Apply transition
                 try:
@@ -154,7 +164,7 @@ def render_mix(
                         transition_type=incoming_transition.transition_type.value,
                         overlap_samples=overlap_samples,
                         source_exit_sample=int(incoming_transition.source_exit_time * sr),
-                        target_entry_sample=target_entry,
+                        target_entry_sample=target_entry_sample,
                         source_bpm=prev_track.bpm,
                         target_bpm=incoming_transition.target_bpm,
                         source_low_energy=prev_track.analysis.low_energy,
@@ -165,30 +175,55 @@ def render_mix(
                         target_stems=tgt_stems_audio,
                     )
 
-                    # Place transition in mix
-                    trans_start = max(0, current_sample - overlap_samples // 2)
-                    trans_end = min(trans_start + len(transition_audio), total_duration)
-                    trans_len = trans_end - trans_start
+                    # Place transition in mix (strict forward cursor)
+                    trans_len = len(transition_audio)
+                    trans_start = current_sample
+                    trans_end = min(trans_start + trans_len, total_duration)
+                    actual_trans_len = trans_end - trans_start
 
-                    if trans_len > 0:
-                        trans_stereo = _to_stereo(transition_audio)[:trans_len]
+                    if actual_trans_len > 0:
+                        trans_stereo = _to_stereo(transition_audio)[:actual_trans_len]
                         mix[trans_start:trans_end] += trans_stereo
+                        timeline_events.append({
+                            "type": "transition",
+                            "from_track_id": prev_track.id,
+                            "from_track_title": prev_track.title,
+                            "to_track_id": track.id,
+                            "to_track_title": track.title,
+                            "transition_type": incoming_transition.transition_type.value,
+                            "mix_start_sample": trans_start,
+                            "mix_end_sample": trans_end,
+                            "overlap_duration_sec": incoming_transition.overlap_duration,
+                            "confidence": incoming_transition.confidence,
+                        })
                         current_sample = trans_end
                         transitions_rendered += 1
 
                     # Place remaining target audio after transition
-                    target_start_in_track = target_entry + overlap_samples // 2
-                    remaining_start = current_sample
-                    remaining_from_track = target_start_in_track
-                    remaining_len = min(
-                        track_duration - remaining_from_track,
-                        total_duration - remaining_start,
-                    )
-                    if remaining_len > 0:
-                        remaining_audio = audio[remaining_from_track:remaining_from_track + remaining_len]
-                        remaining_stereo = _to_stereo(remaining_audio)
-                        mix[remaining_start:remaining_start + remaining_len] += remaining_stereo
-                        current_sample = remaining_start + remaining_len
+                    rem_start_sample = target_entry_sample + overlap_samples
+                    rem_end_sample = int(exit_transition.source_exit_time * sr) if exit_transition else track_duration
+                    rem_end_sample = min(rem_end_sample, track_duration)
+                    
+                    if rem_end_sample > rem_start_sample:
+                        rem_length = rem_end_sample - rem_start_sample
+                        rem_start_in_mix = current_sample
+                        rem_end_in_mix = min(rem_start_in_mix + rem_length, total_duration)
+                        actual_rem_length = rem_end_in_mix - rem_start_in_mix
+                        
+                        if actual_rem_length > 0:
+                            remaining_audio = audio[rem_start_sample:rem_start_sample + actual_rem_length]
+                            remaining_stereo = _to_stereo(remaining_audio)
+                            mix[rem_start_in_mix:rem_end_in_mix] += remaining_stereo
+                            timeline_events.append({
+                                "type": "track",
+                                "track_id": track.id,
+                                "track_title": track.title,
+                                "mix_start_sample": rem_start_in_mix,
+                                "mix_end_sample": rem_end_in_mix,
+                                "source_start_sample": rem_start_sample,
+                                "source_end_sample": rem_start_sample + actual_rem_length,
+                            })
+                            current_sample = rem_end_in_mix
 
                     diagnostics.append({
                         "from": prev_track.title,
@@ -205,6 +240,15 @@ def render_mix(
                     if remaining_len > 0:
                         track_stereo = _to_stereo(audio)[:remaining_len]
                         mix[current_sample:current_sample + remaining_len] += track_stereo
+                        timeline_events.append({
+                            "type": "track",
+                            "track_id": track.id,
+                            "track_title": track.title,
+                            "mix_start_sample": current_sample,
+                            "mix_end_sample": current_sample + remaining_len,
+                            "source_start_sample": 0,
+                            "source_end_sample": remaining_len,
+                        })
                         current_sample += remaining_len
             else:
                 # No transition: just append
@@ -212,6 +256,15 @@ def render_mix(
                 if remaining_len > 0:
                     track_stereo = _to_stereo(audio)[:remaining_len]
                     mix[current_sample:current_sample + remaining_len] += track_stereo
+                    timeline_events.append({
+                        "type": "track",
+                        "track_id": track.id,
+                        "track_title": track.title,
+                        "mix_start_sample": current_sample,
+                        "mix_end_sample": current_sample + remaining_len,
+                        "source_start_sample": 0,
+                        "source_end_sample": remaining_len,
+                    })
                     current_sample += remaining_len
 
         if progress_callback:
@@ -288,6 +341,34 @@ def render_mix(
     except Exception:
         final_lufs = -999.0
 
+    # Write timeline diagnostics JSON
+    diagnostics_path = Path(output_path).with_name(Path(output_path).stem + "_diagnostics.json")
+    try:
+        import json
+        # Convert sample counts to seconds for readability
+        timeline_events_with_sec = []
+        for event in timeline_events:
+            event_with_sec = event.copy()
+            if "mix_start_sample" in event:
+                event_with_sec["mix_start_sec"] = round(event["mix_start_sample"] / sr, 3)
+                event_with_sec["mix_end_sec"] = round(event["mix_end_sample"] / sr, 3)
+            if "source_start_sample" in event:
+                event_with_sec["source_start_sec"] = round(event["source_start_sample"] / sr, 3)
+                event_with_sec["source_end_sec"] = round(event["source_end_sample"] / sr, 3)
+            timeline_events_with_sec.append(event_with_sec)
+        
+        with open(diagnostics_path, "w") as f:
+            json.dump({
+                "output_path": output_path,
+                "sample_rate": sr,
+                "total_samples": len(mix),
+                "total_duration_sec": round(duration_sec, 3),
+                "events": timeline_events_with_sec,
+            }, f, indent=2)
+        logger.info("Timeline diagnostics written to %s", diagnostics_path)
+    except Exception as e:
+        logger.warning("Failed to write timeline diagnostics: %s", e)
+
     result = {
         "output_path": output_path,
         "duration_sec": round(duration_sec, 1),
@@ -299,6 +380,7 @@ def render_mix(
         "transitions_rendered": transitions_rendered,
         "render_time_sec": round(elapsed, 1),
         "diagnostics": diagnostics,
+        "timeline_diagnostics_path": str(diagnostics_path),
         "file_size_mb": round(os.path.getsize(output_path) / (1024 * 1024), 1),
     }
 
@@ -310,7 +392,8 @@ def render_mix(
 def _load_audio(filepath: str, target_sr: int = 44100) -> tuple[np.ndarray, int]:
     """Load an audio file, returning (audio, sample_rate).
 
-    Preserves stereo if present. Tries soundfile first, falls back to librosa.
+    Preserves stereo if present. Tries soundfile first, falls back to ffmpeg.
+    Raises DecodeError if all methods fail.
     """
     try:
         y, sr = sf.read(filepath, dtype="float32")
@@ -335,14 +418,31 @@ def _load_audio(filepath: str, target_sr: int = 44100) -> tuple[np.ndarray, int]
         elif y.shape[1] == 1:
             return y[:, 0], sr  # Return 1D mono
         return y, sr
-    except Exception:
-        import librosa
-        y, sr = librosa.load(filepath, sr=target_sr, mono=False)
-        if y.ndim == 1:
-            y = y.reshape(-1, 1)
-        if y.shape[1] >= 2:
-            return y[:, :2], sr
-        return y[:, 0] if y.shape[1] == 1 else y, sr
+    except Exception as sf_err:
+        logger.debug("soundfile failed for %s: %s. Falling back to ffmpeg.", filepath, sf_err)
+        try:
+            # FFmpeg fallback: decode to raw PCM float32 via subprocess
+            cmd = [
+                "ffmpeg", "-v", "error", "-y",
+                "-i", filepath,
+                "-f", "f32le",
+                "-acodec", "pcm_f32le",
+                "-ac", "2",
+                "-ar", str(target_sr),
+                "pipe:1",
+            ]
+            result = subprocess.run(cmd, capture_output=True, check=True)
+            audio_data = np.frombuffer(result.stdout, dtype=np.float32)
+            if len(audio_data) == 0:
+                raise ValueError("FFmpeg returned empty audio data")
+            # Interleaved stereo: reshape to (N, 2)
+            y = audio_data.reshape(-1, 2)
+            return y, target_sr
+        except Exception as ffmpeg_err:
+            raise DecodeError(
+                f"Total audio load failure for {filepath}. "
+                f"soundfile: {sf_err}, ffmpeg: {ffmpeg_err}"
+            ) from ffmpeg_err
 
 
 def _to_stereo(audio: np.ndarray) -> np.ndarray:
