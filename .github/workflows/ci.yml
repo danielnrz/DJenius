@@ -10,6 +10,7 @@ jobs:
   test:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         python-version: ["3.11", "3.12", "3.13"]
 
@@ -24,7 +25,7 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg librubberband2
+          sudo apt-get install -y ffmpeg librubberband2 rubberband-cli
 
       - name: Install Python dependencies
         run: |
@@ -59,3 +60,4 @@ jobs:
           python -c "from djenius.cli import app; print('CLI imports OK')"
           python -c "from djenius.audio.transitions import apply_transition; print('Transitions OK')"
           python -c "from djenius.audio.diagnostics import generate_transition_auditions; print('Diagnostics OK')"
+          python -c "from djenius.utils.timing import bpm_to_samples, calculate_phase_shift; print('Timing OK')"
