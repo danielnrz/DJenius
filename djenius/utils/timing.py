@@ -118,31 +118,30 @@ def calculate_phase_shift(
     lags = np.arange(-len(tgt_env) + 1, len(src_env))
 
     if bpm is not None and bpm > 0:
-        # Beat-period-aware: fold the correlation by the beat period
-        # to find the best sub-beat phase offset.
+        # Beat-period-aware: constrain the search to within half a beat
+        # of zero.  This finds the nearest musically equivalent peak
+        # *before* picking the best one, preventing full-beat ambiguity
+        # and avoiding direction-flipping that post-hoc folding causes.
         beat_period_sec = 60.0 / bpm
         beat_period_frames = max(1, int(round((beat_period_sec * sr) / hop)))
+        half_beat = beat_period_frames // 2
 
-        # Wrap each lag into the range [0, beat_period_frames)
-        folded = np.zeros(beat_period_frames, dtype=np.float64)
-        for i, lag in enumerate(lags):
-            idx = lag % beat_period_frames
-            folded[idx] += correlation[i]
-
-        best_folded_idx = int(np.argmax(folded))
-
-        # Center the result to [-beat_period/2, +beat_period/2]
-        if best_folded_idx > beat_period_frames // 2:
-            best_lag = best_folded_idx - beat_period_frames
+        # Mask out lags outside [-half_beat, +half_beat]
+        mask = (lags >= -half_beat) & (lags <= half_beat)
+        if np.any(mask):
+            masked_corr = correlation.copy()
+            masked_corr[~mask] = -np.inf
+            best_idx = int(np.argmax(masked_corr))
+            lag = int(lags[best_idx])
         else:
-            best_lag = best_folded_idx
-
-        shift_samples = int(best_lag * hop)
+            best_idx = int(np.argmax(correlation))
+            lag = int(lags[best_idx])
     else:
-        # Fallback: standard global maximum
+        # No BPM: use the global peak directly
         best_idx = int(np.argmax(correlation))
-        lag = lags[best_idx]
-        shift_samples = int(lag * hop)
+        lag = int(lags[best_idx])
+
+    shift_samples = int(lag * hop)
 
     return shift_samples
 

@@ -201,7 +201,7 @@ def _beatmatched_blend(
     stretch_pct = 0.0
 
     if source_bpm > 0 and target_bpm > 0 and abs(source_bpm - target_bpm) > 0.5:
-        rate = target_bpm / source_bpm
+        rate = source_bpm / target_bpm
         stretched = None
 
         # Try pyrubberband first
@@ -254,7 +254,7 @@ def _beatmatched_blend(
     # ── Step 2: Beat phase alignment ──────────────────────────────────
     from djenius.utils.timing import calculate_phase_shift, apply_phase_shift
 
-    phase_shift = calculate_phase_shift(source, stretched_target, sr)
+    phase_shift = calculate_phase_shift(source, stretched_target, sr, bpm=source_bpm)
     aligned_target = apply_phase_shift(stretched_target, phase_shift)
 
     # ── Step 3: Musical timing crossfade ──────────────────────────────

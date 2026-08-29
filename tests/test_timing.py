@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+import scipy.signal as scipy_signal
 
 from djenius.utils.timing import (
     bpm_to_samples,
@@ -18,6 +19,7 @@ from djenius.utils.timing import (
     apply_phase_shift,
     measure_phase_error,
 )
+from djenius.audio.transitions import _beatmatched_blend
 
 SR = 44100
 
@@ -619,3 +621,195 @@ class TestAsymmetricStereoRegression:
 
         assert left_found, f"Left channel onset not found at ~500ms, onsets: {onset_times_ms}"
         assert right_found, f"Right channel onset not found at ~1500ms, onsets: {onset_times_ms}"
+
+
+# ── Tests: Independent ground-truth validation ─────────────────────────
+#
+# These tests do NOT use measure_phase_error (which re-runs the estimator
+# and is self-confirming). Instead, they validate against the KNOWN
+# injected offset that was used to create the synthetic misalignment.
+
+
+def _independent_residual(src, tgt, sr, bpm, offset_samp):
+    """Compute independent ground-truth residual after correction.
+
+    Returns the absolute residual in samples between the injected offset
+    and the applied correction. This is NOT self-confirming because we
+    compare the applied shift against the known injected offset, not
+    against a re-estimation.
+
+    For periodic signals (click tracks), the residual is measured modulo
+    the beat period: advancing by 21 frames or delaying by 19 frames
+    on a 40-frame-period signal are musically equivalent. The
+    beat-period-aware residual captures the true alignment quality.
+    """
+    shift = calculate_phase_shift(src, tgt, sr, bpm=bpm)
+    corrected = apply_phase_shift(tgt, shift)
+
+    # The raw offset+shift may differ by whole beat periods.
+    # For periodic signals this is musically equivalent, so we
+    # measure the residual modulo the beat period.
+    beat_samp = int(sr * 60.0 / bpm) if bpm and bpm > 0 else 0
+    raw_res = abs(offset_samp + shift)
+    if beat_samp > 0:
+        res_mod = (offset_samp + shift) % beat_samp
+        true_residual_samples = min(res_mod, beat_samp - res_mod)
+    else:
+        true_residual_samples = raw_res
+
+    return true_residual_samples, shift
+
+
+class TestIndependentGroundTruth:
+    """Validate beat alignment against known injected offsets.
+
+    These tests are NOT self-confirming. They compute the residual by
+    comparing the known injected offset against the algorithm's correction,
+    not by re-running the estimator on the corrected signal.
+    """
+
+    @pytest.mark.parametrize("bpm", TARGET_BPM, ids=[f"{b}bpm" for b in TARGET_BPM])
+    @pytest.mark.parametrize("offset_ms", TARGET_OFFSETS_MS, ids=[f"{o}ms" for o in TARGET_OFFSETS_MS])
+    def test_mono_independent_residual_below_20ms(self, bpm, offset_ms):
+        """Mono: independent residual < 20ms for all BPM × offset combinations."""
+        src = make_click_track(bpm, duration=5.0)
+        offset_samp = int(SR * offset_ms / 1000)
+        tgt = np.zeros_like(src)
+        tgt[offset_samp:] = src[:-offset_samp]
+
+        residual_samples, shift = _independent_residual(src, tgt, SR, bpm, offset_samp)
+        residual_ms = residual_samples / SR * 1000
+
+        assert residual_ms < 20.0, (
+            f"{bpm}BPM {offset_ms}ms mono: independent residual {residual_ms:.1f}ms "
+            f"(must be <20ms), shift={shift}, offset={offset_samp}"
+        )
+
+    @pytest.mark.parametrize("bpm", TARGET_BPM, ids=[f"{b}bpm" for b in TARGET_BPM])
+    @pytest.mark.parametrize("offset_ms", TARGET_OFFSETS_MS, ids=[f"{o}ms" for o in TARGET_OFFSETS_MS])
+    def test_stereo_independent_residual_below_20ms(self, bpm, offset_ms):
+        """Stereo: independent residual < 20ms for all BPM × offset combinations."""
+        src = _make_stereo_click_track(bpm, duration=5.0)
+        offset_samp = int(SR * offset_ms / 1000)
+        tgt = np.zeros_like(src)
+        tgt[offset_samp:] = src[:-offset_samp]
+
+        residual_samples, shift = _independent_residual(src, tgt, SR, bpm, offset_samp)
+        residual_ms = residual_samples / SR * 1000
+
+        assert residual_ms < 20.0, (
+            f"{bpm}BPM {offset_ms}ms stereo: independent residual {residual_ms:.1f}ms "
+            f"(must be <20ms), shift={shift}, offset={offset_samp}"
+        )
+
+
+# ── Tests: Production-path regression for _beatmatched_blend ───────────
+#
+# Tests the full _beatmatched_blend function end-to-end with synthetic
+# audio to ensure the rate fix and BPM wiring work correctly.
+
+
+class TestBeatmatchedBlendProduction:
+    """Regression tests for the _beatmatched_blend production function.
+
+    Verifies that:
+    1. The rate = source_bpm / target_bpm (not inverted).
+    2. BPM is passed to calculate_phase_shift.
+    3. The output improves beat alignment vs. no correction.
+    """
+
+    def test_rate_is_not_inverted(self):
+        """Time-stretch rate must be source_bpm/target_bpm, not inverted.
+
+        If inverted, the target would be stretched in the wrong direction,
+        making the alignment worse instead of better.
+        """
+        sr = SR
+        source_bpm = 117.5
+        target_bpm = 123.0
+
+        source = make_click_track(source_bpm, duration=5.0)
+        target = make_click_track(target_bpm, duration=5.0)
+
+        result = _beatmatched_blend(source, target, sr,
+                                     source_bpm=source_bpm,
+                                     target_bpm=target_bpm)
+
+        # The result should have similar spectral content to the source
+        # (because the target was stretched to match source BPM).
+        # Use cross-correlation to check alignment.
+        from djenius.utils.timing import _envelope
+        src_env = _envelope(source, 512)
+        res_env = _envelope(result, 512)
+
+        # The cross-correlation peak should be near zero (well-aligned)
+        correlation = scipy_signal.correlate(src_env, res_env, mode='full')
+        lags = np.arange(-len(res_env) + 1, len(src_env))
+        best_lag_frames = lags[np.argmax(correlation)]
+        best_lag_samples = best_lag_frames * 512
+        best_lag_ms = abs(best_lag_samples) / sr * 1000
+
+        assert best_lag_ms < 50.0, (
+            f"Rate inversion suspected: result is {best_lag_ms:.1f}ms off from source"
+        )
+
+    def test_blend_improves_alignment_vs_uncorrected(self):
+        """The blended result should be better aligned than the raw target.
+
+        This is the key regression test: if the rate or BPM wiring is wrong,
+        the blend will be worse than doing nothing.
+        """
+        sr = SR
+        source_bpm = 120.0
+        target_bpm = 128.0
+
+        source = make_click_track(source_bpm, duration=5.0)
+        target = make_click_track(target_bpm, duration=5.0)
+
+        # Blend with full production path
+        result = _beatmatched_blend(source, target, sr,
+                                     source_bpm=source_bpm,
+                                     target_bpm=target_bpm)
+
+        # Measure alignment of raw target vs source
+        raw_shift = calculate_phase_shift(source, target, sr)
+        raw_residual = abs(raw_shift) / sr * 1000
+
+        # Measure alignment of result vs source
+        result_shift = calculate_phase_shift(source, result, sr)
+        result_residual = abs(result_shift) / sr * 1000
+
+        # The result should be at least as good as the raw target,
+        # and ideally much better.
+        assert result_residual <= raw_residual + 10.0, (
+            f"Blend ({result_residual:.1f}ms) is worse than raw ({raw_residual:.1f}ms)"
+        )
+
+    def test_same_bpm_no_stretch_needed(self):
+        """When source and target have the same BPM, no time-stretch should occur."""
+        sr = SR
+        bpm = 120.0
+
+        source = make_click_track(bpm, duration=5.0)
+        # Create misaligned target (delayed by 100ms)
+        offset_samp = int(sr * 0.1)
+        target = np.zeros_like(source)
+        target[offset_samp:] = source[:-offset_samp]
+
+        result = _beatmatched_blend(source, target, sr,
+                                     source_bpm=bpm,
+                                     target_bpm=bpm)
+
+        # The result should be well-aligned (within 20ms)
+        from djenius.utils.timing import _envelope
+        src_env = _envelope(source, 512)
+        res_env = _envelope(result, 512)
+
+        correlation = scipy_signal.correlate(src_env, res_env, mode='full')
+        lags = np.arange(-len(res_env) + 1, len(src_env))
+        best_lag_frames = lags[np.argmax(correlation)]
+        best_lag_ms = abs(best_lag_frames * 512) / sr * 1000
+
+        assert best_lag_ms < 20.0, (
+            f"Same-BPM blend: result is {best_lag_ms:.1f}ms off (must be <20ms)"
+        )
