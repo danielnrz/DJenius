@@ -86,7 +86,45 @@ def extract_metadata(filepath: str) -> Optional[TrackMetadata]:
             channels = 1 if y.ndim == 1 else y.shape[0]
             fmt = path.suffix.upper().strip(".")
         except Exception:
-            return None
+            # Try ffmpeg as last resort for formats like M4A/AAC
+            try:
+                import subprocess
+                import tempfile
+                # Use ffprobe to get duration
+                probe = subprocess.run(
+                    ["ffprobe", "-v", "error", "-show_entries",
+                     "format=duration:stream=sample_rate,channels",
+                     "-of", "csv=p=0", filepath],
+                    capture_output=True, text=True, timeout=10,
+                )
+                if probe.returncode == 0 and probe.stdout.strip():
+                    lines = probe.stdout.strip().split("\n")
+                    # Parse: could be "sample_rate,channels\nduration\n"
+                    # or "duration\n" depending on file
+                    duration = 0.0
+                    sample_rate = 44100
+                    channels = 1
+                    for line in lines:
+                        line = line.strip()
+                        if not line:
+                            continue
+                        parts = line.split(",")
+                        if len(parts) == 2 and parts[0].isdigit():
+                            # sample_rate,channels
+                            sample_rate = int(parts[0])
+                            channels = int(parts[1])
+                        else:
+                            try:
+                                val = float(line)
+                                if val > 0 and duration == 0.0:
+                                    duration = val
+                            except ValueError:
+                                pass
+                    fmt = path.suffix.upper().strip(".")
+                else:
+                    return None
+            except Exception:
+                return None
 
     # Extract metadata from file info
     title = path.stem

@@ -63,10 +63,31 @@ def analyze_track(
         if y_stereo.ndim == 1:
             y_stereo = y_stereo.reshape(-1, 1)
     except Exception:
-        # Fallback to librosa
-        y_stereo, sr_stereo = librosa.load(filepath, sr=target_sr, mono=False)
-        if y_stereo.ndim == 1:
-            y_stereo = y_stereo.reshape(-1, 1)
+        try:
+            # Fallback to librosa
+            y_stereo, sr_stereo = librosa.load(filepath, sr=None, mono=False)
+            if y_stereo.ndim == 1:
+                y_stereo = y_stereo.reshape(-1, 1)
+        except Exception:
+            # Last resort: use ffmpeg for formats like M4A/AAC
+            import subprocess
+            import tempfile
+            with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as tmp:
+                tmp_path = tmp.name
+            try:
+                subprocess.run(
+                    ['ffmpeg', '-y', '-i', filepath, '-ar', '44100',
+                     '-ac', '2', '-f', 'wav', tmp_path],
+                    capture_output=True, timeout=120,
+                    check=True,
+                )
+                y_stereo, sr_stereo = sf.read(tmp_path, dtype="float32")
+                if y_stereo.ndim == 1:
+                    y_stereo = y_stereo.reshape(-1, 1)
+            finally:
+                import os
+                if os.path.exists(tmp_path):
+                    os.unlink(tmp_path)
 
     # Create mono copy for analysis (librosa features work on mono)
     if y_stereo.ndim == 2 and y_stereo.shape[1] >= 2:
@@ -78,7 +99,6 @@ def analyze_track(
 
     # Resample if needed
     if sr != target_sr:
-        import librosa
         y = librosa.resample(y, orig_sr=sr, target_sr=target_sr)
         sr = target_sr
 
