@@ -223,12 +223,35 @@ def separate_stems(
     # Add batch dimension: (1, channels, samples)
     audio_tensor = torch.from_numpy(audio).float().unsqueeze(0)
 
-    # Load model and run separation
+    # Load model and run separation — with cuDNN / device fallback
     model = get_model(model_name)
     model.to(device)
 
-    with torch.no_grad():
-        sources = apply_model(model, audio_tensor, device=device)
+    def _run_separation(model, audio_tensor, device):
+        with torch.no_grad():
+            return apply_model(model, audio_tensor, device=device)
+
+    try:
+        sources = _run_separation(model, audio_tensor, device)
+    except RuntimeError as exc:
+        if "cudnn" in str(exc).lower() and device == "cuda":
+            # cuDNN version mismatch — retry with cuDNN disabled (still uses CUDA)
+            logger.warning(
+                "cuDNN error on CUDA (%s); retrying with cuDNN disabled...", exc
+            )
+            torch.backends.cudnn.enabled = False
+            try:
+                sources = _run_separation(model, audio_tensor, device)
+            finally:
+                torch.backends.cudnn.enabled = True
+        elif "out of memory" in str(exc).lower() and device == "cuda":
+            # OOM on GPU — fall back to CPU
+            logger.warning("CUDA OOM, falling back to CPU: %s", exc)
+            torch.cuda.empty_cache()
+            model.to("cpu")
+            sources = _run_separation(model, audio_tensor, "cpu")
+        else:
+            raise
 
     # sources shape: (1, n_sources, channels, samples)
     sources = sources[0].cpu().numpy()  # (n_sources, channels, samples)

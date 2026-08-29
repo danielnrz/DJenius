@@ -327,16 +327,17 @@ def analyze_track(
     try:
         from djenius.audio.stems import stems_available, separate_stems, load_stems, stems_cached
         if stems_available():
-            # Check if stems are already cached
+            # Always separate at full quality (44100 Hz) for best stem fidelity.
+            # load_stems handles resampling to the renderer's sample rate.
+            stem_sr = 44100
             stem_paths = None
             if stems_cached(filepath):
-                # load_stems returns dict[str, np.ndarray] but we need paths for TrackAnalysis.stems
-                # separate_stems returns dict[str, str] — use it to get/cached paths
-                stem_paths = separate_stems(filepath, sr=sr)
+                # Paths already cached — get them without re-separation
+                stem_paths = separate_stems(filepath, sr=stem_sr)
             else:
                 # Separate stems (this is the expensive step)
                 logger.info("Separating stems for %s (this may take a while)...", Path(filepath).name)
-                stem_paths = separate_stems(filepath, sr=sr)
+                stem_paths = separate_stems(filepath, sr=stem_sr)
             if stem_paths:
                 analysis.stems = stem_paths
                 # Use stem-based vocal detection for more accurate regions
