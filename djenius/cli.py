@@ -494,9 +494,39 @@ def doctor():
             checks.append((f"Import {dep}", False, "not installed"))
 
     # System binaries
-    for binary in ("ffmpeg", "ffprobe", "rubberband"):
+    for binary in ("ffmpeg", "ffprobe"):
         path = shutil.which(binary)
         checks.append((f"Binary: {binary}", path is not None, path or "not found"))
+
+    # Optional binary: rubberband CLI (not required, pyrubberband works via library)
+    rubberband_path = shutil.which("rubberband")
+    checks.append(("Binary: rubberband (optional)", rubberband_path is not None, rubberband_path or "not found (pyrubberband works via library)"))
+
+    # Stereo audio processing capability
+    try:
+        import numpy as np
+        from djenius.audio.transitions import apply_transition
+        from djenius.utils.audio_math import equal_power_crossfade
+        # Test stereo crossfade
+        test_stereo = np.random.randn(44100, 2).astype(np.float32) * 0.1
+        result = apply_transition(test_stereo, test_stereo, 44100, "crossfade", 22050, 0, 0)
+        stereo_ok = result.ndim == 2 and result.shape[1] == 2
+        checks.append(("Stereo processing", stereo_ok, "stereo transitions supported" if stereo_ok else "mono only"))
+    except Exception as e:
+        checks.append(("Stereo processing", False, str(e)))
+
+    # Time-stretch backend
+    try:
+        import pyrubberband
+        # Test if pyrubberband works
+        import numpy as np
+        test_audio = np.random.randn(44100).astype(np.float32) * 0.1
+        # Try a simple time-stretch
+        stretched = pyrubberband.time_stretch(test_audio, 44100, 1.0)
+        stretch_ok = len(stretched) > 0
+        checks.append(("Time-stretch (pyrubberband)", stretch_ok, "working" if stretch_ok else "failed"))
+    except Exception as e:
+        checks.append(("Time-stretch (pyrubberband)", False, str(e)))
 
     # Writable working directory
     cwd = Path.cwd()
@@ -545,6 +575,165 @@ def doctor():
     else:
         console.print("\n[red]Some critical checks failed. See above for details.[/]")
         raise typer.Exit(1)
+
+
+@app.command()
+def auto(
+    library_path: str = typer.Argument(..., help="Path to music library"),
+    output: str = typer.Option(
+        "output/mix.wav", "--output", "-o",
+        help="Output audio file path"
+    ),
+    output_format: str = typer.Option(
+        "wav", "--format", "-f",
+        help="Output format: wav or mp3"
+    ),
+    duration: float = typer.Option(1800.0, "--duration", "-d", help="Target duration in seconds"),
+    energy: str = typer.Option(
+        "steady", "--energy", "-e",
+        help="Energy profile: steady, slow_build, warmup_to_peak, wave, peak_early, peak_late, cooldown"
+    ),
+    target_lufs: float = typer.Option(-14.0, "--lufs", help="Target loudness in LUFS"),
+    cache_path: str = typer.Option(
+        "data/analysis_cache.db", "--cache", "-c",
+        help="Path to SQLite cache database"
+    ),
+    max_tracks: Optional[int] = typer.Option(None, "--max-tracks", help="Maximum tracks"),
+    seed: Optional[int] = typer.Option(None, "--seed", help="Random seed"),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Verbose output"),
+):
+    """Full pipeline: scan -> analyze -> plan -> render -> master -> save.
+
+    One command to create a complete DJ mix from your music library.
+    """
+    _setup_logging(verbose)
+
+    from djenius.core.models import EnergyProfile
+    from djenius.core.planner import plan_set
+    from djenius.audio.analyzer import analyze_track
+    from djenius.audio.scanner import scan_directory
+    from djenius.audio.renderer import render_mix
+
+    console.print(Panel("[bold]DJenius Auto Pipeline[/]", border_style="blue"))
+
+    lib_path = Path(library_path).expanduser().resolve()
+    if not lib_path.exists():
+        console.print(f"[red]Error:[/] Directory not found: {lib_path}")
+        raise typer.Exit(1)
+
+    cache = _get_cache(cache_path)
+
+    # Step 1: Scan
+    console.print("\n[bold blue]1. Scanning library...[/]")
+    tracks = scan_directory(str(lib_path))
+    console.print(f"   Found {len(tracks)} tracks")
+
+    if len(tracks) < 2:
+        console.print("[red]Error:[/] Need at least 2 tracks to create a mix")
+        raise typer.Exit(1)
+
+    # Step 2: Analyze
+    console.print("\n[bold blue]2. Analyzing tracks...[/]")
+    profiles = []
+    analyzed = 0
+    skipped = 0
+
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TextColumn("{task.completed}/{task.total}"),
+        console=console,
+    ) as progress:
+        task = progress.add_task("Analyzing...", total=len(tracks))
+        for track in tracks:
+            try:
+                profile = analyze_track(track.filepath, cache=cache)
+                profiles.append(profile)
+                analyzed += 1
+            except Exception as e:
+                logging.getLogger(__name__).warning("Skipping %s: %s", track.title, e)
+            progress.advance(task)
+
+    console.print(f"   Analyzed {analyzed} tracks ({skipped} cached)")
+
+    # Step 3: Plan
+    console.print("\n[bold blue]3. Planning set...[/]")
+    try:
+        ep = EnergyProfile(energy)
+    except ValueError:
+        console.print(f"[red]Error:[/] Invalid energy profile: {energy}")
+        raise typer.Exit(1)
+
+    set_plan = plan_set(
+        tracks=profiles,
+        target_duration_sec=duration,
+        energy_profile=ep,
+        max_tracks=max_tracks,
+        seed=seed,
+    )
+
+    console.print(f"   Planned {len(set_plan.tracks)} tracks")
+    console.print(f"   Duration: {_format_duration(set_plan.total_duration_sec)}")
+    console.print(f"   Score: {set_plan.score:.2f}")
+
+    # Step 4: Render
+    console.print(f"\n[bold blue]4. Rendering mix...[/]")
+
+    result = render_mix(
+        plan=set_plan,
+        output_path=output,
+        output_format=output_format,
+        target_lufs=target_lufs,
+        progress_callback=lambda p, m: None,
+    )
+
+    # Display results
+    console.print(f"\n[bold green]5. Mix complete![/]")
+    table = Table(box=box.ROUNDED)
+    table.add_column("Property", style="cyan")
+    table.add_column("Value", style="white")
+
+    table.add_row("Output", result["output_path"])
+    table.add_row("Duration", _format_duration(result["duration_sec"]))
+    table.add_row("Format", f"{result['format'].upper()}, {result['channels']}ch, {result['sample_rate']}Hz")
+    table.add_row("Peak", f"{result['peak_db']:.1f} dB")
+    if result.get("final_lufs") is not None:
+        table.add_row("LUFS", f"{result['final_lufs']}")
+    table.add_row("Transitions", str(result["transitions_rendered"]))
+    table.add_row("Render time", _format_duration(result["render_time_sec"]))
+    table.add_row("File size", f"{result['file_size_mb']} MB")
+
+    console.print(table)
+
+    # Save plan
+    plan_output = Path(output).with_suffix(".plan.json")
+    plan_dict = set_plan.to_dict()
+    with open(plan_output, "w") as f:
+        json.dump(plan_dict, f, indent=2, default=str)
+
+    console.print(f"\n[dim]Set plan saved to {plan_output}[/]")
+
+    # Show transition details
+    if result.get("diagnostics"):
+        console.print("\n[bold]Transition Details:[/]")
+        diag_table = Table(box=box.SIMPLE)
+        diag_table.add_column("From", style="cyan")
+        diag_table.add_column("To", style="cyan")
+        diag_table.add_column("Type", style="yellow")
+        diag_table.add_column("Overlap", justify="right")
+
+        for d in result["diagnostics"]:
+            diag_table.add_row(
+                d["from"][:25],
+                d["to"][:25],
+                d["type"],
+                f"{d['overlap_sec']:.1f}s",
+            )
+
+        console.print(diag_table)
+
+    console.print(f"\n[green]Done! Your mix is ready at {result['output_path']}[/]")
 
 
 if __name__ == "__main__":

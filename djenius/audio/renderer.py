@@ -288,26 +288,39 @@ def render_mix(
 def _load_audio(filepath: str, target_sr: int = 44100) -> tuple[np.ndarray, int]:
     """Load an audio file, returning (audio, sample_rate).
 
-    Tries soundfile first, falls back to librosa.
+    Preserves stereo if present. Tries soundfile first, falls back to librosa.
     """
     try:
         y, sr = sf.read(filepath, dtype="float32")
         if y.ndim == 1:
             y = y.reshape(-1, 1)
-        # Resample if needed
+        # Resample if needed - preserve channels
         if sr != target_sr:
             import librosa
-            y_mono = y.mean(axis=1) if y.ndim > 1 else y
-            y_resampled = librosa.resample(y_mono, orig_sr=sr, target_sr=target_sr)
-            y = y_resampled.reshape(-1, 1)
+            if y.ndim == 2:
+                # Resample each channel separately
+                channels = []
+                for ch in range(y.shape[1]):
+                    channels.append(librosa.resample(y[:, ch], orig_sr=sr, target_sr=target_sr))
+                y = np.column_stack(channels)
+            else:
+                y = librosa.resample(y, orig_sr=sr, target_sr=target_sr)
+                y = y.reshape(-1, 1)
             sr = target_sr
-        return y[:, 0] if y.shape[1] == 1 else y, sr
+        # Return stereo if 2+ channels, else mono
+        if y.shape[1] >= 2:
+            return y[:, :2], sr  # Take first 2 channels
+        elif y.shape[1] == 1:
+            return y[:, 0], sr  # Return 1D mono
+        return y, sr
     except Exception:
         import librosa
         y, sr = librosa.load(filepath, sr=target_sr, mono=False)
         if y.ndim == 1:
             y = y.reshape(-1, 1)
-        return y, sr
+        if y.shape[1] >= 2:
+            return y[:, :2], sr
+        return y[:, 0] if y.shape[1] == 1 else y, sr
 
 
 def _to_stereo(audio: np.ndarray) -> np.ndarray:

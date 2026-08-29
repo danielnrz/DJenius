@@ -57,26 +57,38 @@ def analyze_track(
     # Compute file hash
     file_hash = compute_file_hash(filepath)
 
-    # Load audio
+    # Load stereo first to detect channel count, then create mono for analysis
     try:
-        y, sr = librosa.load(filepath, sr=target_sr, mono=True)
-    except Exception as e:
-        logger.error("Failed to load %s: %s", filepath, e)
-        raise ValueError(f"Cannot load audio file: {filepath}") from e
+        y_stereo, sr_stereo = sf.read(filepath, dtype="float32")
+        if y_stereo.ndim == 1:
+            y_stereo = y_stereo.reshape(-1, 1)
+    except Exception:
+        # Fallback to librosa
+        y_stereo, sr_stereo = librosa.load(filepath, sr=target_sr, mono=False)
+        if y_stereo.ndim == 1:
+            y_stereo = y_stereo.reshape(-1, 1)
+
+    # Create mono copy for analysis (librosa features work on mono)
+    if y_stereo.ndim == 2 and y_stereo.shape[1] >= 2:
+        y = y_stereo.mean(axis=1).astype(np.float32)
+    else:
+        y = y_stereo.flatten().astype(np.float32)
+
+    sr = sr_stereo
+
+    # Resample if needed
+    if sr != target_sr:
+        import librosa
+        y = librosa.resample(y, orig_sr=sr, target_sr=target_sr)
+        sr = target_sr
 
     if len(y) == 0:
         raise ValueError(f"Empty audio file: {filepath}")
 
     duration = len(y) / sr
 
-    # Load stereo for loudness measurement
-    try:
-        y_stereo, sr_stereo = sf.read(filepath, dtype="float32")
-        if y_stereo.ndim == 1:
-            y_stereo = y_stereo.reshape(-1, 1)
-    except Exception:
-        y_stereo = y.reshape(-1, 1)
-        sr_stereo = sr
+    # Detect actual channel count from stereo audio
+    actual_channels = y_stereo.shape[1] if y_stereo.ndim == 2 else 1
 
     # Start timing
     t0 = time.time()
@@ -276,7 +288,7 @@ def analyze_track(
             title=Path(filepath).stem,
             duration_sec=duration,
             sample_rate=sr,
-            channels=1,
+            channels=actual_channels,
             format=Path(filepath).suffix.strip("."),
             file_hash=file_hash,
         ),

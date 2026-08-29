@@ -34,11 +34,11 @@ def apply_transition(
     """Apply a transition between source and target audio.
 
     All operations happen on the overlap region. Outside the overlap,
-    source and target play normally.
+    source and target play normally. Stereo is preserved end-to-end.
 
     Args:
-        source_audio: Full source track audio (1D or 2D).
-        target_audio: Full target track audio (1D or 2D).
+        source_audio: Full source track audio (1D or 2D [samples, channels]).
+        target_audio: Full target track audio (1D or 2D [samples, channels]).
         sr: Sample rate.
         transition_type: String matching TransitionType values.
         overlap_samples: Number of samples where both tracks overlap.
@@ -49,20 +49,46 @@ def apply_transition(
 
     Returns:
         Audio of the overlap region (source tail + target head mixed).
+        Preserves channel count from input.
     """
-    # Ensure mono or extract first channel for processing
-    if source_audio.ndim == 2:
-        source_mono = source_audio[:, 0]
-        source_stereo = True
-    else:
-        source_mono = source_audio
-        source_stereo = False
+    is_stereo = source_audio.ndim == 2 and source_audio.shape[1] >= 2
+    n_channels = source_audio.shape[1] if is_stereo else 1
 
-    if target_audio.ndim == 2:
-        target_mono = target_audio[:, 0]
+    # Process per-channel for stereo, keeping both channels intact
+    if is_stereo:
+        channel_results = []
+        for ch in range(n_channels):
+            ch_result = _apply_transition_mono(
+                source_audio[:, ch],
+                target_audio[:, ch] if target_audio.ndim == 2 else target_audio,
+                sr, transition_type, overlap_samples,
+                source_exit_sample, target_entry_sample,
+                target_bpm, source_bpm,
+            )
+            channel_results.append(ch_result)
+        return np.column_stack(channel_results).astype(np.float32)
     else:
-        target_mono = target_audio
+        return _apply_transition_mono(
+            source_audio.flatten(),
+            target_audio.flatten(),
+            sr, transition_type, overlap_samples,
+            source_exit_sample, target_entry_sample,
+            target_bpm, source_bpm,
+        ).astype(np.float32)
 
+
+def _apply_transition_mono(
+    source_mono: np.ndarray,
+    target_mono: np.ndarray,
+    sr: int,
+    transition_type: str,
+    overlap_samples: int,
+    source_exit_sample: int,
+    target_entry_sample: int,
+    target_bpm: float = 0.0,
+    source_bpm: float = 0.0,
+) -> np.ndarray:
+    """Apply a transition on a single channel."""
     # Extract the relevant regions
     source_end = min(source_exit_sample + overlap_samples, len(source_mono))
     source_region = source_mono[source_exit_sample:source_end]
