@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass, field
 from typing import Optional
 
 import numpy as np
@@ -11,6 +12,116 @@ from djenius.core.models import TrackProfile, CompatibilityScore, TransitionType
 from djenius.utils.camelot import score_key_compatibility, parse_camelot
 
 logger = logging.getLogger(__name__)
+
+
+# ---- Preference Bonuses ----
+
+@dataclass
+class PreferenceBonuses:
+    """Bonuses derived from user preferences to bias compatibility scores.
+
+    All bonuses are bounded: they modify the final score but cannot
+    override safety-critical signals like key clashes or extreme BPM
+    differences.
+    """
+    # Track-level bonuses
+    liked_track_bonus: float = 0.0      # Bonus if target is a liked track
+    disliked_track_penalty: float = 0.0 # Penalty if target is disliked
+
+    # BPM preference bonus
+    bpm_in_range_bonus: float = 0.0     # Bonus if target BPM is in preferred range
+
+    # Energy preference bonus
+    energy_in_range_bonus: float = 0.0  # Bonus if target energy is in preferred range
+
+    # Transition type preference
+    preferred_trans_bonus: float = 0.0  # Bonus if transition type is preferred
+    disliked_trans_penalty: float = 0.0 # Penalty if transition type is disliked
+
+    # Combined bonus (sum of all, clamped)
+    total_bonus: float = 0.0
+
+    def compute_total(self) -> float:
+        """Compute the total bonus, clamped to [-0.15, +0.15].
+
+        This ensures preferences influence but never overpower
+        the core compatibility signals.
+        """
+        raw = (
+            self.liked_track_bonus
+            + self.bpm_in_range_bonus
+            + self.energy_in_range_bonus
+            + self.preferred_trans_bonus
+            - self.disliked_track_penalty
+            - self.disliked_trans_penalty
+        )
+        self.total_bonus = max(-0.15, min(0.15, raw))
+        return self.total_bonus
+
+
+def compute_preference_bonuses(
+    target: TrackProfile,
+    liked_tracks: Optional[set[str]] = None,
+    disliked_tracks: Optional[set[str]] = None,
+    preferred_bpm_range: Optional[tuple[float, float]] = None,
+    preferred_energy_range: Optional[tuple[float, float]] = None,
+    preferred_transition_types: Optional[dict[str, float]] = None,
+    disliked_transition_types: Optional[dict[str, float]] = None,
+    transition_type: Optional[TransitionType] = None,
+) -> PreferenceBonuses:
+    """Compute preference bonuses for scoring a target track.
+
+    Args:
+        target: The candidate next track.
+        liked_tracks: Set of track IDs the user likes.
+        disliked_tracks: Set of track IDs the user dislikes.
+        preferred_bpm_range: (min, max) BPM the user prefers.
+        preferred_energy_range: (min, max) energy the user prefers.
+        preferred_transition_types: Transition types the user rates positively.
+        disliked_transition_types: Transition types the user rates negatively.
+        transition_type: The transition type being considered.
+
+    Returns:
+        A PreferenceBonuses with individual and total bonuses.
+    """
+    bonuses = PreferenceBonuses()
+
+    liked = liked_tracks or set()
+    disliked = disliked_tracks or set()
+
+    # Track-level bonuses
+    if target.id in liked:
+        bonuses.liked_track_bonus = 0.08
+    if target.id in disliked:
+        bonuses.disliked_track_penalty = 0.12
+
+    # BPM preference
+    if preferred_bpm_range and target.bpm > 0:
+        bpm_min, bpm_max = preferred_bpm_range
+        if bpm_min <= target.bpm <= bpm_max:
+            bonuses.bpm_in_range_bonus = 0.05
+        else:
+            # Small penalty for being outside preferred range
+            bonuses.bpm_in_range_bonus = -0.03
+
+    # Energy preference
+    if preferred_energy_range:
+        e_min, e_max = preferred_energy_range
+        if e_min <= target.mean_energy <= e_max:
+            bonuses.energy_in_range_bonus = 0.05
+        else:
+            bonuses.energy_in_range_bonus = -0.02
+
+    # Transition type preference
+    if transition_type:
+        tt_name = transition_type.value
+        if preferred_transition_types and tt_name in preferred_transition_types:
+            bonuses.preferred_trans_bonus = 0.04
+        if disliked_transition_types and tt_name in disliked_transition_types:
+            bonuses.disliked_trans_penalty = 0.06
+
+    bonuses.compute_total()
+    return bonuses
 
 
 def score_compatibility(
@@ -134,6 +245,22 @@ def score_transition_quality(
             type_modifier *= 0.5
 
     return round(min(1.0, max(0.0, base * type_modifier)), 3)
+
+
+def score_with_preferences(
+    base_score: float,
+    bonuses: PreferenceBonuses,
+) -> float:
+    """Apply preference bonuses to a base score.
+
+    Returns a score in [0.0, 1.0]. Safety-critical signals (key clashes,
+    extreme BPM) cannot be overridden by preferences.
+
+    The bonus is clamped to [-0.15, +0.15] to prevent preferences
+    from overpowering the core compatibility calculation.
+    """
+    bonus = bonuses.compute_total()
+    return max(0.0, min(1.0, base_score + bonus))
 
 
 def recommend_transition_type(

@@ -220,22 +220,68 @@ def plan(
     ),
     max_tracks: Optional[int] = typer.Option(None, "--max-tracks", help="Maximum tracks"),
     seed: Optional[int] = typer.Option(None, "--seed", help="Random seed"),
+    request: Optional[str] = typer.Option(
+        None, "--request", "-r",
+        help="Natural language description of desired set (e.g. 'chill mix 30 min')"
+    ),
+    preset: Optional[str] = typer.Option(
+        None, "--preset", "-p",
+        help="Preset name: chill, smooth, balanced, energetic, peak, late_night, vocal_safe, experimental"
+    ),
+    use_llm: bool = typer.Option(
+        False, "--use-llm/--no-llm",
+        help="Use Ollama LLM for advanced intent parsing"
+    ),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Verbose output"),
 ):
-    """Plan a DJ set from the analyzed library."""
+    """Plan a DJ set from the analyzed library.
+
+    Supports natural language requests via --request, e.g.:
+        djenius plan library --request "smooth 30 min set with no vocal clash"
+        djenius plan library --preset chill --duration 2400
+    """
     _setup_logging(verbose)
 
     from djenius.core.models import EnergyProfile
     from djenius.core.planner import plan_set
+    from djenius.core.intent import make_intent
+    from djenius.core.nl_parser import parse_request
     from djenius.audio.analyzer import analyze_track
     from djenius.audio.scanner import scan_directory
 
     lib_path = Path(library_path).expanduser().resolve()
     cache = _get_cache(cache_path)
 
-    # Scan and analyze
-    console.print(Panel("[bold]Planning DJ Set[/]", border_style="blue"))
+    # Build intent from request/preset or legacy flags
+    intent = None
+    effective_energy = energy
+    effective_duration = duration
 
+    if request:
+        intent = parse_request(request, use_llm=use_llm)
+        console.print(Panel(
+            f"[bold]Planning DJ Set[/]\n"
+            f"Request: {request}\n"
+            f"Parsed intent: preset={intent.preset}, energy={intent.energy_profile.value if intent.energy_profile else 'auto'}, "
+            f"transition={intent.transition_style}, duration={intent.target_duration_sec:.0f}s",
+            border_style="blue",
+        ))
+        # Use intent-derived values
+        if intent.target_duration_sec:
+            effective_duration = intent.target_duration_sec
+    elif preset:
+        intent = make_intent(preset)
+        console.print(Panel(
+            f"[bold]Planning DJ Set[/]\n"
+            f"Preset: {preset}",
+            border_style="blue",
+        ))
+        if intent.target_duration_sec:
+            effective_duration = intent.target_duration_sec
+    else:
+        console.print(Panel("[bold]Planning DJ Set[/]", border_style="blue"))
+
+    # Scan and analyze
     tracks = scan_directory(str(lib_path))
     console.print(f"Found {len(tracks)} tracks")
 
@@ -263,23 +309,36 @@ def plan(
         console.print("[red]Error:[/] Need at least 2 tracks to plan a set")
         raise typer.Exit(1)
 
-    # Parse energy profile
+    # Parse energy profile (legacy mode)
+    ep = None
+    if not intent or not intent.energy_profile:
+        try:
+            ep = EnergyProfile(effective_energy)
+        except ValueError:
+            console.print(f"[red]Error:[/] Invalid energy profile: {effective_energy}")
+            console.print(f"Valid options: {[e.value for e in EnergyProfile]}")
+            raise typer.Exit(1)
+
+    # Get preference bonuses if available
+    preference_bonuses = None
     try:
-        ep = EnergyProfile(energy)
-    except ValueError:
-        console.print(f"[red]Error:[/] Invalid energy profile: {energy}")
-        console.print(f"Valid options: {[e.value for e in EnergyProfile]}")
-        raise typer.Exit(1)
+        from djenius.db.preferences import PreferenceProfile
+        prefs = PreferenceProfile.default()
+        preference_bonuses = prefs.get_scoring_bonuses()
+    except Exception:
+        pass
 
     # Plan
-    console.print(f"\nPlanning with target duration {_format_duration(duration)}, energy={energy}...")
+    console.print(f"\nPlanning with target duration {_format_duration(effective_duration)}...")
 
     set_plan = plan_set(
         tracks=profiles,
-        target_duration_sec=duration,
+        target_duration_sec=effective_duration,
         energy_profile=ep,
         max_tracks=max_tracks,
         seed=seed,
+        intent=intent,
+        preference_bonuses=preference_bonuses,
     )
 
     # Display results
@@ -315,6 +374,12 @@ def plan(
     console.print(f"  Target duration: {_format_duration(set_plan.target_duration_sec)}")
     console.print(f"  Avg transition confidence: {set_plan.avg_transition_confidence:.0%}")
     console.print(f"  Overall score: {set_plan.score:.2f}")
+
+    # Show explanations if available
+    if set_plan.human_readable_reasons:
+        console.print(f"\n[bold]Plan Explanations:[/]")
+        for reason in set_plan.human_readable_reasons:
+            console.print(f"  - {reason}")
 
     # Save plan
     output_path = Path(output)
@@ -568,6 +633,29 @@ def doctor():
     except Exception as e:
         checks.append(("Stem separation (optional)", False, str(e)))
 
+    # V5: Preference database
+    try:
+        from djenius.db.preferences import PreferenceProfile
+        prefs = PreferenceProfile.default()
+        checks.append(("Preference database", True, f"ok ({prefs.count()} entries)"))
+    except Exception as e:
+        checks.append(("Preference database", False, str(e)))
+
+    # V5: Intent parsing
+    try:
+        from djenius.core.nl_parser import parse_deterministic
+        test_intent = parse_deterministic("smooth 30 min set")
+        checks.append(("Intent parser", True, f"ok (test: preset={test_intent.preset})"))
+    except Exception as e:
+        checks.append(("Intent parser", False, str(e)))
+
+    # V5: httpx (optional, for LLM parser)
+    try:
+        import httpx
+        checks.append(("httpx (for LLM parser)", True, getattr(httpx, "__version__", "ok")))
+    except ImportError:
+        checks.append(("httpx (for LLM parser)", False, "not installed (optional: pip install httpx)"))
+
     # Display
     table = Table(title="DJenius Doctor", box=box.ROUNDED)
     table.add_column("Check", style="cyan")
@@ -613,16 +701,34 @@ def auto(
     ),
     max_tracks: Optional[int] = typer.Option(None, "--max-tracks", help="Maximum tracks"),
     seed: Optional[int] = typer.Option(None, "--seed", help="Random seed"),
+    request: Optional[str] = typer.Option(
+        None, "--request", "-r",
+        help="Natural language description of desired set (e.g. 'chill mix 30 min')"
+    ),
+    preset: Optional[str] = typer.Option(
+        None, "--preset", "-p",
+        help="Preset name: chill, smooth, balanced, energetic, peak, late_night, vocal_safe, experimental"
+    ),
+    use_llm: bool = typer.Option(
+        False, "--use-llm/--no-llm",
+        help="Use Ollama LLM for advanced intent parsing"
+    ),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Verbose output"),
 ):
     """Full pipeline: scan -> analyze -> plan -> render -> master -> save.
 
     One command to create a complete DJ mix from your music library.
+
+    Supports natural language requests via --request, e.g.:
+        djenius auto library --request "energetic peak time 45 min" -o output/peak.wav
+        djenius auto library --preset smooth --duration 2400
     """
     _setup_logging(verbose)
 
     from djenius.core.models import EnergyProfile
     from djenius.core.planner import plan_set
+    from djenius.core.intent import make_intent
+    from djenius.core.nl_parser import parse_request
     from djenius.audio.analyzer import analyze_track
     from djenius.audio.scanner import scan_directory
     from djenius.audio.renderer import render_mix
@@ -635,6 +741,23 @@ def auto(
         raise typer.Exit(1)
 
     cache = _get_cache(cache_path)
+
+    # Build intent from request/preset or legacy flags
+    intent = None
+    effective_energy = energy
+    effective_duration = duration
+
+    if request:
+        intent = parse_request(request, use_llm=use_llm)
+        console.print(f"\n[bold blue]Parsed intent:[/] preset={intent.preset}, "
+                      f"energy={intent.energy_profile.value if intent.energy_profile else 'auto'}, "
+                      f"transition={intent.transition_style}, "
+                      f"duration={intent.target_duration_sec:.0f}s")
+        if intent.target_duration_sec:
+            effective_duration = intent.target_duration_sec
+    elif preset:
+        intent = make_intent(preset)
+        console.print(f"\n[bold blue]Using preset:[/] {preset}")
 
     # Step 1: Scan
     console.print("\n[bold blue]1. Scanning library...[/]")
@@ -672,23 +795,42 @@ def auto(
 
     # Step 3: Plan
     console.print("\n[bold blue]3. Planning set...[/]")
+    ep = None
+    if not intent or not intent.energy_profile:
+        try:
+            ep = EnergyProfile(effective_energy)
+        except ValueError:
+            console.print(f"[red]Error:[/] Invalid energy profile: {effective_energy}")
+            raise typer.Exit(1)
+
+    # Get preference bonuses if available
+    preference_bonuses = None
     try:
-        ep = EnergyProfile(energy)
-    except ValueError:
-        console.print(f"[red]Error:[/] Invalid energy profile: {energy}")
-        raise typer.Exit(1)
+        from djenius.db.preferences import PreferenceProfile
+        prefs = PreferenceProfile.default()
+        preference_bonuses = prefs.get_scoring_bonuses()
+    except Exception:
+        pass
 
     set_plan = plan_set(
         tracks=profiles,
-        target_duration_sec=duration,
+        target_duration_sec=effective_duration,
         energy_profile=ep,
         max_tracks=max_tracks,
         seed=seed,
+        intent=intent,
+        preference_bonuses=preference_bonuses,
     )
 
     console.print(f"   Planned {len(set_plan.tracks)} tracks")
     console.print(f"   Duration: {_format_duration(set_plan.total_duration_sec)}")
     console.print(f"   Score: {set_plan.score:.2f}")
+
+    # Show plan explanations
+    if set_plan.human_readable_reasons:
+        console.print("\n[bold]Plan Explanations:[/]")
+        for reason in set_plan.human_readable_reasons:
+            console.print(f"  - {reason}")
 
     # Step 4: Render
     console.print(f"\n[bold blue]4. Rendering mix...[/]")
@@ -859,15 +1001,233 @@ def report(
         for t in report["transitions"]:
             vocal_info = ""
             if t["vocal"]["source_has_vocals"] and t["vocal"]["target_has_vocals"]:
-                vocal_info = " [yellow]🎤🎤[/]"
+                vocal_info = " [yellow](dual vocal)[/]"
             elif t["vocal"]["source_has_vocals"] or t["vocal"]["target_has_vocals"]:
-                vocal_info = " [yellow]🎤[/]"
+                vocal_info = " [yellow](vocal)[/]"
 
             console.print(
-                f"  {t['source_title']} → {t['target_title']}: "
+                f"  {t['source_title']} -> {t['target_title']}: "
                 f"{t['transition_type']} (conf={t['confidence']:.2f})"
                 f"{vocal_info}"
             )
+
+
+@app.command()
+def feedback(
+    plan_path: str = typer.Argument(..., help="Path to set plan JSON"),
+    rating: int = typer.Argument(..., help="Overall rating 1-5"),
+    track_ratings: Optional[str] = typer.Option(
+        None, "--tracks", "-t",
+        help='Track-specific ratings: "Track Name=4,Other Track=2"'
+    ),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Verbose output"),
+):
+    """Log feedback for a rendered mix.
+
+    Example:
+        djenius feedback output/mix.plan.json 4 --tracks "My Song=5,Another=3"
+    """
+    _setup_logging(verbose)
+
+    plan_file = Path(plan_path)
+    if not plan_file.exists():
+        console.print(f"[red]Error:[/] Plan file not found: {plan_file}")
+        raise typer.Exit(1)
+
+    from djenius.db.preferences import PreferenceProfile
+    from djenius.core.models import SetPlan
+
+    # Load plan to extract metadata
+    with open(plan_file) as f:
+        plan_data = json.load(f)
+    plan = SetPlan.from_dict(plan_data)
+
+    # Validate rating
+    rating = max(1, min(5, rating))
+
+    prefs = PreferenceProfile.default()
+
+    # Parse track ratings
+    track_ratings_dict = {}
+    if track_ratings:
+        for pair in track_ratings.split(","):
+            if "=" in pair:
+                name, score = pair.rsplit("=", 1)
+                try:
+                    track_ratings_dict[name.strip()] = int(score)
+                except ValueError:
+                    pass
+
+    # Log feedback
+    prefs.log_mix_feedback(
+        mix_id=plan_data.get("set_id", "unknown"),
+        rating=rating,
+        track_ratings=track_ratings_dict if track_ratings_dict else None,
+    )
+
+    console.print(f"[green]Feedback logged:[/] rating={rating}")
+    if track_ratings_dict:
+        for name, score in track_ratings_dict.items():
+            console.print(f"  {name}: {score}")
+
+    # Show current preference summary
+    summary = prefs.summary()
+    if summary.get("transition_ratings"):
+        console.print(f"\n[bold]Your preferences so far:[/]")
+        for tt, counts in summary["transition_ratings"].items():
+            total = counts["liked"] + counts["neutral"] + counts["disliked"]
+            if total > 0:
+                like_pct = counts["liked"] / total * 100
+                console.print(f"  {tt}: {like_pct:.0f}% liked ({total} ratings)")
+
+    if summary.get("track_feedback"):
+        console.print(f"\n[bold]Track feedback:[/]")
+        for track, rating in summary["track_feedback"].items():
+            console.print(f"  {track}: {rating}")
+
+
+@app.command()
+def like(
+    track_name: str = typer.Argument(..., help="Name or ID of the track to like"),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Verbose output"),
+):
+    """Mark a track as liked (will be preferred in future sets)."""
+    _setup_logging(verbose)
+
+    from djenius.db.preferences import PreferenceProfile
+
+    prefs = PreferenceProfile.default()
+    prefs.like_track(track_name)
+    console.print(f"[green]Liked:[/] {track_name}")
+
+
+@app.command()
+def dislike(
+    track_name: str = typer.Argument(..., help="Name or ID of the track to dislike"),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Verbose output"),
+):
+    """Mark a track as disliked (will be avoided in future sets)."""
+    _setup_logging(verbose)
+
+    from djenius.db.preferences import PreferenceProfile
+
+    prefs = PreferenceProfile.default()
+    prefs.dislike_track(track_name)
+    console.print(f"[yellow]Disliked:[/] {track_name}")
+
+
+@app.command()
+def explain(
+    plan_path: str = typer.Argument(..., help="Path to set plan JSON"),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Verbose output"),
+):
+    """Show human-readable explanations for a set plan."""
+    _setup_logging(verbose)
+
+    plan_file = Path(plan_path)
+    if not plan_file.exists():
+        console.print(f"[red]Error:[/] Plan file not found: {plan_file}")
+        raise typer.Exit(1)
+
+    from djenius.core.models import SetPlan
+    from djenius.core.explanations import explain_set_plan
+
+    with open(plan_file) as f:
+        plan_data = json.load(f)
+
+    plan = SetPlan.from_dict(plan_data)
+    reasons = explain_set_plan(plan)
+
+    if reasons:
+        console.print(Panel("[bold]Plan Explanations[/]", border_style="blue"))
+        for reason in reasons:
+            console.print(f"  - {reason}")
+    else:
+        console.print("[dim]No explanations available for this plan.[/]")
+
+    # Show transition details
+    if plan.transitions:
+        console.print(f"\n[bold]Transition Details:[/]")
+        for i, t in enumerate(plan.transitions):
+            source = plan.tracks[i].title if i < len(plan.tracks) else "?"
+            target = plan.tracks[i+1].title if i+1 < len(plan.tracks) else "?"
+            console.print(
+                f"  {source} -> {target}: {t.transition_type.value} "
+                f"(conf={t.confidence:.2f}, overlap={t.overlap_duration:.1f}s)"
+            )
+
+
+@app.command(name="preferences")
+def show_preferences(
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Verbose output"),
+):
+    """Show your current preference profile."""
+    _setup_logging(verbose)
+
+    from djenius.db.preferences import PreferenceProfile
+
+    prefs = PreferenceProfile.default()
+    summary = prefs.summary()
+
+    if not any([
+        summary.get("transition_ratings"),
+        summary.get("track_feedback"),
+        summary.get("bpm_preference"),
+        summary.get("energy_preference"),
+    ]):
+        console.print("[dim]No preferences recorded yet. Use 'feedback', 'like', or 'dislike' to build your profile.[/]")
+        return
+
+    console.print(Panel("[bold]Your DJ Preferences[/]", border_style="blue"))
+
+    # Transition preferences
+    if summary.get("transition_ratings"):
+        console.print("\n[bold]Transition Type Preferences:[/]")
+        table = Table(box=box.SIMPLE)
+        table.add_column("Type", style="cyan")
+        table.add_column("Liked", justify="right")
+        table.add_column("Neutral", justify="right")
+        table.add_column("Disliked", justify="right")
+        table.add_column("Total", justify="right")
+
+        for tt, counts in summary["transition_ratings"].items():
+            total = counts["liked"] + counts["neutral"] + counts["disliked"]
+            if total > 0:
+                table.add_row(
+                    tt,
+                    str(counts["liked"]),
+                    str(counts["neutral"]),
+                    str(counts["disliked"]),
+                    str(total),
+                )
+
+        console.print(table)
+
+    # Track preferences
+    if summary.get("track_feedback"):
+        console.print("\n[bold]Track Feedback:[/]")
+        for track, rating in summary["track_feedback"].items():
+            emoji = "+" if rating == "liked" else "-"
+            color = "green" if rating == "liked" else "yellow"
+            console.print(f"  [{color}]{emoji} {track}[/]")
+
+    # BPM preference
+    if summary.get("bpm_preference"):
+        bpm_pref = summary["bpm_preference"]
+        console.print(f"\n[bold]BPM Preference:[/] {bpm_pref['min']:.0f} - {bpm_pref['max']:.0f} BPM")
+
+    # Energy preference
+    if summary.get("energy_preference"):
+        energy_pref = summary["energy_preference"]
+        console.print(f"[bold]Energy Preference:[/] {energy_pref['min']:.2f} - {energy_pref['max']:.2f}")
+
+    # Scoring bonuses (for debugging)
+    bonuses = prefs.get_scoring_bonuses()
+    console.print(f"\n[bold]Scoring Bonuses:[/]")
+    console.print(f"  Liked tracks bonus: +0.08")
+    console.print(f"  Disliked tracks penalty: -0.12")
+    console.print(f"  BPM in range bonus: +0.05")
+    console.print(f"  Energy in range bonus: +0.05")
 
 
 if __name__ == "__main__":

@@ -1,0 +1,446 @@
+"""Natural language parser for converting user text into SetIntent.
+
+Two parsing strategies:
+1. Deterministic keyword parser - regex-based, no external dependencies
+2. Ollama LLM parser - uses a local LLM for more sophisticated parsing
+
+The deterministic parser runs first. If the user wants more sophisticated
+parsing and Ollama is available, the LLM parser can be used as a fallback.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import re
+from typing import Optional
+
+from djenius.core.intent import (
+    SetIntent, TransitionStyle, VocalPreference,
+    EnergyPreference, make_intent, PRESETS,
+)
+from djenius.core.models import EnergyProfile
+
+logger = logging.getLogger(__name__)
+
+
+# ---- Deterministic Keyword Parser ----
+
+# Keywords that map to energy profiles
+_ENERGY_KEYWORDS: dict[str, EnergyProfile] = {
+    "chill": EnergyProfile.STEADY,
+    "steady": EnergyProfile.STEADY,
+    "relaxed": EnergyProfile.STEADY,
+    "calm": EnergyProfile.STEADY,
+    "build": EnergyProfile.SLOW_BUILD,
+    "building": EnergyProfile.SLOW_BUILD,
+    "rising": EnergyProfile.SLOW_BUILD,
+    "crescendo": EnergyProfile.SLOW_BUILD,
+    "warm up": EnergyProfile.WARMUP_TO_PEAK,
+    "warmup": EnergyProfile.WARMUP_TO_PEAK,
+    "peak": EnergyProfile.WARMUP_TO_PEAK,
+    "climax": EnergyProfile.WARMUP_TO_PEAK,
+    "wave": EnergyProfile.WAVE,
+    "ups and downs": EnergyProfile.WAVE,
+    "rollercoaster": EnergyProfile.WAVE,
+    "drop": EnergyProfile.COOLDOWN,
+    "cooldown": EnergyProfile.COOLDOWN,
+    "wind down": EnergyProfile.COOLDOWN,
+    "wind-down": EnergyProfile.COOLDOWN,
+    "ending": EnergyProfile.COOLDOWN,
+}
+
+# Keywords that map to transition styles
+_TRANSITION_KEYWORDS: dict[str, str] = {
+    "smooth": TransitionStyle.SMOOTH,
+    "blend": TransitionStyle.SMOOTH,
+    "seamless": TransitionStyle.SMOOTH,
+    "flow": TransitionStyle.SMOOTH,
+    "energetic": TransitionStyle.ENERGETIC,
+    "high energy": TransitionStyle.ENERGETIC,
+    "intense": TransitionStyle.ENERGETIC,
+    "bangers": TransitionStyle.ENERGETIC,
+    "minimal": TransitionStyle.MINIMAL,
+    "simple": TransitionStyle.MINIMAL,
+    "clean": TransitionStyle.MINIMAL,
+    "varied": TransitionStyle.VARIED,
+    "diverse": TransitionStyle.VARIED,
+    "mixed": TransitionStyle.VARIED,
+    "experimental": TransitionStyle.VARIED,
+    "safe": TransitionStyle.SAFE,
+    "reliable": TransitionStyle.SAFE,
+    "no risks": TransitionStyle.SAFE,
+}
+
+# Keywords for vocal preference
+_VOCAL_KEYWORDS: dict[str, str] = {
+    "vocal safe": VocalPreference.VOCAL_SAFE,
+    "vocal-safe": VocalPreference.VOCAL_SAFE,
+    "no vocal clash": VocalPreference.VOCAL_SAFE,
+    "instrumental": VocalPreference.INSTRUMENTAL_ONLY,
+    "no vocals": VocalPreference.INSTRUMENTAL_ONLY,
+    "vocals": VocalPreference.VOCALS_PREFERRED,
+    "sing": VocalPreference.VOCALS_PREFERRED,
+    "singing": VocalPreference.VOCALS_PREFERRED,
+    "stem": VocalPreference.STEM_FRIENDLY,
+    "stems": VocalPreference.STEM_FRIENDLY,
+    "separation": VocalPreference.STEM_FRIENDLY,
+}
+
+# Keywords for transition length
+_LENGTH_KEYWORDS: dict[str, str] = {
+    "short": "short",
+    "quick": "short",
+    "fast": "short",
+    "long": "long",
+    "extended": "long",
+    "extended transitions": "long",
+    "medium": "medium",
+    "standard": "medium",
+    "normal": "medium",
+}
+
+# Keywords for energy levels
+_ENERGY_LEVEL_KEYWORDS: dict[str, str] = {
+    "low energy": EnergyPreference.LOW,
+    "low-key": EnergyPreference.LOW,
+    "mellow": EnergyPreference.LOW,
+    "chill vibes": EnergyPreference.LOW,
+    "medium energy": EnergyPreference.MEDIUM,
+    "moderate": EnergyPreference.MEDIUM,
+    "high energy": EnergyPreference.HIGH,
+    "high-energy": EnergyPreference.HIGH,
+    "pumping": EnergyPreference.HIGH,
+    "intense": EnergyPreference.HIGH,
+}
+
+# Preset keywords (map to preset names)
+_PRESET_KEYWORDS: dict[str, str] = {
+    "chill mix": "chill",
+    "chill set": "chill",
+    "chill session": "chill",
+    "smooth mix": "smooth",
+    "smooth set": "smooth",
+    "balanced mix": "balanced",
+    "balanced set": "balanced",
+    "energetic mix": "energetic",
+    "energetic set": "energetic",
+    "peak time": "peak",
+    "peak set": "peak",
+    "late night": "late_night",
+    "late-night": "late_night",
+    "vocal safe": "vocal_safe",
+    "vocal-safe": "vocal_safe",
+    "no vocal clash": "vocal_safe",
+    "experimental mix": "experimental",
+    "experimental set": "experimental",
+}
+
+# BPM range patterns
+_BPM_PATTERN = re.compile(
+    r'(\d{2,3})\s*'
+    r'(?:(?:to|-|until)\s*(\d{2,3})\s*(?:bpm|beats?)?'
+    r'|(?:bpm|beats?))',
+    re.IGNORECASE,
+)
+
+# Duration patterns
+_DURATION_PATTERN = re.compile(
+    r'(\d+)\s*(?:min(?:ute)?s?|hours?|h)',
+    re.IGNORECASE,
+)
+
+
+def parse_deterministic(text: str) -> SetIntent:
+    """Parse natural language text into a SetIntent using keyword matching.
+
+    This is the deterministic parser: no external dependencies, fast,
+    and predictable. It extracts energy profile, transition style,
+    vocal preference, BPM range, duration, and preset from keywords.
+
+    Args:
+        text: Natural language description of the desired set.
+
+    Returns:
+        A SetIntent with fields populated from matched keywords.
+    """
+    text_lower = text.lower().strip()
+    intent = SetIntent(raw_text=text, source="nl_parser")
+
+    # 0. Check for exact preset name match first
+    from djenius.core.intent import PRESETS as _PRESETS
+    if text_lower in _PRESETS:
+        preset_intent = make_intent(text_lower)
+        for field_name in [
+            "energy_profile", "transition_style", "vocal_preference",
+            "target_duration_sec", "bpm_min", "bpm_max",
+            "energy_min", "energy_max", "transition_length",
+        ]:
+            val = getattr(preset_intent, field_name)
+            setattr(intent, field_name, val)
+        intent.preset = text_lower
+        return intent
+
+    # 1. Check for preset keywords (highest priority)
+    for keyword, preset_name in _PRESET_KEYWORDS.items():
+        if keyword in text_lower:
+            preset_intent = make_intent(preset_name)
+            # Copy preset values into intent
+            for field_name in [
+                "energy_profile", "transition_style", "vocal_preference",
+                "target_duration_sec", "bpm_min", "bpm_max",
+                "energy_min", "energy_max", "transition_length",
+            ]:
+                val = getattr(preset_intent, field_name)
+                setattr(intent, field_name, val)
+            intent.preset = preset_name
+            break  # Use first matched preset
+
+    # 2. Energy profile keywords
+    for keyword, energy_profile in _ENERGY_KEYWORDS.items():
+        if keyword in text_lower:
+            intent.energy_profile = energy_profile
+            break
+
+    # 3. Transition style keywords
+    for keyword, style in _TRANSITION_KEYWORDS.items():
+        if keyword in text_lower:
+            intent.transition_style = style
+            break
+
+    # 4. Vocal preference keywords
+    for keyword, pref in _VOCAL_KEYWORDS.items():
+        if keyword in text_lower:
+            intent.vocal_preference = pref
+            break
+
+    # 5. Transition length keywords
+    for keyword, length in _LENGTH_KEYWORDS.items():
+        if keyword in text_lower:
+            intent.transition_length = length
+            break
+
+    # 6. Energy level keywords (fine-grained)
+    for keyword, energy_pref in _ENERGY_LEVEL_KEYWORDS.items():
+        if keyword in text_lower:
+            e_min, e_max = EnergyPreference.to_range(energy_pref)
+            intent.energy_min = e_min
+            intent.energy_max = e_max
+            break
+
+    # 7. BPM range
+    bpm_match = _BPM_PATTERN.search(text_lower)
+    if bpm_match:
+        bpm_low = int(bpm_match.group(1))
+        bpm_high_str = bpm_match.group(2)
+        if bpm_high_str:
+            bpm_high = int(bpm_high_str)
+        else:
+            # Single BPM value: create a range around it
+            bpm_high = bpm_low + 10
+            bpm_low = max(0, bpm_low - 5)
+        intent.bpm_min = float(bpm_low)
+        intent.bpm_max = float(bpm_high)
+
+    # 8. Duration
+    duration_match = _DURATION_PATTERN.search(text_lower)
+    if duration_match:
+        value = int(duration_match.group(1))
+        matched_text = duration_match.group(0)
+        if "hour" in matched_text or matched_text.rstrip().endswith("h"):
+            intent.target_duration_sec = float(value * 3600)
+        else:
+            intent.target_duration_sec = float(value * 60)
+
+    # 9. Special modifiers
+    if "no" in text_lower and "key clash" in text_lower:
+        intent.avoid_key_clash = True
+    if "harmonic" in text_lower:
+        intent.prefer_harmonic = True
+    if "no" in text_lower and "clash" in text_lower:
+        intent.avoid_key_clash = True
+
+    # 10. Stem preference
+    if "stem" in text_lower:
+        intent.prefer_stems = True
+
+    return intent
+
+
+# ---- Ollama LLM Parser ----
+
+_OLLAMA_URL = "http://localhost:11434"
+_OLLAMA_MODEL = "qwen2.5:3b"  # Small, fast model for intent parsing
+
+_SYSTEM_PROMPT = """You are a DJ intent parser. Convert the user's natural language request into a JSON SetIntent object.
+
+Valid fields:
+- preset: one of "chill", "smooth", "balanced", "energetic", "peak", "late_night", "vocal_safe", "experimental"
+- energy_profile: one of "steady", "slow_build", "warmup_to_peak", "wave", "peak_early", "peak_late", "cooldown"
+- transition_style: one of "smooth", "energetic", "minimal", "varied", "safe"
+- vocal_preference: one of "any", "vocal_safe", "instrumental", "vocals", "stem_friendly"
+- target_duration_sec: number in seconds (e.g. 1800 for 30 minutes)
+- bpm_min: minimum BPM (number)
+- bpm_max: maximum BPM (number)
+- energy_min: minimum energy 0.0-1.0
+- energy_max: maximum energy 0.0-1.0
+- transition_length: one of "short", "medium", "long"
+- prefer_stems: boolean
+
+Return ONLY the JSON object, no explanation. If a field is not mentioned, omit it.
+Example: {"preset": "chill", "energy_profile": "steady", "transition_style": "smooth"}
+"""
+
+
+def parse_with_ollama(
+    text: str,
+    model: str = _OLLAMA_MODEL,
+    url: str = _OLLAMA_URL,
+    timeout: float = 15.0,
+) -> Optional[SetIntent]:
+    """Parse natural language text into a SetIntent using Ollama LLM.
+
+    Calls a local Ollama instance to parse the user's request.
+    Returns None if Ollama is unavailable or parsing fails.
+
+    Args:
+        text: Natural language description.
+        model: Ollama model name.
+        url: Ollama API base URL.
+        timeout: Request timeout in seconds.
+
+    Returns:
+        A SetIntent if parsing succeeds, None otherwise.
+    """
+    try:
+        import httpx
+    except ImportError:
+        logger.warning("httpx not installed. LLM parser unavailable. Install with: pip install httpx")
+        return None
+
+    try:
+        response = httpx.post(
+            f"{url}/api/chat",
+            json={
+                "model": model,
+                "messages": [
+                    {"role": "system", "content": _SYSTEM_PROMPT},
+                    {"role": "user", "content": text},
+                ],
+                "stream": False,
+                "options": {
+                    "temperature": 0.1,
+                    "num_predict": 256,
+                },
+            },
+            timeout=timeout,
+        )
+        response.raise_for_status()
+
+        result = response.json()
+        content = result.get("message", {}).get("content", "")
+
+        # Extract JSON from response (may be wrapped in markdown code block)
+        json_match = re.search(r'\{[^{}]*\}', content, re.DOTALL)
+        if not json_match:
+            logger.warning("LLM response contained no JSON: %s", content[:200])
+            return None
+
+        data = json.loads(json_match.group())
+
+        # Convert duration if specified
+        if "target_duration_sec" in data:
+            data["target_duration_sec"] = float(data["target_duration_sec"])
+
+        # Build SetIntent from parsed data
+        intent = SetIntent(
+            raw_text=text,
+            source="llm",
+            preset=data.get("preset"),
+            target_duration_sec=data.get("target_duration_sec", 1800.0),
+            bpm_min=data.get("bpm_min"),
+            bpm_max=data.get("bpm_max"),
+            energy_min=data.get("energy_min"),
+            energy_max=data.get("energy_max"),
+            transition_length=data.get("transition_length"),
+            prefer_stems=data.get("prefer_stems"),
+        )
+
+        # Set enum fields
+        if "energy_profile" in data:
+            try:
+                intent.energy_profile = EnergyProfile(data["energy_profile"])
+            except ValueError:
+                pass
+
+        if "transition_style" in data:
+            if data["transition_style"] in TransitionStyle.ALL:
+                intent.transition_style = data["transition_style"]
+
+        if "vocal_preference" in data:
+            if data["vocal_preference"] in VocalPreference.ALL:
+                intent.vocal_preference = data["vocal_preference"]
+
+        return intent
+
+    except Exception as e:
+        logger.warning("Ollama LLM parsing failed: %s", e)
+        return None
+
+
+# ---- Unified Parser ----
+
+def parse_request(
+    text: str,
+    use_llm: bool = False,
+    llm_model: str = _OLLAMA_MODEL,
+    llm_url: str = _OLLAMA_URL,
+) -> SetIntent:
+    """Parse a natural language request into a SetIntent.
+
+    Tries the deterministic parser first. If use_llm is True and
+    the deterministic parser yields few results, tries the LLM parser
+    as a fallback.
+
+    Args:
+        text: Natural language description.
+        use_llm: Whether to try LLM parser as fallback.
+        llm_model: Ollama model name.
+        llm_url: Ollama API URL.
+
+    Returns:
+        A SetIntent (always non-None, may have default values).
+    """
+    # Always try deterministic first
+    intent = parse_deterministic(text)
+
+    # If we got a good result, use it
+    if _intent_has_substantial_info(intent):
+        return intent
+
+    # Try LLM as fallback
+    if use_llm:
+        llm_intent = parse_with_ollama(text, model=llm_model, url=llm_url)
+        if llm_intent and _intent_has_substantial_info(llm_intent):
+            # Merge: LLM gives structure, deterministic gives raw_text
+            llm_intent.raw_text = text
+            return llm_intent
+
+    return intent
+
+
+def _intent_has_substantial_info(intent: SetIntent) -> bool:
+    """Check if an intent has enough information to be useful."""
+    indicators = [
+        intent.preset is not None,
+        intent.energy_profile is not None,
+        intent.transition_style is not None,
+        intent.vocal_preference is not None,
+        intent.bpm_min is not None,
+        intent.bpm_max is not None,
+        intent.energy_min is not None,
+        intent.energy_max is not None,
+        intent.transition_length is not None,
+        len(intent.must_include) > 0,
+    ]
+    return sum(indicators) >= 2  # At least 2 meaningful fields

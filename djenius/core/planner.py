@@ -20,7 +20,11 @@ from djenius.core.scorer import (
     score_compatibility,
     recommend_transition_type,
     rank_candidates,
+    PreferenceBonuses,
+    compute_preference_bonuses,
+    score_with_preferences,
 )
+from djenius.core.intent import SetIntent
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +38,8 @@ def plan_set(
     preferred_bpm_range: Optional[tuple[float, float]] = None,
     max_tracks: Optional[int] = None,
     seed: Optional[int] = None,
+    intent: Optional[SetIntent] = None,
+    preference_bonuses: Optional[dict] = None,
 ) -> SetPlan:
     """Plan an optimal set from available tracks.
 
@@ -46,6 +52,8 @@ def plan_set(
         preferred_bpm_range: Optional BPM range to prefer.
         max_tracks: Maximum number of tracks in the set.
         seed: Random seed for reproducibility.
+        intent: Optional SetIntent with user preferences and constraints.
+        preference_bonuses: Optional dict from PreferenceProfile.get_scoring_bonuses().
 
     Returns:
         A SetPlan with ordered tracks and transition plans.
@@ -56,6 +64,32 @@ def plan_set(
     if seed is not None:
         random.seed(seed)
         np.random.seed(seed)
+
+    # Derive parameters from intent if provided
+    effective_energy_profile = energy_profile
+    effective_bpm_range = preferred_bpm_range
+    effective_max_tracks = max_tracks
+
+    if intent:
+        effective_energy_profile = intent.effective_energy_profile()
+        effective_bpm_range = preferred_bpm_range or (
+            (intent.bpm_min, intent.bpm_max) if intent.bpm_min and intent.bpm_max else None
+        )
+        # Apply hard constraints: filter tracks by intent constraints
+        tracks = _filter_tracks_by_intent(tracks, intent)
+        if len(tracks) < 2:
+            logger.warning("Intent filtering left fewer than 2 tracks. Using all tracks.")
+            tracks = tracks  # Fall back to all tracks
+        effective_max_tracks = max_tracks  # Keep original max_tracks
+
+    # Merge preference bonuses
+    prefs = preference_bonuses or {}
+    liked = prefs.get("liked_tracks", set())
+    disliked = prefs.get("disliked_tracks", set())
+    bpm_pref = prefs.get("preferred_bpm_range")
+    energy_pref = prefs.get("preferred_energy_range")
+    preferred_trans = prefs.get("preferred_transition_types", {})
+    disliked_trans = prefs.get("disliked_transition_types", {})
 
     # Pre-compute compatibility matrix
     logger.info("Computing compatibility matrix for %d tracks...", len(tracks))
@@ -68,8 +102,14 @@ def plan_set(
         compat_matrix=compat_matrix,
         target_duration=target_duration_sec,
         beam_width=beam_width,
-        max_tracks=max_tracks or len(tracks),
-        energy_profile=energy_profile,
+        max_tracks=effective_max_tracks or len(tracks),
+        energy_profile=effective_energy_profile,
+        liked_tracks=liked,
+        disliked_tracks=disliked,
+        preferred_bpm_range=bpm_pref or effective_bpm_range,
+        preferred_energy_range=energy_pref,
+        preferred_transition_types=preferred_trans,
+        disliked_transition_types=disliked_trans,
     )
 
     # Build the set plan with transition details
@@ -78,9 +118,12 @@ def plan_set(
         best_path=best_path,
         compat_matrix=compat_matrix,
         target_duration=target_duration_sec,
-        energy_profile=energy_profile,
+        energy_profile=effective_energy_profile,
         max_transition_bars=max_transition_length_bars,
     )
+
+    # Attach intent to plan
+    set_plan.intent_used = intent
 
     return set_plan
 
@@ -98,6 +141,60 @@ def _build_compatibility_matrix(
     return matrix
 
 
+def _filter_tracks_by_intent(
+    tracks: list[TrackProfile],
+    intent: SetIntent,
+) -> list[TrackProfile]:
+    """Apply hard constraints from SetIntent to filter tracks.
+
+    This removes tracks that violate non-negotiable constraints:
+    - BPM range (if both min and max specified)
+    - Energy range (if both min and max specified)
+    - must_exclude list
+    - must_include tracks are always kept
+
+    Returns the filtered list. If filtering removes all tracks,
+    returns the original list as a safety fallback.
+    """
+    must_include_ids = set(intent.must_include)
+    must_exclude_ids = set(intent.must_exclude)
+
+    filtered = []
+    for track in tracks:
+        # Always keep must_include tracks
+        if track.id in must_include_ids or track.metadata.filepath in must_include_ids:
+            filtered.append(track)
+            continue
+
+        # Remove must_exclude tracks
+        if track.id in must_exclude_ids or track.metadata.filepath in must_exclude_ids:
+            continue
+
+        # BPM constraint
+        if intent.bpm_min is not None and track.bpm < intent.bpm_min:
+            continue
+        if intent.bpm_max is not None and track.bpm > intent.bpm_max:
+            continue
+
+        # Energy constraint
+        if intent.energy_min is not None and track.mean_energy < intent.energy_min:
+            continue
+        if intent.energy_max is not None and track.mean_energy > intent.energy_max:
+            continue
+
+        filtered.append(track)
+
+    # Safety: if filtering removed everything, return original
+    if len(filtered) < 2:
+        logger.warning(
+            "Intent filtering reduced tracks from %d to %d. Using all tracks.",
+            len(tracks), len(filtered),
+        )
+        return tracks
+
+    return filtered
+
+
 def _beam_search(
     tracks: list[TrackProfile],
     compat_matrix: dict[tuple[str, str], CompatibilityScore],
@@ -105,8 +202,18 @@ def _beam_search(
     beam_width: int,
     max_tracks: int,
     energy_profile: EnergyProfile,
+    liked_tracks: Optional[set[str]] = None,
+    disliked_tracks: Optional[set[str]] = None,
+    preferred_bpm_range: Optional[tuple[float, float]] = None,
+    preferred_energy_range: Optional[tuple[float, float]] = None,
+    preferred_transition_types: Optional[dict[str, float]] = None,
+    disliked_transition_types: Optional[dict[str, float]] = None,
 ) -> list[TrackProfile]:
-    """Find the best track ordering using beam search."""
+    """Find the best track ordering using beam search.
+
+    Applies preference bonuses to bias the search toward user taste
+    while keeping safety-critical signals (key, BPM) dominant.
+    """
     track_by_id = {t.id: t for t in tracks}
 
     # Initialize beam with all possible starting tracks
@@ -148,6 +255,18 @@ def _beam_search(
 
                 # Score this transition
                 edge_score = compat.overall_score
+
+                # Apply preference bonuses (bounded to [-0.15, +0.15])
+                pref_bonuses = compute_preference_bonuses(
+                    target=t,
+                    liked_tracks=liked_tracks,
+                    disliked_tracks=disliked_tracks,
+                    preferred_bpm_range=preferred_bpm_range,
+                    preferred_energy_range=preferred_energy_range,
+                    preferred_transition_types=preferred_transition_types,
+                    disliked_transition_types=disliked_transition_types,
+                )
+                edge_score = score_with_preferences(edge_score, pref_bonuses)
 
                 # Apply energy profile guidance
                 energy_bonus = _energy_progression_bonus(

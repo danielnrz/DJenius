@@ -10,7 +10,10 @@ import json
 from dataclasses import dataclass, field, asdict
 from enum import Enum
 from pathlib import Path
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
+
+if TYPE_CHECKING:
+    from djenius.core.intent import SetIntent
 
 
 class TransitionType(Enum):
@@ -248,6 +251,10 @@ class SetPlan:
     avg_transition_confidence: float = 0.0
     score: float = 0.0
 
+    # V5: Intent and explanations
+    intent_used: Optional[SetIntent] = None
+    human_readable_reasons: list[str] = field(default_factory=list)
+
     def get_track_by_id(self, track_id: str) -> Optional[TrackProfile]:
         for t in self.tracks:
             if t.id == track_id:
@@ -256,6 +263,10 @@ class SetPlan:
 
     def summary(self) -> str:
         lines = [f"Set Plan ({len(self.tracks)} tracks, {self.total_duration_sec:.0f}s)"]
+        if self.human_readable_reasons:
+            lines.append("Reasons:")
+            for reason in self.human_readable_reasons:
+                lines.append(f"  - {reason}")
         for i, track in enumerate(self.tracks):
             trans = ""
             if i < len(self.transitions):
@@ -278,6 +289,7 @@ class SetPlan:
             "energy_profile": self.energy_profile.value,
             "avg_transition_confidence": self.avg_transition_confidence,
             "score": self.score,
+            "human_readable_reasons": self.human_readable_reasons,
         }
 
     @classmethod
@@ -300,6 +312,7 @@ class SetPlan:
             energy_profile=ep,
             avg_transition_confidence=d.get("avg_transition_confidence", 0.0),
             score=d.get("score", 0.0),
+            human_readable_reasons=d.get("human_readable_reasons", []),
         )
 
     @staticmethod
