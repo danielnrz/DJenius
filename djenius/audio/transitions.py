@@ -35,6 +35,7 @@ from djenius.utils.audio_math import (
     linear_fade_out,
     db_to_linear,
 )
+from djenius.utils.timing import seconds_to_samples
 
 # Alias for local use in ffmpeg fallback
 sf_write = sf.write
@@ -59,6 +60,7 @@ def apply_transition(
     target_mid_energy: float = 0.0,
     source_stems: Optional[dict[str, np.ndarray]] = None,
     target_stems: Optional[dict[str, np.ndarray]] = None,
+    use_time_stretch: bool = True,
 ) -> np.ndarray:
     """Apply a transition between source and target audio.
 
@@ -108,6 +110,7 @@ def apply_transition(
                 target_low_energy, target_mid_energy,
                 source_stems=source_stems,
                 target_stems=target_stems,
+                use_time_stretch=use_time_stretch,
             )
             channel_results.append(ch_result)
         return np.column_stack(channel_results).astype(np.float32)
@@ -122,7 +125,43 @@ def apply_transition(
             target_low_energy, target_mid_energy,
             source_stems=source_stems,
             target_stems=target_stems,
+            use_time_stretch=use_time_stretch,
         ).astype(np.float32)
+
+
+def target_consumed_samples(
+    transition_type: str,
+    overlap_samples: int,
+    source_bpm: float,
+    target_bpm: float,
+    use_time_stretch: bool = True,
+) -> int:
+    """Return target source samples consumed to create an overlap."""
+    if (
+        transition_type == "beatmatched_blend"
+        and use_time_stretch
+        and source_bpm > 0
+        and target_bpm > 0
+        and abs(source_bpm - target_bpm) > 0.5
+    ):
+        playback_rate = source_bpm / target_bpm
+        return max(1, int(round(overlap_samples * playback_rate)))
+    return overlap_samples
+
+
+def source_consumed_samples(
+    transition_type: str,
+    overlap_samples: int,
+    sample_rate: int,
+    source_bpm: float,
+) -> int:
+    """Return the distinct source interval used by a transition."""
+    if transition_type == "phrase_cut":
+        return min(overlap_samples, 512)
+    if transition_type == "loop_blend":
+        beat_seconds = 60.0 / source_bpm if source_bpm > 0 else 0.5
+        return min(overlap_samples, seconds_to_samples(beat_seconds, sample_rate))
+    return overlap_samples
 
 
 def _apply_transition_mono(
@@ -141,25 +180,37 @@ def _apply_transition_mono(
     target_mid_energy: float = 0.0,
     source_stems: Optional[dict[str, np.ndarray]] = None,
     target_stems: Optional[dict[str, np.ndarray]] = None,
+    use_time_stretch: bool = True,
 ) -> np.ndarray:
     """Apply a transition on a single channel."""
     # Extract the relevant regions
     source_end = min(source_exit_sample + overlap_samples, len(source_mono))
     source_region = source_mono[source_exit_sample:source_end]
 
-    target_end = min(target_entry_sample + overlap_samples, len(target_mono))
+    target_samples = target_consumed_samples(
+        transition_type,
+        overlap_samples,
+        source_bpm,
+        target_bpm,
+        use_time_stretch,
+    )
+    target_end = min(target_entry_sample + target_samples, len(target_mono))
     target_region = target_mono[target_entry_sample:target_end]
 
-    # Match lengths
-    min_len = min(len(source_region), len(target_region))
-    if min_len == 0:
+    if len(source_region) == 0 or len(target_region) == 0:
         return np.zeros(overlap_samples, dtype=np.float32)
 
-    source_region = source_region[:min_len]
-    target_region = target_region[:min_len]
+    if transition_type == "beatmatched_blend":
+        min_len = len(source_region)
+    else:
+        min_len = min(len(source_region), len(target_region))
+        source_region = source_region[:min_len]
+        target_region = target_region[:min_len]
 
     # Apply bass/EQ management for transitions that mix both tracks
-    needs_bass_mgmt = transition_type not in ("phrase_cut",)
+    # Beatmatched target windows can have a different source length until
+    # stretching is complete, so pre-stretch element-wise EQ is not valid.
+    needs_bass_mgmt = transition_type not in ("phrase_cut", "beatmatched_blend")
     if needs_bass_mgmt:
         has_bass_risk = (
             source_low_energy > 0.25 or target_low_energy > 0.25
@@ -190,6 +241,7 @@ def _apply_transition_mono(
         result = _beatmatched_blend(
             source_region, target_region, sr,
             source_bpm=source_bpm, target_bpm=target_bpm,
+            use_time_stretch=use_time_stretch,
         )
     elif transition_type == "bass_swap":
         # Prefer stem-based bass swap when stem data is available
@@ -209,9 +261,9 @@ def _apply_transition_mono(
     elif transition_type == "filter_sweep":
         result = _filter_sweep(source_region, target_region, sr)
     elif transition_type == "echo_out":
-        result = _echo_out(source_region, target_region, sr)
+        result = _echo_out(source_region, target_region, sr, source_bpm=source_bpm)
     elif transition_type == "loop_blend":
-        result = _loop_blend(source_region, target_region)
+        result = _loop_blend(source_region, target_region, sr=sr, source_bpm=source_bpm)
     elif transition_type == "mashup":
         # Convert stems to mono for _mashup's mono processing
         mono_source_stems = None
@@ -282,6 +334,7 @@ def _beatmatched_blend(
     sr: int,
     source_bpm: float = 0.0,
     target_bpm: float = 0.0,
+    use_time_stretch: bool = True,
 ) -> np.ndarray:
     """Beatmatched blend with real time-stretching and beat phase alignment.
 
@@ -299,7 +352,8 @@ def _beatmatched_blend(
     stretched_target = target.copy()
     stretch_pct = 0.0
 
-    if source_bpm > 0 and target_bpm > 0 and abs(source_bpm - target_bpm) > 0.5:
+    if (use_time_stretch and source_bpm > 0 and target_bpm > 0
+            and abs(source_bpm - target_bpm) > 0.5):
         rate = source_bpm / target_bpm
         stretched = None
 
@@ -334,6 +388,10 @@ def _beatmatched_blend(
                 os.unlink(outfile)
             except Exception:
                 pass
+
+        if stretched is None:
+            from scipy import signal as scipy_signal
+            stretched = scipy_signal.resample(target, n).astype(np.float32)
 
         if stretched is not None:
             stretched_target = stretched
@@ -678,7 +736,12 @@ def _filter_sweep(source: np.ndarray, target: np.ndarray, sr: int) -> np.ndarray
     return result.astype(np.float32)
 
 
-def _echo_out(source: np.ndarray, target: np.ndarray, sr: int) -> np.ndarray:
+def _echo_out(
+    source: np.ndarray,
+    target: np.ndarray,
+    sr: int,
+    source_bpm: float = 120.0,
+) -> np.ndarray:
     """Echo/delay tail on the outgoing track.
 
     Creates a musical echo effect on the source while fading in the target.
@@ -692,8 +755,8 @@ def _echo_out(source: np.ndarray, target: np.ndarray, sr: int) -> np.ndarray:
         fade_in = fade_in[:, np.newaxis]
 
     # Create echo effect
-    delay_ms = int(60000 / 120)  # One beat at ~120 BPM (placeholder)
-    delay_samples = int(sr * delay_ms / 1000)
+    delay_sec = 60.0 / source_bpm if source_bpm > 0 else 0.5
+    delay_samples = seconds_to_samples(delay_sec, sr)
 
     echo = np.zeros_like(source)
 
@@ -704,7 +767,7 @@ def _echo_out(source: np.ndarray, target: np.ndarray, sr: int) -> np.ndarray:
         gain = decay ** tap
         if offset >= n:
             break
-        echo[offset:] += source[:n - offset] * gain * fade_out[offset:] / max(gain, 0.1)
+        echo[offset:] += source[:n - offset] * gain * fade_out[offset:]
 
     # Apply additional decay envelope to echo
     echo_envelope = np.exp(-np.linspace(0, 3, n)).astype(np.float32)
@@ -718,16 +781,22 @@ def _echo_out(source: np.ndarray, target: np.ndarray, sr: int) -> np.ndarray:
     return result.astype(np.float32)
 
 
-def _loop_blend(source: np.ndarray, target: np.ndarray) -> np.ndarray:
+def _loop_blend(
+    source: np.ndarray,
+    target: np.ndarray,
+    sr: int = 44100,
+    source_bpm: float = 120.0,
+) -> np.ndarray:
     """Loop-based blend.
 
     Loops a clean section of the source while bringing in the target.
-    For V1, we approximate by extending the source region with a loop.
+    Repeats one beat from the source transition region. The repeat remains
+    contained within the transition and is intentionally audible.
     """
     n = len(source)
 
-    # Simple approach: use the first half as a loop point
-    loop_len = min(n // 2, len(source) // 2)
+    beat_seconds = 60.0 / source_bpm if source_bpm > 0 else 0.5
+    loop_len = min(seconds_to_samples(beat_seconds, sr), len(source), n)
     if loop_len < 1024:
         return _crossfade(source, target)
 

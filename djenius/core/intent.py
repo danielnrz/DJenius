@@ -42,7 +42,6 @@ class TransitionStyle:
                 TransitionType.BEATMATCHED_BLEND,
                 TransitionType.CROSSFADE,
                 TransitionType.FILTER_SWEEP,
-                TransitionType.LOOP_BLEND,
             ],
             TransitionStyle.ENERGETIC: [
                 TransitionType.BASS_SWAP,

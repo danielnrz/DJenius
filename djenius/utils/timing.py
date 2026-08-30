@@ -10,6 +10,15 @@ import numpy as np
 from scipy import signal as scipy_signal
 
 
+def seconds_to_samples(seconds: float, sample_rate: int) -> int:
+    """Convert a non-negative time in seconds to the nearest sample."""
+    if seconds < 0:
+        raise ValueError(f"Seconds must be non-negative, got {seconds}")
+    if sample_rate <= 0:
+        raise ValueError(f"Sample rate must be positive, got {sample_rate}")
+    return int(round(seconds * sample_rate))
+
+
 def bpm_to_samples(bpm: float, sr: int) -> int:
     """Convert BPM to samples per beat.
 

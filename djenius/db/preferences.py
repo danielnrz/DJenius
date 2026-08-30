@@ -36,6 +36,11 @@ class PreferenceProfile:
         self._conn = None
         self._init_db()
 
+    @classmethod
+    def default(cls) -> "PreferenceProfile":
+        """Open the default local preference database."""
+        return cls(str(Path.cwd() / DB_NAME))
+
     # ---- lifecycle ----
 
     def _init_db(self):
@@ -105,6 +110,16 @@ class PreferenceProfile:
         if self._conn:
             self._conn.close()
             self._conn = None
+
+    def count(self) -> int:
+        """Return the number of stored track and transition feedback rows."""
+        transition_count = self._conn.execute(
+            "SELECT COUNT(*) FROM transition_ratings"
+        ).fetchone()[0]
+        track_count = self._conn.execute(
+            "SELECT COUNT(*) FROM track_feedback"
+        ).fetchone()[0]
+        return int(transition_count + track_count)
 
     # ---- transition ratings ----
 

@@ -69,6 +69,8 @@ def plan_set(
     effective_energy_profile = energy_profile
     effective_bpm_range = preferred_bpm_range
     effective_max_tracks = max_tracks
+    allowed_transition_types = None
+    effective_max_transition_bars = max_transition_length_bars
 
     if intent:
         effective_energy_profile = intent.effective_energy_profile()
@@ -81,6 +83,9 @@ def plan_set(
             logger.warning("Intent filtering left fewer than 2 tracks. Using all tracks.")
             tracks = tracks  # Fall back to all tracks
         effective_max_tracks = max_tracks  # Keep original max_tracks
+        allowed_transition_types = intent.allowed_transition_types()
+        _, intent_max_bars = intent.effective_transition_length_bars()
+        effective_max_transition_bars = min(max_transition_length_bars, intent_max_bars)
 
     # Merge preference bonuses
     prefs = preference_bonuses or {}
@@ -119,7 +124,8 @@ def plan_set(
         compat_matrix=compat_matrix,
         target_duration=target_duration_sec,
         energy_profile=effective_energy_profile,
-        max_transition_bars=max_transition_length_bars,
+        max_transition_bars=effective_max_transition_bars,
+        allowed_transition_types=allowed_transition_types,
     )
 
     # Attach intent to plan
@@ -532,6 +538,7 @@ def _build_set_plan(
     target_duration: float,
     energy_profile: EnergyProfile,
     max_transition_bars: int,
+    allowed_transition_types: Optional[list[TransitionType]] = None,
 ) -> SetPlan:
     """Convert a track ordering into a full SetPlan with transitions."""
     transitions = []
@@ -546,9 +553,6 @@ def _build_set_plan(
         if compat is None:
             compat = score_compatibility(source, target)
 
-        # Recommend transition type
-        ttype, conf, reasoning = recommend_transition_type(source, target)
-
         # Calculate timing
         avg_bpm = (source.bpm + target.bpm) / 2
         bar_duration = 4 * 60.0 / max(avg_bpm, 60)
@@ -560,31 +564,43 @@ def _build_set_plan(
         source_exit_candidates = source.analysis.possible_exit_points
         target_entry_candidates = target.analysis.possible_entry_points
 
-        # MASHUP transitions benefit from longer overlaps for smoother vocal/instrumental blending
-        is_mashup = (ttype == TransitionType.MASHUP)
-
         # Score the best exit/entry points
         best_exit_score = 0.0
         best_exit_time = source.duration_sec * 0.85
+        scored_exits = []
         for t in source_exit_candidates:
             s = score_exit_point(
                 t, source.analysis.bar_times, source.analysis.bar_energies,
                 source.analysis.outro_start, source.duration_sec, source.bpm,
             )
+            scored_exits.append((s, t))
             if s > best_exit_score:
                 best_exit_score = s
                 best_exit_time = t
 
         best_entry_score = 0.0
         best_entry_time = target.analysis.intro_end + 5.0
+        scored_entries = []
         for t in target_entry_candidates:
             s = score_entry_point(
                 t, target.analysis.bar_times, target.analysis.bar_energies,
                 target.analysis.intro_end, target.duration_sec, target.bpm,
             )
+            scored_entries.append((s, t))
             if s > best_entry_score:
                 best_entry_score = s
                 best_entry_time = t
+
+        ttype, conf, reasoning = recommend_transition_type(
+            source,
+            target,
+            allowed_types=allowed_transition_types,
+            source_exit_time=best_exit_time,
+            target_entry_time=best_entry_time,
+        )
+
+        # MASHUP transitions benefit from longer overlaps for smoother vocal/instrumental blending
+        is_mashup = (ttype == TransitionType.MASHUP)
 
         length_bars = compute_transition_length_bars(
             best_exit_score, best_entry_score, avg_bpm,
@@ -592,24 +608,61 @@ def _build_set_plan(
         )
         overlap = bar_duration * length_bars
 
-        # Use best scored points
-        source_exit = best_exit_time
-        target_entry = best_entry_time
+        incoming_cursor = 0.0
+        if transitions:
+            previous = transitions[-1]
+            previous_source = best_path[i - 1]
+            incoming_cursor = previous.target_entry_time + _target_consumed_seconds(
+                previous.transition_type,
+                previous.overlap_duration,
+                previous_source.bpm,
+                source.bpm,
+                previous.requires_stretch,
+            )
 
-        # Determine if time-stretching is needed
+        max_source_exit = source.duration_sec - overlap
+        valid_exits = [
+            (score, time_sec) for score, time_sec in scored_exits
+            if incoming_cursor <= time_sec <= max_source_exit
+        ]
+        if valid_exits:
+            best_exit_score, source_exit = max(
+                valid_exits, key=lambda item: (item[0], -item[1])
+            )
+        else:
+            source_exit = min(source.duration_sec * 0.85, max_source_exit)
+            source_exit = max(incoming_cursor, source_exit)
+
         bpm_delta_pct = abs(source.bpm - target.bpm) / max(source.bpm, 1.0) * 100
-        requires_stretch = bpm_delta_pct > 1.0
-        stretch_amount = 0.0
-        target_bpm = 0.0
+        requires_stretch = bpm_delta_pct > 1.0 and compat.tempo_score > 0.5
+        stretch_amount = bpm_delta_pct if requires_stretch else 0.0
+        target_bpm = source.bpm if requires_stretch else 0.0
 
-        if requires_stretch:
-            # Determine stretch direction (prefer stretching the shorter/less prominent track)
-            if compat.tempo_score > 0.5:
-                target_bpm = source.bpm
-                stretch_amount = bpm_delta_pct
-            else:
-                target_bpm = 0  # Don't stretch
-                requires_stretch = False
+        target_consumed = _target_consumed_seconds(
+            ttype, overlap, source.bpm, target.bpm, requires_stretch,
+        )
+        max_target_entry = target.duration_sec - target_consumed
+        valid_entries = [
+            (score, time_sec) for score, time_sec in scored_entries
+            if 0.0 <= time_sec <= max_target_entry
+        ]
+        if valid_entries:
+            best_entry_score, target_entry = max(
+                valid_entries, key=lambda item: (item[0], -item[1])
+            )
+        else:
+            target_entry = min(max(0.0, best_entry_time), max_target_entry)
+
+        if source_exit < incoming_cursor or max_source_exit < incoming_cursor:
+            raise ValueError(
+                f"No forward transition window remains in {source.title}: "
+                f"incoming cursor {incoming_cursor:.3f}s, duration {source.duration_sec:.3f}s, "
+                f"overlap {overlap:.3f}s"
+            )
+        if target_entry < 0 or target_entry + target_consumed > target.duration_sec + 1e-6:
+            raise ValueError(
+                f"Transition into {target.title} exceeds its duration"
+            )
 
         transition = TransitionPlan(
             source_track_id=source.id,
@@ -628,10 +681,25 @@ def _build_set_plan(
         )
         transitions.append(transition)
 
-        # Track duration contribution
-        if i == 0:
-            total_duration += source.duration_sec
-        total_duration += target.duration_sec - overlap
+    if transitions:
+        total_duration = transitions[0].source_exit_time
+        for index, transition in enumerate(transitions):
+            total_duration += transition.overlap_duration
+            target = best_path[index + 1]
+            source = best_path[index]
+            target_cursor = transition.target_entry_time + _target_consumed_seconds(
+                transition.transition_type,
+                transition.overlap_duration,
+                source.bpm,
+                target.bpm,
+                transition.requires_stretch,
+            )
+            if index + 1 < len(transitions):
+                total_duration += max(0.0, transitions[index + 1].source_exit_time - target_cursor)
+            else:
+                total_duration += max(0.0, target.duration_sec - target_cursor)
+    elif best_path:
+        total_duration = best_path[0].duration_sec
 
     return SetPlan(
         tracks=best_path,
@@ -649,3 +717,21 @@ def _build_set_plan(
             3,
         ),
     )
+
+
+def _target_consumed_seconds(
+    transition_type: TransitionType,
+    overlap_duration: float,
+    source_bpm: float,
+    target_bpm: float,
+    use_time_stretch: bool = True,
+) -> float:
+    if (
+        transition_type == TransitionType.BEATMATCHED_BLEND
+        and use_time_stretch
+        and source_bpm > 0
+        and target_bpm > 0
+        and abs(source_bpm - target_bpm) > 0.5
+    ):
+        return overlap_duration * source_bpm / target_bpm
+    return overlap_duration

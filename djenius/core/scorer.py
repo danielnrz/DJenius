@@ -266,6 +266,9 @@ def score_with_preferences(
 def recommend_transition_type(
     source: TrackProfile,
     target: TrackProfile,
+    allowed_types: Optional[list[TransitionType]] = None,
+    source_exit_time: Optional[float] = None,
+    target_entry_time: Optional[float] = None,
 ) -> tuple[TransitionType, float, str]:
     """Recommend the best transition type for a pair of tracks.
 
@@ -284,10 +287,9 @@ def recommend_transition_type(
     if source_sections:
         # Find the section that contains the exit point
         exit_points = source.analysis.possible_exit_points
-        if exit_points:
+        exit_t = source_exit_time
+        if exit_t is None:
             exit_t = exit_points[-1] if exit_points else source.duration_sec * 0.85
-        else:
-            exit_t = source.duration_sec * 0.85
         for start, end, label in source_sections:
             if start <= exit_t <= end:
                 source_exit_section = label
@@ -297,10 +299,9 @@ def recommend_transition_type(
     target_entry_section = "verse"  # default
     if target_sections:
         entry_points = target.analysis.possible_entry_points
-        if entry_points:
+        entry_t = target_entry_time
+        if entry_t is None:
             entry_t = entry_points[0] if entry_points else target.analysis.intro_end + 5
-        else:
-            entry_t = target.analysis.intro_end + 5
         for start, end, label in target_sections:
             if start <= entry_t <= end:
                 target_entry_section = label
@@ -324,7 +325,8 @@ def recommend_transition_type(
     both_have_stems = source_has_stems and target_has_stems
 
     # Evaluate each transition type with context-aware scoring
-    for ttype in TransitionType:
+    transition_types = allowed_types if allowed_types is not None else list(TransitionType)
+    for ttype in transition_types:
         q = score_transition_quality(source, target, ttype, overlap_duration=8.0)
 
         # --- Phrase/Structure modifiers ---

@@ -812,10 +812,10 @@ class TestSampleExactG:
 
 
 class TestSampleExactH:
-    """Test H: Bounds clamping when transition extends past track end."""
+    """Test H: Invalid end-of-track transitions fail before rendering."""
 
-    def test_clamp_when_overlap_exceeds_remaining(self, tmp_path):
-        """If OD pushes past track end, renderer must clamp, not crash."""
+    def test_reject_when_overlap_exceeds_remaining(self, tmp_path):
+        """A plan that extends past source EOF must be rejected explicitly."""
         dur_a = 0.5
         dur_b = 0.4  # Short track
         set_0 = 0.4  # Exit at 0.4s
@@ -840,22 +840,11 @@ class TestSampleExactH:
         output_path = str(tmp_path / "out.wav")
         mock_load = _make_mock_load({"/mock/a.wav": a_audio, "/mock/b.wav": b_audio})
 
-        # Should not raise
         with mock.patch("djenius.audio.renderer._load_audio", side_effect=mock_load):
-            result = render_mix(plan, output_path, "wav", sample_rate=SR)
+            with pytest.raises(ValueError, match="exceeds source EOF"):
+                render_mix(plan, output_path, "wav", sample_rate=SR)
 
-        assert os.path.exists(output_path)
-        out, _ = sf.read(output_path)
-        assert len(out) > 0
-
-        # Diagnostics should show bounded values
-        with open(result["timeline_diagnostics_path"]) as f:
-            diag = json.load(f)
-        for event in diag["events"]:
-            if "source_end_sample" in event:
-                track_id = event["track_id"]
-                dur = dur_a if track_id == "a" else dur_b
-                assert event["source_end_sample"] <= int(dur * SR) + 1
+        assert not os.path.exists(output_path)
 
 
 class TestSampleExactI:

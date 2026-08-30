@@ -298,7 +298,17 @@ def analyze_track(
         )
         # Convert from 1Hz indices to seconds
         analysis.intro_end = intro_end
-        analysis.outro_start = outro_start * (duration / max(len(analysis.energy_curve), 1))
+        energy_outro_start = outro_start * (
+            duration / max(len(analysis.energy_curve), 1)
+        )
+        structural_outros = [
+            start for start, _end, label in analysis.structural_sections
+            if label == "outro"
+        ]
+        if structural_outros:
+            analysis.outro_start = min(energy_outro_start, structural_outros[0])
+        else:
+            analysis.outro_start = min(energy_outro_start, duration * 0.85)
     except Exception as e:
         logger.warning("Intro/outro detection failed for %s: %s", filepath, e)
         analysis.intro_end = 0.0

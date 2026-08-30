@@ -165,7 +165,7 @@ def analyze(
                 continue
 
             try:
-                profile = analyze_track(track.filepath, cache=cache)
+                profile = analyze_track(track.filepath, force=force, cache=cache)
                 analyzed += 1
             except Exception as e:
                 logging.getLogger(__name__).warning("Failed to analyze %s: %s", track.title, e)
@@ -652,9 +652,9 @@ def doctor():
     # V5: httpx (optional, for LLM parser)
     try:
         import httpx
-        checks.append(("httpx (for LLM parser)", True, getattr(httpx, "__version__", "ok")))
+        checks.append(("httpx (optional LLM parser)", True, getattr(httpx, "__version__", "ok")))
     except ImportError:
-        checks.append(("httpx (for LLM parser)", False, "not installed (optional: pip install httpx)"))
+        checks.append(("httpx (optional LLM parser)", False, "not installed (optional: pip install httpx)"))
 
     # Display
     table = Table(title="DJenius Doctor", box=box.ROUNDED)

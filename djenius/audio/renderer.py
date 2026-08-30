@@ -43,8 +43,14 @@ import soundfile as sf
 
 from djenius.core.models import SetPlan, TransitionPlan, TrackProfile, TransitionType
 from djenius.core.errors import DecodeError
-from djenius.audio.transitions import apply_transition
+from djenius.audio.transitions import (
+    apply_transition,
+    source_consumed_samples,
+    target_consumed_samples,
+)
+from djenius.audio.provenance import audit_source_provenance
 from djenius.utils.audio_math import normalize_lufs, soft_clip, db_to_linear
+from djenius.utils.timing import seconds_to_samples
 
 logger = logging.getLogger(__name__)
 
@@ -84,6 +90,12 @@ def render_mix(
     logger.info("Loading %d tracks...", len(plan.tracks))
     track_audio = {}
     track_stems = {}  # stem audio arrays per track (if available)
+    stem_track_ids = {
+        track_id
+        for transition in plan.transitions
+        if transition.transition_type in (TransitionType.BASS_SWAP, TransitionType.MASHUP)
+        for track_id in (transition.source_track_id, transition.target_track_id)
+    }
     for i, track in enumerate(plan.tracks):
         if progress_callback:
             progress_callback(
@@ -105,7 +117,7 @@ def render_mix(
             ) from e
 
         # Load stem audio if available
-        if track.analysis.stems:
+        if track.id in stem_track_ids and track.analysis.stems:
             try:
                 from djenius.audio.stems import load_stems
                 stems = load_stems(track.filepath, sr=sample_rate)
@@ -118,6 +130,10 @@ def render_mix(
     if progress_callback:
         progress_callback(30, "Assembling mix...")
 
+    transition_specs = _validate_render_plan(
+        plan, track_audio, sample_rate, use_time_stretch,
+    )
+
     # Calculate total duration needed
     total_duration = _estimate_total_duration(plan, track_audio, sample_rate)
 
@@ -128,185 +144,167 @@ def render_mix(
     diagnostics = []
     transitions_rendered = 0
 
-    # Render each track with transitions
     timeline_events = []
-    
-    for i, track in enumerate(plan.tracks):
-        if track.id not in track_audio:
-            continue
+    source_cursors = {track.id: 0 for track in plan.tracks}
 
-        audio, sr = track_audio[track.id]
-        track_duration = len(audio)
+    for i, spec in enumerate(transition_specs):
+        source = plan.tracks[i]
+        target = plan.tracks[i + 1]
+        transition = plan.transitions[i]
+        source_audio = track_audio[source.id][0]
+        target_audio = track_audio[target.id][0]
 
-        # Get transition plan for this track (if any)
-        # transitions[i] = transition from track i to track i+1
-        exit_transition = None
-        if i < len(plan.transitions):
-            exit_transition = plan.transitions[i]
-        incoming_transition = None
-        if i > 0 and i - 1 < len(plan.transitions):
-            incoming_transition = plan.transitions[i - 1]
+        body_start = source_cursors[source.id]
+        body_end = spec["source_start_sample"]
+        if body_end > body_start:
+            output_end = current_sample + body_end - body_start
+            mix[current_sample:output_end] += _to_stereo(source_audio[body_start:body_end])
+            timeline_events.append(_track_event(
+                source, body_start, body_end, current_sample, output_end,
+                incoming_transition=plan.transitions[i - 1] if i > 0 else None,
+                outgoing_transition=transition,
+                planned_exit_sample=spec["source_start_sample"],
+            ))
+            current_sample = output_end
 
-        if i == 0:
-            # First track: play solo up to source_exit_sample where transition begins
-            source_exit_sample = int(exit_transition.source_exit_time * sr) if exit_transition else track_duration
-            source_exit_sample = min(source_exit_sample, track_duration)
-            
-            # Add track solo section to mix
-            end_sample = min(current_sample + source_exit_sample, total_duration)
-            length = end_sample - current_sample
-            if length > 0:
-                track_stereo = _to_stereo(audio)[:length]
-                mix[current_sample:end_sample] += track_stereo
-                timeline_events.append({
-                    "type": "track",
-                    "track_id": track.id,
-                    "track_title": track.title,
-                    "mix_start_sample": current_sample,
-                    "mix_end_sample": end_sample,
-                    "source_start_sample": 0,
-                    "source_end_sample": length,
-                })
-            current_sample = end_sample
+        effective_type = transition.transition_type.value
+        effective_source_end = (
+            spec["source_start_sample"]
+            + source_consumed_samples(
+                effective_type,
+                spec["requested_overlap_samples"],
+                sample_rate,
+                source.bpm,
+            )
+        )
+        effective_target_end = spec["target_end_sample"]
+        try:
+            transition_audio = apply_transition(
+                source_audio=source_audio,
+                target_audio=target_audio,
+                sr=sample_rate,
+                transition_type=effective_type,
+                overlap_samples=spec["requested_overlap_samples"],
+                source_exit_sample=spec["source_start_sample"],
+                target_entry_sample=spec["target_start_sample"],
+                source_bpm=source.bpm,
+                target_bpm=target.bpm,
+                source_low_energy=source.analysis.low_energy,
+                source_mid_energy=source.analysis.mid_energy,
+                target_low_energy=target.analysis.low_energy,
+                target_mid_energy=target.analysis.mid_energy,
+                source_stems=track_stems.get(source.id),
+                target_stems=track_stems.get(target.id),
+                use_time_stretch=spec["use_time_stretch"],
+            )
+        except Exception as transition_error:
+            logger.warning(
+                "%s transition failed for %s -> %s; using source-continuous crossfade: %s",
+                effective_type, source.title, target.title, transition_error,
+            )
+            effective_type = "crossfade"
+            effective_source_end = spec["source_end_sample"]
+            effective_target_end = (
+                spec["target_start_sample"] + spec["requested_overlap_samples"]
+            )
+            try:
+                transition_audio = apply_transition(
+                    source_audio=source_audio,
+                    target_audio=target_audio,
+                    sr=sample_rate,
+                    transition_type=effective_type,
+                    overlap_samples=spec["requested_overlap_samples"],
+                    source_exit_sample=spec["source_start_sample"],
+                    target_entry_sample=spec["target_start_sample"],
+                    source_bpm=source.bpm,
+                    target_bpm=target.bpm,
+                    use_time_stretch=False,
+                )
+            except Exception as fallback_error:
+                raise RuntimeError(
+                    f"Transition and safe crossfade both failed for "
+                    f"{source.title} -> {target.title}"
+                ) from fallback_error
 
-        else:
-            # Subsequent tracks: handle transition
-            if incoming_transition and incoming_transition.transition_type:
-                overlap_samples = int(incoming_transition.overlap_duration * sr)
-                target_entry_sample = int(incoming_transition.target_entry_time * sr)
+        if len(transition_audio) != spec["requested_overlap_samples"]:
+            raise RuntimeError(
+                f"Transition {source.title} -> {target.title} produced "
+                f"{len(transition_audio)} samples; expected {spec['requested_overlap_samples']}"
+            )
 
-                # Apply transition
-                try:
-                    prev_track = plan.tracks[i - 1]
-                    prev_audio = track_audio.get(prev_track.id, (np.zeros(1, dtype=np.float32), sr))[0]
-
-                    # Get stem audio for source and target (if available)
-                    src_stems_audio = track_stems.get(prev_track.id)
-                    tgt_stems_audio = track_stems.get(track.id)
-
-                    transition_audio = apply_transition(
-                        source_audio=prev_audio,
-                        target_audio=audio,
-                        sr=sr,
-                        transition_type=incoming_transition.transition_type.value,
-                        overlap_samples=overlap_samples,
-                        source_exit_sample=int(incoming_transition.source_exit_time * sr),
-                        target_entry_sample=target_entry_sample,
-                        source_bpm=prev_track.bpm,
-                        target_bpm=incoming_transition.target_bpm,
-                        source_low_energy=prev_track.analysis.low_energy,
-                        source_mid_energy=prev_track.analysis.mid_energy,
-                        target_low_energy=track.analysis.low_energy,
-                        target_mid_energy=track.analysis.mid_energy,
-                        source_stems=src_stems_audio,
-                        target_stems=tgt_stems_audio,
-                    )
-
-                    # Place transition in mix (strict forward cursor)
-                    trans_len = len(transition_audio)
-                    trans_start = current_sample
-                    trans_end = min(trans_start + trans_len, total_duration)
-                    actual_trans_len = trans_end - trans_start
-
-                    if actual_trans_len > 0:
-                        trans_stereo = _to_stereo(transition_audio)[:actual_trans_len]
-                        mix[trans_start:trans_end] += trans_stereo
-                        timeline_events.append({
-                            "type": "transition",
-                            "from_track_id": prev_track.id,
-                            "from_track_title": prev_track.title,
-                            "to_track_id": track.id,
-                            "to_track_title": track.title,
-                            "transition_type": incoming_transition.transition_type.value,
-                            "mix_start_sample": trans_start,
-                            "mix_end_sample": trans_end,
-                            "overlap_duration_sec": incoming_transition.overlap_duration,
-                            "confidence": incoming_transition.confidence,
-                        })
-                        current_sample = trans_end
-                        transitions_rendered += 1
-
-                    # Place remaining target audio after transition.
-                    # The transition consumed `actual_trans_len` samples from the
-                    # target starting at target_entry_sample, so we resume from
-                    # target_entry_sample + actual_trans_len.
-                    # Clamp both start and end to track bounds.
-                    rem_start_sample = min(
-                        target_entry_sample + actual_trans_len,
-                        track_duration,
-                    )
-                    rem_end_sample = int(exit_transition.source_exit_time * sr) if exit_transition else track_duration
-                    rem_end_sample = min(rem_end_sample, track_duration)
-                    
-                    if rem_end_sample > rem_start_sample:
-                        rem_length = rem_end_sample - rem_start_sample
-                        rem_start_in_mix = current_sample
-                        rem_end_in_mix = min(rem_start_in_mix + rem_length, total_duration)
-                        actual_rem_length = rem_end_in_mix - rem_start_in_mix
-                        
-                        if actual_rem_length > 0:
-                            remaining_audio = audio[rem_start_sample:rem_start_sample + actual_rem_length]
-                            remaining_stereo = _to_stereo(remaining_audio)
-                            mix[rem_start_in_mix:rem_end_in_mix] += remaining_stereo
-                            timeline_events.append({
-                                "type": "track",
-                                "track_id": track.id,
-                                "track_title": track.title,
-                                "mix_start_sample": rem_start_in_mix,
-                                "mix_end_sample": rem_end_in_mix,
-                                "source_start_sample": rem_start_sample,
-                                "source_end_sample": rem_start_sample + actual_rem_length,
-                            })
-                            current_sample = rem_end_in_mix
-
-                    diagnostics.append({
-                        "from": prev_track.title,
-                        "to": track.title,
-                        "type": incoming_transition.transition_type.value,
-                        "overlap_sec": incoming_transition.overlap_duration,
-                        "confidence": incoming_transition.confidence,
-                    })
-
-                except Exception as e:
-                    logger.warning("Transition failed, using cut: %s", e)
-                    # Fallback: clean cut
-                    remaining_len = min(track_duration, total_duration - current_sample)
-                    if remaining_len > 0:
-                        track_stereo = _to_stereo(audio)[:remaining_len]
-                        mix[current_sample:current_sample + remaining_len] += track_stereo
-                        timeline_events.append({
-                            "type": "track",
-                            "track_id": track.id,
-                            "track_title": track.title,
-                            "mix_start_sample": current_sample,
-                            "mix_end_sample": current_sample + remaining_len,
-                            "source_start_sample": 0,
-                            "source_end_sample": remaining_len,
-                        })
-                        current_sample += remaining_len
-            else:
-                # No transition: just append
-                remaining_len = min(track_duration, total_duration - current_sample)
-                if remaining_len > 0:
-                    track_stereo = _to_stereo(audio)[:remaining_len]
-                    mix[current_sample:current_sample + remaining_len] += track_stereo
-                    timeline_events.append({
-                        "type": "track",
-                        "track_id": track.id,
-                        "track_title": track.title,
-                        "mix_start_sample": current_sample,
-                        "mix_end_sample": current_sample + remaining_len,
-                        "source_start_sample": 0,
-                        "source_end_sample": remaining_len,
-                    })
-                    current_sample += remaining_len
+        output_start = current_sample
+        output_end = output_start + len(transition_audio)
+        mix[output_start:output_end] += _to_stereo(transition_audio)
+        timeline_events.append({
+            "type": "transition",
+            "source_track_id": source.id,
+            "source_track_title": source.title,
+            "target_track_id": target.id,
+            "target_track_title": target.title,
+            "from_track_id": source.id,
+            "from_track_title": source.title,
+            "to_track_id": target.id,
+            "to_track_title": target.title,
+            "transition_type": effective_type,
+            "requested_transition_type": transition.transition_type.value,
+            "source_start_sample": spec["source_start_sample"],
+            "source_end_sample": effective_source_end,
+            "target_start_sample": spec["target_start_sample"],
+            "target_end_sample": effective_target_end,
+            "output_start_sample": output_start,
+            "output_end_sample": output_end,
+            "mix_start_sample": output_start,
+            "mix_end_sample": output_end,
+            "requested_overlap_samples": spec["requested_overlap_samples"],
+            "actual_overlap_samples": len(transition_audio),
+            "overlap_duration_sec": transition.overlap_duration,
+            "incoming_transition": None,
+            "outgoing_transition": transition.transition_type.value,
+            "confidence": transition.confidence,
+            "source_reuse": "intentional_loop" if effective_type == "loop_blend" else None,
+        })
+        current_sample = output_end
+        source_cursors[source.id] = effective_source_end
+        source_cursors[target.id] = effective_target_end
+        transitions_rendered += 1
+        diagnostics.append({
+            "from": source.title,
+            "to": target.title,
+            "type": effective_type,
+            "requested_type": transition.transition_type.value,
+            "overlap_sec": transition.overlap_duration,
+            "confidence": transition.confidence,
+        })
 
         if progress_callback:
-            progress = 30 + (i / max(len(plan.tracks), 1)) * 60
-            progress_callback(progress, f"Rendering track {i+1}/{len(plan.tracks)}")
+            progress = 30 + ((i + 1) / max(len(transition_specs), 1)) * 60
+            progress_callback(progress, f"Rendering transition {i+1}/{len(transition_specs)}")
+
+    final_track = plan.tracks[-1]
+    final_audio = track_audio[final_track.id][0]
+    final_start = source_cursors[final_track.id]
+    final_end = len(final_audio)
+    if final_end > final_start:
+        output_end = current_sample + final_end - final_start
+        mix[current_sample:output_end] += _to_stereo(final_audio[final_start:final_end])
+        timeline_events.append(_track_event(
+            final_track, final_start, final_end, current_sample, output_end,
+            incoming_transition=plan.transitions[-1] if plan.transitions else None,
+            outgoing_transition=None,
+            planned_exit_sample=None,
+        ))
+        current_sample = output_end
+
+    track_lengths = {track_id: len(audio) for track_id, (audio, _) in track_audio.items()}
+    provenance_audit = audit_source_provenance(timeline_events, track_lengths)
+    if not provenance_audit["clean"]:
+        raise RuntimeError(
+            f"Source provenance audit failed before WAV writing: "
+            f"{provenance_audit['violations']}"
+        )
 
     # Trim mix to actual content
-    actual_end = min(current_sample, total_duration)
+    actual_end = current_sample
     mix = mix[:actual_end]
 
     if progress_callback:
@@ -386,9 +384,14 @@ def render_mix(
             if "mix_start_sample" in event:
                 event_with_sec["mix_start_sec"] = round(event["mix_start_sample"] / sr, 3)
                 event_with_sec["mix_end_sec"] = round(event["mix_end_sample"] / sr, 3)
+                event_with_sec["output_start_sec"] = round(event["output_start_sample"] / sr, 3)
+                event_with_sec["output_end_sec"] = round(event["output_end_sample"] / sr, 3)
             if "source_start_sample" in event:
                 event_with_sec["source_start_sec"] = round(event["source_start_sample"] / sr, 3)
                 event_with_sec["source_end_sec"] = round(event["source_end_sample"] / sr, 3)
+            if "target_start_sample" in event:
+                event_with_sec["target_start_sec"] = round(event["target_start_sample"] / sr, 3)
+                event_with_sec["target_end_sec"] = round(event["target_end_sample"] / sr, 3)
             timeline_events_with_sec.append(event_with_sec)
         
         with open(diagnostics_path, "w") as f:
@@ -398,6 +401,7 @@ def render_mix(
                 "total_samples": len(mix),
                 "total_duration_sec": round(duration_sec, 3),
                 "events": timeline_events_with_sec,
+                "provenance_audit": provenance_audit,
             }, f, indent=2)
         logger.info("Timeline diagnostics written to %s", diagnostics_path)
     except Exception as e:
@@ -415,12 +419,129 @@ def render_mix(
         "render_time_sec": round(elapsed, 1),
         "diagnostics": diagnostics,
         "timeline_diagnostics_path": str(diagnostics_path),
+        "provenance_audit": provenance_audit,
         "file_size_mb": round(os.path.getsize(output_path) / (1024 * 1024), 1),
     }
 
     logger.info("Mix rendered: %s (%.1fs, %.1f dB peak)", output_path, duration_sec, peak_db)
 
     return result
+
+
+def _track_event(
+    track: TrackProfile,
+    source_start: int,
+    source_end: int,
+    output_start: int,
+    output_end: int,
+    *,
+    incoming_transition: Optional[TransitionPlan],
+    outgoing_transition: Optional[TransitionPlan],
+    planned_exit_sample: Optional[int],
+) -> dict:
+    return {
+        "type": "track",
+        "track_id": track.id,
+        "track_title": track.title,
+        "source_start_sample": source_start,
+        "source_end_sample": source_end,
+        "output_start_sample": output_start,
+        "output_end_sample": output_end,
+        "mix_start_sample": output_start,
+        "mix_end_sample": output_end,
+        "transition_type": None,
+        "requested_overlap_samples": None,
+        "actual_overlap_samples": None,
+        "incoming_transition": (
+            incoming_transition.transition_type.value if incoming_transition else None
+        ),
+        "outgoing_transition": (
+            outgoing_transition.transition_type.value if outgoing_transition else None
+        ),
+        "planned_source_exit_sample": planned_exit_sample,
+    }
+
+
+def _validate_render_plan(
+    plan: SetPlan,
+    track_audio: dict[str, tuple[np.ndarray, int]],
+    sample_rate: int,
+    use_time_stretch: bool,
+) -> list[dict]:
+    """Resolve transition sample intervals and reject unsafe timelines."""
+    expected_transitions = max(0, len(plan.tracks) - 1)
+    if len(plan.transitions) != expected_transitions:
+        raise ValueError(
+            f"Set plan has {len(plan.transitions)} transitions for "
+            f"{len(plan.tracks)} tracks; expected {expected_transitions}"
+        )
+    track_ids = [track.id for track in plan.tracks]
+    if len(set(track_ids)) != len(track_ids):
+        raise ValueError("Set plan contains duplicate track IDs")
+
+    cursors = {track.id: 0 for track in plan.tracks}
+    specs = []
+    for index, transition in enumerate(plan.transitions):
+        source = plan.tracks[index]
+        target = plan.tracks[index + 1]
+        if (
+            transition.source_track_id != source.id
+            or transition.target_track_id != target.id
+        ):
+            raise ValueError(
+                f"Transition {index + 1} IDs do not match adjacent plan tracks"
+            )
+
+        overlap = seconds_to_samples(transition.overlap_duration, sample_rate)
+        source_start = seconds_to_samples(transition.source_exit_time, sample_rate)
+        target_start = seconds_to_samples(transition.target_entry_time, sample_rate)
+        stretch_enabled = use_time_stretch and transition.requires_stretch
+        target_consumed = target_consumed_samples(
+            transition.transition_type.value,
+            overlap,
+            source.bpm,
+            target.bpm,
+            stretch_enabled,
+        )
+        source_end = source_start + overlap
+        target_end = target_start + target_consumed
+        source_length = len(track_audio[source.id][0])
+        target_length = len(track_audio[target.id][0])
+
+        if overlap <= 0:
+            raise ValueError(f"Transition {index + 1} has no overlap")
+        if source_start < cursors[source.id]:
+            raise ValueError(
+                f"Transition {index + 1} moves {source.title} backwards: "
+                f"exit sample {source_start}, cursor {cursors[source.id]}"
+            )
+        if source_end > source_length:
+            raise ValueError(
+                f"Transition {index + 1} exceeds source EOF for {source.title}: "
+                f"{source_end} > {source_length}"
+            )
+        if target_start < 0 or target_end > target_length:
+            raise ValueError(
+                f"Transition {index + 1} exceeds target bounds for {target.title}: "
+                f"[{target_start}, {target_end}) vs {target_length} samples"
+            )
+        if target_start + overlap > target_length:
+            raise ValueError(
+                f"Transition {index + 1} leaves no safe crossfade fallback in {target.title}"
+            )
+
+        specs.append({
+            "source_start_sample": source_start,
+            "source_end_sample": source_end,
+            "target_start_sample": target_start,
+            "target_end_sample": target_end,
+            "requested_overlap_samples": overlap,
+            "use_time_stretch": stretch_enabled,
+        })
+        cursors[source.id] = source_end
+        cursors[target.id] = target_end
+
+    return specs
 
 
 def _load_audio(filepath: str, target_sr: int = 44100) -> tuple[np.ndarray, int]:
@@ -502,11 +623,11 @@ def _estimate_total_duration(
             audio, _ = track_audio[track.id]
             total += len(audio)
         else:
-            total += int(track.duration_sec * sr)
+            total += seconds_to_samples(track.duration_sec, sr)
 
         # Subtract overlaps from transitions
         if i < len(plan.transitions):
-            total -= int(plan.transitions[i].overlap_duration * sr)
+            total -= seconds_to_samples(plan.transitions[i].overlap_duration, sr)
 
     # Add 10% buffer
     return int(total * 1.1) + sr  # +1 second buffer

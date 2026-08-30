@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 DB_NAME = "djenius_cache.db"
 
 # Bump this to invalidate all cached analysis results.
-ANALYSIS_VERSION = 1
+ANALYSIS_VERSION = 3
 
 # Chunk size for reading files during hashing (64 KB).
 _HASH_CHUNK_SIZE = 64 * 1024

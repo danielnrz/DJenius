@@ -56,12 +56,40 @@ def estimate_vocal_regions(
     if len(audio) < n_fft:
         return []
 
-    # Compute STFT
+    # Compute STFT. Some otherwise usable installations cannot initialize
+    # librosa's optional numba cache, so retain a dependency-light scipy path.
     try:
         import librosa
         S = np.abs(librosa.stft(audio, n_fft=n_fft, hop_length=hop_length))
-    except Exception:
-        return []
+        flatness = librosa.feature.spectral_flatness(
+            y=audio, n_fft=n_fft, hop_length=hop_length,
+        )[0]
+    except Exception as exc:
+        logger.debug("librosa vocal analysis failed; using scipy STFT: %s", exc)
+        try:
+            from scipy import signal
+
+            _, _, scipy_stft = signal.stft(
+                audio,
+                fs=sr,
+                window="hann",
+                nperseg=n_fft,
+                noverlap=n_fft - hop_length,
+                nfft=n_fft,
+                boundary="zeros",
+                padded=True,
+            )
+            S = np.abs(scipy_stft)
+            stable_spectrum = np.maximum(S, 1e-10)
+            flatness = np.exp(np.mean(np.log(stable_spectrum), axis=0))
+            flatness /= np.mean(stable_spectrum, axis=0) + 1e-10
+        except Exception as fallback_exc:
+            logger.warning(
+                "Vocal analysis failed with librosa and scipy: %s; %s",
+                exc,
+                fallback_exc,
+            )
+            return []
 
     freqs = np.fft.rfftfreq(n_fft, d=1.0 / sr)
 
@@ -76,13 +104,11 @@ def estimate_vocal_regions(
     # Vocal prominence: ratio of vocal band energy to total
     vocal_ratio = vocal_energy / total_energy
 
-    # Spectral flatness in vocal band (vocals = harmonic = low flatness)
-    try:
-        flatness = librosa.feature.spectral_flatness(
-            y=audio, n_fft=n_fft, hop_length=hop_length,
-        )[0]
-    except Exception:
-        flatness = np.ones_like(vocal_ratio)
+    # Spectral flatness (vocals = harmonic = low flatness)
+    if len(flatness) != len(vocal_ratio):
+        frame_count = min(len(flatness), len(vocal_ratio))
+        flatness = flatness[:frame_count]
+        vocal_ratio = vocal_ratio[:frame_count]
 
     # Combine: vocals have high ratio AND low flatness (harmonic content)
     vocal_score = vocal_ratio * (1.0 - flatness * 0.5)

@@ -28,6 +28,9 @@ class TestPreferenceProfileLifecycle:
         profile.close()
         profile.close()  # Should not raise
 
+    def test_count_empty_profile(self, profile):
+        assert profile.count() == 0
+
 
 class TestTransitionRatings:
     """Test transition rating storage and retrieval."""
