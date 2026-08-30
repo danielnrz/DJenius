@@ -7,6 +7,18 @@ When stems are available (Phase 14-15), transitions can work directly
 on separated source signals for cleaner results:
 - bass_swap: swap actual bass stems instead of filtering
 - mashup: mix source vocals over target drums/bass/other
+
+Timing Semantics (V5.1):
+    The transition operates on two intervals extracted from full-track audio:
+
+    Source interval: source[source_exit_sample : source_exit_sample + overlap_samples]
+        The outgoing track's tail during the crossfade.
+
+    Target interval: target[target_entry_sample : target_entry_sample + overlap_samples]
+        The incoming track's head during the crossfade.
+
+    Both intervals are clamped to available audio length.  The output is
+    exactly min(len(source_region), len(target_region)) samples long.
 """
 
 from __future__ import annotations
@@ -135,9 +147,8 @@ def _apply_transition_mono(
     source_end = min(source_exit_sample + overlap_samples, len(source_mono))
     source_region = source_mono[source_exit_sample:source_end]
 
-    target_start = max(0, target_entry_sample - overlap_samples // 2)
-    target_end = min(target_start + overlap_samples, len(target_mono))
-    target_region = target_mono[target_start:target_end]
+    target_end = min(target_entry_sample + overlap_samples, len(target_mono))
+    target_region = target_mono[target_entry_sample:target_end]
 
     # Match lengths
     min_len = min(len(source_region), len(target_region))

@@ -2,6 +2,31 @@
 
 The renderer is the final stage: it takes a complete SetPlan and produces
 a single continuous audio file.
+
+Timing Semantics (V5.1):
+    The planner produces these per-transition fields:
+
+    source_exit_time (float, seconds into source track):
+        The moment the outgoing (source) track's solo playback ends and the
+        transition crossfade begins.  The source contributes
+        source[source_exit_sample .. source_exit_sample + overlap_samples]
+        to the transition.
+
+    target_entry_time (float, seconds into target track):
+        The moment the incoming (target) track enters the mix.  The target
+        contributes target[target_entry_sample .. target_entry_sample + overlap_samples]
+        to the transition.
+
+    overlap_duration (float, seconds):
+        The musical length of the crossfade region.  Both tracks are mixed
+        together for exactly this many samples (clamped to available audio).
+
+    Mix output layout (strict forward cursor, no backtracking):
+        1. T_0[0 .. SET_0]                           — first track solo
+        2. transition(T_0, T_1) of length OD_0        — crossfade region
+        3. T_1[TET_1 + OD_0 .. SET_1]                — middle track solo
+        ...
+        N. T_f[TET_f + OD_{f-1} .. end]              — final track plays to end
 """
 
 from __future__ import annotations
@@ -72,10 +97,12 @@ def render_mix(
             # Allow DecodeError to propagate - total failure should abort render
             raise
         except Exception as e:
-            logger.error("Failed to load %s: %s", track.filepath, e)
-            # Create silence as placeholder for non-critical failures
-            duration_samples = int(track.duration_sec * sample_rate)
-            track_audio[track.id] = (np.zeros(duration_samples, dtype=np.float32), sample_rate)
+            # _load_audio wraps all load failures into DecodeError, so reaching
+            # here indicates a programming error (e.g. TypeError, KeyError).
+            # Abort the render rather than inserting silent audio.
+            raise DecodeError(
+                f"Unexpected error loading {track.filepath}: {e}"
+            ) from e
 
         # Load stem audio if available
         if track.analysis.stems:
@@ -121,11 +148,11 @@ def render_mix(
             incoming_transition = plan.transitions[i - 1]
 
         if i == 0:
-            # First track: play from start to exit point (or end of track)
+            # First track: play solo up to source_exit_sample where transition begins
             source_exit_sample = int(exit_transition.source_exit_time * sr) if exit_transition else track_duration
             source_exit_sample = min(source_exit_sample, track_duration)
             
-            # Add track to mix
+            # Add track solo section to mix
             end_sample = min(current_sample + source_exit_sample, total_duration)
             length = end_sample - current_sample
             if length > 0:
@@ -138,7 +165,7 @@ def render_mix(
                     "mix_start_sample": current_sample,
                     "mix_end_sample": end_sample,
                     "source_start_sample": 0,
-                    "source_end_sample": source_exit_sample,
+                    "source_end_sample": length,
                 })
             current_sample = end_sample
 
@@ -199,8 +226,15 @@ def render_mix(
                         current_sample = trans_end
                         transitions_rendered += 1
 
-                    # Place remaining target audio after transition
-                    rem_start_sample = target_entry_sample + overlap_samples
+                    # Place remaining target audio after transition.
+                    # The transition consumed `actual_trans_len` samples from the
+                    # target starting at target_entry_sample, so we resume from
+                    # target_entry_sample + actual_trans_len.
+                    # Clamp both start and end to track bounds.
+                    rem_start_sample = min(
+                        target_entry_sample + actual_trans_len,
+                        track_duration,
+                    )
                     rem_end_sample = int(exit_transition.source_exit_time * sr) if exit_transition else track_duration
                     rem_end_sample = min(rem_end_sample, track_duration)
                     
