@@ -35,6 +35,7 @@ import logging
 import os
 import subprocess
 import time
+from dataclasses import asdict
 from pathlib import Path
 from typing import Optional
 
@@ -90,6 +91,7 @@ def render_mix(
     logger.info("Loading %d tracks...", len(plan.tracks))
     track_audio = {}
     track_stems = {}  # stem audio arrays per track (if available)
+    track_gain_db = _compute_track_gain_db(plan)
     stem_track_ids = {
         track_id
         for transition in plan.transitions
@@ -104,6 +106,7 @@ def render_mix(
             )
         try:
             y, sr = _load_audio(track.filepath, sample_rate)
+            y = y * db_to_linear(track_gain_db[track.id])
             track_audio[track.id] = (y, sr)
         except DecodeError:
             # Allow DecodeError to propagate - total failure should abort render
@@ -122,6 +125,8 @@ def render_mix(
                 from djenius.audio.stems import load_stems
                 stems = load_stems(track.filepath, sr=sample_rate)
                 if stems:
+                    gain = db_to_linear(track_gain_db[track.id])
+                    stems = {name: audio * gain for name, audio in stems.items()}
                     # load_stems returns dict[str, np.ndarray] — already audio arrays
                     track_stems[track.id] = stems
             except Exception as e:
@@ -146,6 +151,7 @@ def render_mix(
 
     timeline_events = []
     source_cursors = {track.id: 0 for track in plan.tracks}
+    landing_gain_states = {}
 
     for i, spec in enumerate(transition_specs):
         source = plan.tracks[i]
@@ -158,12 +164,19 @@ def render_mix(
         body_end = spec["source_start_sample"]
         if body_end > body_start:
             output_end = current_sample + body_end - body_start
-            mix[current_sample:output_end] += _to_stereo(source_audio[body_start:body_end])
+            body_audio = source_audio[body_start:body_end]
+            body_audio = _apply_landing_gain(
+                body_audio,
+                body_start,
+                landing_gain_states.get(source.id),
+            )
+            mix[current_sample:output_end] += _to_stereo(body_audio)
             timeline_events.append(_track_event(
                 source, body_start, body_end, current_sample, output_end,
                 incoming_transition=plan.transitions[i - 1] if i > 0 else None,
                 outgoing_transition=transition,
                 planned_exit_sample=spec["source_start_sample"],
+                track_gain_db=track_gain_db[source.id],
             ))
             current_sample = output_end
 
@@ -189,13 +202,25 @@ def render_mix(
                 target_entry_sample=spec["target_start_sample"],
                 source_bpm=source.bpm,
                 target_bpm=target.bpm,
-                source_low_energy=source.analysis.low_energy,
+                source_low_energy=transition.context.get(
+                    "source_bass", source.analysis.low_energy,
+                ),
                 source_mid_energy=source.analysis.mid_energy,
-                target_low_energy=target.analysis.low_energy,
+                target_low_energy=transition.context.get(
+                    "target_bass", target.analysis.low_energy,
+                ),
                 target_mid_energy=target.analysis.mid_energy,
                 source_stems=track_stems.get(source.id),
                 target_stems=track_stems.get(target.id),
                 use_time_stretch=spec["use_time_stretch"],
+                source_gain_db=(transition.recipe.source_gain_db if transition.recipe else 0.0),
+                target_gain_db=(transition.recipe.target_gain_db if transition.recipe else 0.0),
+                transition_floor_db=(
+                    transition.recipe.transition_floor_db if transition.recipe else 4.5
+                ),
+                max_transition_boost_db=(
+                    transition.recipe.max_transition_boost_db if transition.recipe else 6.0
+                ),
             )
         except Exception as transition_error:
             logger.warning(
@@ -219,6 +244,18 @@ def render_mix(
                     source_bpm=source.bpm,
                     target_bpm=target.bpm,
                     use_time_stretch=False,
+                    source_gain_db=(
+                        transition.recipe.source_gain_db if transition.recipe else 0.0
+                    ),
+                    target_gain_db=(
+                        transition.recipe.target_gain_db if transition.recipe else 0.0
+                    ),
+                    transition_floor_db=(
+                        transition.recipe.transition_floor_db if transition.recipe else 4.5
+                    ),
+                    max_transition_boost_db=(
+                        transition.recipe.max_transition_boost_db if transition.recipe else 6.0
+                    ),
                 )
             except Exception as fallback_error:
                 raise RuntimeError(
@@ -262,10 +299,23 @@ def render_mix(
             "outgoing_transition": transition.transition_type.value,
             "confidence": transition.confidence,
             "source_reuse": "intentional_loop" if effective_type == "loop_blend" else None,
+            "source_track_gain_db": track_gain_db[source.id],
+            "target_track_gain_db": track_gain_db[target.id],
+            "quality_score": asdict(transition.quality_score) if transition.quality_score else None,
+            "recipe": asdict(transition.recipe) if transition.recipe else None,
+            **transition.context,
         })
         current_sample = output_end
         source_cursors[source.id] = effective_source_end
         source_cursors[target.id] = effective_target_end
+        if transition.recipe and abs(transition.recipe.target_gain_db) > 0.01:
+            landing_gain_states[target.id] = {
+                "start_sample": effective_target_end,
+                "gain_db": transition.recipe.target_gain_db,
+                "duration_samples": seconds_to_samples(
+                    transition.recipe.landing_gain_decay_sec, sample_rate,
+                ),
+            }
         transitions_rendered += 1
         diagnostics.append({
             "from": source.title,
@@ -283,15 +333,27 @@ def render_mix(
     final_track = plan.tracks[-1]
     final_audio = track_audio[final_track.id][0]
     final_start = source_cursors[final_track.id]
-    final_end = len(final_audio)
+    final_end = (
+        min(
+            len(final_audio),
+            seconds_to_samples(plan.final_track_end_time, sample_rate),
+        )
+        if plan.final_track_end_time is not None else len(final_audio)
+    )
     if final_end > final_start:
         output_end = current_sample + final_end - final_start
-        mix[current_sample:output_end] += _to_stereo(final_audio[final_start:final_end])
+        final_body = _apply_landing_gain(
+            final_audio[final_start:final_end],
+            final_start,
+            landing_gain_states.get(final_track.id),
+        )
+        mix[current_sample:output_end] += _to_stereo(final_body)
         timeline_events.append(_track_event(
             final_track, final_start, final_end, current_sample, output_end,
             incoming_transition=plan.transitions[-1] if plan.transitions else None,
             outgoing_transition=None,
             planned_exit_sample=None,
+            track_gain_db=track_gain_db[final_track.id],
         ))
         current_sample = output_end
 
@@ -402,6 +464,7 @@ def render_mix(
                 "total_duration_sec": round(duration_sec, 3),
                 "events": timeline_events_with_sec,
                 "provenance_audit": provenance_audit,
+                "track_gain_db": track_gain_db,
             }, f, indent=2)
         logger.info("Timeline diagnostics written to %s", diagnostics_path)
     except Exception as e:
@@ -420,12 +483,51 @@ def render_mix(
         "diagnostics": diagnostics,
         "timeline_diagnostics_path": str(diagnostics_path),
         "provenance_audit": provenance_audit,
+        "track_gain_db": track_gain_db,
         "file_size_mb": round(os.path.getsize(output_path) / (1024 * 1024), 1),
     }
 
     logger.info("Mix rendered: %s (%.1fs, %.1f dB peak)", output_path, duration_sec, peak_db)
 
     return result
+
+
+def _compute_track_gain_db(plan: SetPlan, maximum_correction_db: float = 4.0) -> dict[str, float]:
+    """Apply bounded per-track normalization while preserving local dynamics."""
+    valid_loudness = [
+        track.analysis.integrated_lufs
+        for track in plan.tracks
+        if -60.0 < track.analysis.integrated_lufs < -1.0
+    ]
+    if not valid_loudness:
+        return {track.id: 0.0 for track in plan.tracks}
+    reference = float(np.median(valid_loudness))
+    return {
+        track.id: round(float(np.clip(
+            reference - track.analysis.integrated_lufs,
+            -maximum_correction_db,
+            maximum_correction_db,
+        )), 3)
+        if -60.0 < track.analysis.integrated_lufs < -1.0 else 0.0
+        for track in plan.tracks
+    }
+
+
+def _apply_landing_gain(
+    audio: np.ndarray,
+    source_start_sample: int,
+    state: Optional[dict],
+) -> np.ndarray:
+    """Decay a target's bounded transition gain smoothly into its body."""
+    if not state or not len(audio) or state["duration_samples"] <= 0:
+        return audio
+    positions = source_start_sample - state["start_sample"] + np.arange(len(audio))
+    progress = np.clip(positions / state["duration_samples"], 0.0, 1.0)
+    gain_db = state["gain_db"] * (1.0 - progress)
+    gain = np.power(10.0, gain_db / 20.0).astype(np.float32)
+    if audio.ndim == 2:
+        gain = gain[:, np.newaxis]
+    return (audio * gain).astype(np.float32)
 
 
 def _track_event(
@@ -438,6 +540,7 @@ def _track_event(
     incoming_transition: Optional[TransitionPlan],
     outgoing_transition: Optional[TransitionPlan],
     planned_exit_sample: Optional[int],
+    track_gain_db: float,
 ) -> dict:
     return {
         "type": "track",
@@ -459,6 +562,7 @@ def _track_event(
             outgoing_transition.transition_type.value if outgoing_transition else None
         ),
         "planned_source_exit_sample": planned_exit_sample,
+        "track_gain_db": track_gain_db,
     }
 
 

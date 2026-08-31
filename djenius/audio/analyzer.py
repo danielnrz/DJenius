@@ -227,6 +227,18 @@ def analyze_track(
         analysis.energy_curve = [0.5]
         analysis.mean_energy = 0.5
 
+    # --- Short-term context curves ---
+    try:
+        loudness, low_energy, centroid = _compute_context_curves(y, sr)
+        analysis.loudness_curve = loudness
+        analysis.low_energy_curve = low_energy
+        analysis.spectral_centroid_curve = centroid
+    except Exception as e:
+        logger.warning("Context curve analysis failed for %s: %s", filepath, e)
+        analysis.loudness_curve = [analysis.integrated_lufs]
+        analysis.low_energy_curve = [0.33]
+        analysis.spectral_centroid_curve = [0.0]
+
     # --- Spectral Features ---
     try:
         low, mid, high = compute_spectral_energy_bands(y, sr)
@@ -412,6 +424,39 @@ def analyze_track(
         cache.put(profile)
 
     return profile
+
+
+def _compute_context_curves(
+    audio: np.ndarray,
+    sample_rate: int,
+    resolution_hz: float = 1.0,
+) -> tuple[list[float], list[float], list[float]]:
+    """Compute compact loudness, bass-ratio, and centroid context curves."""
+    frame_length = max(1, int(round(sample_rate / resolution_hz)))
+    loudness_curve = []
+    low_energy_curve = []
+    centroid_curve = []
+
+    for start in range(0, len(audio), frame_length):
+        frame = audio[start:start + frame_length]
+        if not len(frame):
+            continue
+        windowed = frame * np.hanning(len(frame))
+        spectrum = np.abs(np.fft.rfft(windowed)) ** 2
+        frequencies = np.fft.rfftfreq(len(frame), d=1.0 / sample_rate)
+        total_power = float(np.sum(spectrum)) + 1e-20
+        rms = float(np.sqrt(np.mean(frame.astype(np.float64) ** 2)))
+        loudness_curve.append(round(20.0 * np.log10(max(rms, 1e-10)), 3))
+        low_energy_curve.append(round(
+            float(np.sum(spectrum[frequencies < 180.0])) / total_power,
+            4,
+        ))
+        centroid_curve.append(round(
+            float(np.sum(frequencies * spectrum)) / total_power,
+            1,
+        ))
+
+    return loudness_curve, low_energy_curve, centroid_curve
 
 
 def _detect_downbeats(beat_times: list[float], bpm: float) -> list[float]:

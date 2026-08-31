@@ -78,6 +78,9 @@ class TrackAnalysis:
 
     # Energy
     energy_curve: list[float] = field(default_factory=list)  # 1Hz resolution, 0-1
+    loudness_curve: list[float] = field(default_factory=list)  # short-term RMS dBFS
+    low_energy_curve: list[float] = field(default_factory=list)  # low-band ratio
+    spectral_centroid_curve: list[float] = field(default_factory=list)
     mean_energy: float = 0.0
 
     # Spectral features
@@ -179,6 +182,40 @@ class CompatibilityScore:
 
 
 @dataclass
+class TransitionQualityScore:
+    """Deterministic musical-context assessment for one transition plan."""
+    phrase_alignment_score: float = 0.0
+    bar_alignment_score: float = 0.0
+    tempo_compatibility_score: float = 0.0
+    harmonic_compatibility_score: float = 0.0
+    energy_continuity_score: float = 0.0
+    loudness_continuity_score: float = 0.0
+    bass_handoff_score: float = 0.0
+    vocal_clash_score: float = 0.0
+    structural_context_score: float = 0.0
+    transition_style_fit_score: float = 0.0
+    track_playtime_score: float = 0.0
+    target_landing_score: float = 0.0
+    transition_floor_score: float = 0.0
+    overall_score: float = 0.0
+
+
+@dataclass
+class TransitionRecipe:
+    """Renderer-facing musical instructions selected by the DJ planner."""
+    source_gain_db: float = 0.0
+    target_gain_db: float = 0.0
+    landing_gain_decay_sec: float = 10.0
+    transition_floor_db: float = 4.5
+    max_transition_boost_db: float = 6.0
+    bass_handoff_mode: str = "source_to_target"
+    vocal_policy: str = "avoid_overlap"
+    energy_delta: float = 0.0
+    confidence: float = 0.0
+    reasoning: str = ""
+
+
+@dataclass
 class TransitionPlan:
     """A plan for transitioning between two tracks. DJ Brain output."""
     source_track_id: str = ""
@@ -200,6 +237,9 @@ class TransitionPlan:
     compatibility_score: Optional[CompatibilityScore] = None
     confidence: float = 0.0
     reasoning: str = ""
+    quality_score: Optional[TransitionQualityScore] = None
+    recipe: Optional[TransitionRecipe] = None
+    context: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         d = asdict(self)
@@ -221,6 +261,14 @@ class TransitionPlan:
         if d.get("compatibility_score"):
             compat = CompatibilityScore(**d["compatibility_score"])
 
+        quality = None
+        if d.get("quality_score"):
+            quality = TransitionQualityScore(**d["quality_score"])
+
+        recipe = None
+        if d.get("recipe"):
+            recipe = TransitionRecipe(**d["recipe"])
+
         return cls(
             source_track_id=d.get("source_track_id", ""),
             target_track_id=d.get("target_track_id", ""),
@@ -235,6 +283,9 @@ class TransitionPlan:
             compatibility_score=compat,
             confidence=d.get("confidence", 0.0),
             reasoning=d.get("reasoning", ""),
+            quality_score=quality,
+            recipe=recipe,
+            context=d.get("context", {}),
         )
 
 
@@ -250,6 +301,7 @@ class SetPlan:
     # Summary
     avg_transition_confidence: float = 0.0
     score: float = 0.0
+    final_track_end_time: Optional[float] = None
 
     # V5: Intent and explanations
     intent_used: Optional[SetIntent] = None
@@ -289,6 +341,7 @@ class SetPlan:
             "energy_profile": self.energy_profile.value,
             "avg_transition_confidence": self.avg_transition_confidence,
             "score": self.score,
+            "final_track_end_time": self.final_track_end_time,
             "human_readable_reasons": self.human_readable_reasons,
         }
 
@@ -312,6 +365,7 @@ class SetPlan:
             energy_profile=ep,
             avg_transition_confidence=d.get("avg_transition_confidence", 0.0),
             score=d.get("score", 0.0),
+            final_track_end_time=d.get("final_track_end_time"),
             human_readable_reasons=d.get("human_readable_reasons", []),
         )
 

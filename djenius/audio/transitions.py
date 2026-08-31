@@ -61,6 +61,10 @@ def apply_transition(
     source_stems: Optional[dict[str, np.ndarray]] = None,
     target_stems: Optional[dict[str, np.ndarray]] = None,
     use_time_stretch: bool = True,
+    source_gain_db: float = 0.0,
+    target_gain_db: float = 0.0,
+    transition_floor_db: float = 4.5,
+    max_transition_boost_db: float = 6.0,
 ) -> np.ndarray:
     """Apply a transition between source and target audio.
 
@@ -111,6 +115,10 @@ def apply_transition(
                 source_stems=source_stems,
                 target_stems=target_stems,
                 use_time_stretch=use_time_stretch,
+                source_gain_db=source_gain_db,
+                target_gain_db=target_gain_db,
+                transition_floor_db=transition_floor_db,
+                max_transition_boost_db=max_transition_boost_db,
             )
             channel_results.append(ch_result)
         return np.column_stack(channel_results).astype(np.float32)
@@ -126,6 +134,10 @@ def apply_transition(
             source_stems=source_stems,
             target_stems=target_stems,
             use_time_stretch=use_time_stretch,
+            source_gain_db=source_gain_db,
+            target_gain_db=target_gain_db,
+            transition_floor_db=transition_floor_db,
+            max_transition_boost_db=max_transition_boost_db,
         ).astype(np.float32)
 
 
@@ -181,6 +193,10 @@ def _apply_transition_mono(
     source_stems: Optional[dict[str, np.ndarray]] = None,
     target_stems: Optional[dict[str, np.ndarray]] = None,
     use_time_stretch: bool = True,
+    source_gain_db: float = 0.0,
+    target_gain_db: float = 0.0,
+    transition_floor_db: float = 4.5,
+    max_transition_boost_db: float = 6.0,
 ) -> np.ndarray:
     """Apply a transition on a single channel."""
     # Extract the relevant regions
@@ -199,6 +215,9 @@ def _apply_transition_mono(
 
     if len(source_region) == 0 or len(target_region) == 0:
         return np.zeros(overlap_samples, dtype=np.float32)
+
+    source_region = source_region * db_to_linear(source_gain_db)
+    target_region = target_region * db_to_linear(target_gain_db)
 
     if transition_type == "beatmatched_blend":
         min_len = len(source_region)
@@ -242,6 +261,10 @@ def _apply_transition_mono(
             source_region, target_region, sr,
             source_bpm=source_bpm, target_bpm=target_bpm,
             use_time_stretch=use_time_stretch,
+            source_low_energy=source_low_energy,
+            source_mid_energy=source_mid_energy,
+            target_low_energy=target_low_energy,
+            target_mid_energy=target_mid_energy,
         )
     elif transition_type == "bass_swap":
         # Prefer stem-based bass swap when stem data is available
@@ -282,6 +305,20 @@ def _apply_transition_mono(
     else:
         result = _crossfade(source_region, target_region)
 
+    source_context = source_mono[
+        max(0, source_exit_sample - 10 * sr):source_exit_sample
+    ] * db_to_linear(source_gain_db)
+    target_context = target_mono[
+        target_end:min(len(target_mono), target_end + 10 * sr)
+    ] * db_to_linear(target_gain_db)
+    result = _stabilize_transition_level(
+        result,
+        source_context,
+        target_context,
+        sr,
+        transition_floor_db,
+        max_transition_boost_db,
+    )
     return result.astype(np.float32)
 
 
@@ -328,6 +365,52 @@ def _crossfade(source: np.ndarray, target: np.ndarray) -> np.ndarray:
     return (source * fade_out + target * fade_in).astype(np.float32)
 
 
+def _stabilize_transition_level(
+    audio: np.ndarray,
+    source_context: np.ndarray,
+    target_context: np.ndarray,
+    sr: int,
+    allowed_drop_db: float = 4.5,
+    maximum_boost_db: float = 6.0,
+) -> np.ndarray:
+    """Apply a slow, bounded gain floor only inside a transition."""
+    if len(audio) == 0 or sr <= 0 or maximum_boost_db <= 0:
+        return audio
+
+    def rms_db(region: np.ndarray) -> float:
+        if len(region) == 0:
+            return -120.0
+        rms = float(np.sqrt(np.mean(region.astype(np.float64) ** 2)))
+        return float(20.0 * np.log10(max(rms, 1e-6)))
+
+    source_reference_db = rms_db(source_context)
+    target_reference_db = rms_db(target_context)
+    if source_reference_db <= -119.0:
+        source_reference_db = rms_db(audio[:min(len(audio), 3 * sr)])
+    if target_reference_db <= -119.0:
+        target_reference_db = rms_db(audio[max(0, len(audio) - 3 * sr):])
+
+    frame_starts = list(range(0, len(audio), sr))
+    frame_centers = []
+    frame_boost_db = []
+    for start in frame_starts:
+        end = min(len(audio), start + sr)
+        center = (start + end - 1) / 2.0
+        progress = center / max(len(audio) - 1, 1)
+        expected_db = (
+            source_reference_db * (1.0 - progress)
+            + target_reference_db * progress
+        )
+        required_boost = expected_db - allowed_drop_db - rms_db(audio[start:end])
+        frame_centers.append(center)
+        frame_boost_db.append(float(np.clip(required_boost, 0.0, maximum_boost_db)))
+
+    sample_positions = np.arange(len(audio), dtype=np.float64)
+    boost_db = np.interp(sample_positions, frame_centers, frame_boost_db)
+    gain = np.power(10.0, boost_db / 20.0).astype(np.float32)
+    return (audio * gain).astype(np.float32)
+
+
 def _beatmatched_blend(
     source: np.ndarray,
     target: np.ndarray,
@@ -335,6 +418,10 @@ def _beatmatched_blend(
     source_bpm: float = 0.0,
     target_bpm: float = 0.0,
     use_time_stretch: bool = True,
+    source_low_energy: float = 0.0,
+    source_mid_energy: float = 0.0,
+    target_low_energy: float = 0.0,
+    target_mid_energy: float = 0.0,
 ) -> np.ndarray:
     """Beatmatched blend with real time-stretching and beat phase alignment.
 
@@ -350,8 +437,6 @@ def _beatmatched_blend(
 
     # ── Step 1: Time-stretch target to match source BPM ───────────────
     stretched_target = target.copy()
-    stretch_pct = 0.0
-
     if (use_time_stretch and source_bpm > 0 and target_bpm > 0
             and abs(source_bpm - target_bpm) > 0.5):
         rate = source_bpm / target_bpm
@@ -395,7 +480,6 @@ def _beatmatched_blend(
 
         if stretched is not None:
             stretched_target = stretched
-            stretch_pct = abs(rate - 1.0) * 100.0
 
     # Normalize stretched target to source length (trim or pad)
     if len(stretched_target) > n:
@@ -413,6 +497,23 @@ def _beatmatched_blend(
 
     phase_shift = calculate_phase_shift(source, stretched_target, sr, bpm=source_bpm)
     aligned_target = apply_phase_shift(stretched_target, phase_shift)
+
+    has_bass_risk = (
+        source_low_energy > 0.25 or target_low_energy > 0.25
+        or source_mid_energy > 0.35 or target_mid_energy > 0.35
+    )
+    if has_bass_risk and (source_bpm > 0 or target_bpm > 0):
+        from djenius.audio.eq import apply_bass_management
+        source, aligned_target = apply_bass_management(
+            source,
+            aligned_target,
+            sr,
+            source_bpm if source_bpm > 0 else target_bpm,
+            source_low_energy,
+            target_low_energy,
+            source_mid_energy,
+            target_mid_energy,
+        )
 
     # ── Step 3: Musical timing crossfade ──────────────────────────────
     from djenius.utils.timing import bpm_to_samples
@@ -730,8 +831,11 @@ def _filter_sweep(source: np.ndarray, target: np.ndarray, sr: int) -> np.ndarray
 
         result[start:end] = source_filtered * fade_out[start:end]
 
-    # Add target
+    # Add target. Keep part of the dry equal-power blend underneath the
+    # filter effect so removing the outgoing low end cannot create a hole.
     result += target * fade_in
+    dry_blend = source * fade_out + target * fade_in
+    result = result * 0.60 + dry_blend * 0.40
 
     return result.astype(np.float32)
 

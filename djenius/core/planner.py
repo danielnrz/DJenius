@@ -18,9 +18,6 @@ from djenius.core.models import (
 )
 from djenius.core.scorer import (
     score_compatibility,
-    recommend_transition_type,
-    rank_candidates,
-    PreferenceBonuses,
     compute_preference_bonuses,
     score_with_preferences,
 )
@@ -99,6 +96,12 @@ def plan_set(
     # Pre-compute compatibility matrix
     logger.info("Computing compatibility matrix for %d tracks...", len(tracks))
     compat_matrix = _build_compatibility_matrix(tracks)
+    musical_edge_matrix = _build_musical_edge_matrix(
+        tracks,
+        effective_energy_profile,
+        intent,
+        allowed_transition_types,
+    )
 
     # Beam search for optimal ordering
     logger.info("Running beam search (width=%d)...", beam_width)
@@ -115,6 +118,7 @@ def plan_set(
         preferred_energy_range=energy_pref,
         preferred_transition_types=preferred_trans,
         disliked_transition_types=disliked_trans,
+        musical_edge_matrix=musical_edge_matrix,
     )
 
     # Build the set plan with transition details
@@ -126,6 +130,7 @@ def plan_set(
         energy_profile=effective_energy_profile,
         max_transition_bars=effective_max_transition_bars,
         allowed_transition_types=allowed_transition_types,
+        intent=intent,
     )
 
     # Attach intent to plan
@@ -144,6 +149,70 @@ def _build_compatibility_matrix(
             if i != j:
                 score = score_compatibility(t1, t2)
                 matrix[(t1.id, t2.id)] = score
+    return matrix
+
+
+def _build_musical_edge_matrix(
+    tracks: list[TrackProfile],
+    energy_profile: EnergyProfile,
+    intent: Optional[SetIntent],
+    allowed_transition_types: Optional[list[TransitionType]],
+) -> dict[tuple[str, str], float]:
+    """Estimate each edge using local transition and landing context."""
+    from djenius.core.transition_quality import (
+        playtime_bounds,
+        score_transition_candidate,
+        target_entry_limit,
+    )
+
+    transition_types = allowed_transition_types or [
+        TransitionType.CROSSFADE,
+        TransitionType.BEATMATCHED_BLEND,
+        TransitionType.FILTER_SWEEP,
+        TransitionType.PHRASE_CUT,
+    ]
+    matrix = {}
+    for source in tracks:
+        minimum, preferred, maximum = playtime_bounds(source)
+        source_points = [
+            point for point in _musical_points(source, is_exit=True)
+            if minimum <= point <= min(maximum, source.duration_sec - 8.0)
+        ]
+        if not source_points:
+            continue
+        source_exit = min(source_points, key=lambda point: abs(point - preferred))
+        for target in tracks:
+            if source.id == target.id:
+                continue
+            target_points = [
+                point for point in _musical_points(target, is_exit=False)
+                if 0.0 <= point <= target_entry_limit(target)
+            ]
+            if not target_points:
+                continue
+            best = 0.0
+            for target_entry in target_points[:24]:
+                for transition_type in transition_types:
+                    bars = 4 if transition_type in (
+                        TransitionType.PHRASE_CUT,
+                        TransitionType.ECHO_OUT,
+                        TransitionType.LOOP_BLEND,
+                    ) else 8
+                    overlap = bars * 4 * 60.0 / max((source.bpm + target.bpm) / 2, 60)
+                    if source_exit + overlap > source.duration_sec:
+                        continue
+                    quality, _recipe, _details = score_transition_candidate(
+                        source,
+                        target,
+                        source_exit,
+                        target_entry,
+                        overlap,
+                        transition_type,
+                        intent=intent,
+                        energy_profile=energy_profile,
+                    )
+                    best = max(best, quality.overall_score)
+            matrix[(source.id, target.id)] = best
     return matrix
 
 
@@ -214,6 +283,7 @@ def _beam_search(
     preferred_energy_range: Optional[tuple[float, float]] = None,
     preferred_transition_types: Optional[dict[str, float]] = None,
     disliked_transition_types: Optional[dict[str, float]] = None,
+    musical_edge_matrix: Optional[dict[tuple[str, str], float]] = None,
 ) -> list[TrackProfile]:
     """Find the best track ordering using beam search.
 
@@ -230,12 +300,16 @@ def _beam_search(
         start_scores.append((t, energy_pref))
 
     start_scores.sort(key=lambda x: x[1], reverse=True)
-    initial_tracks = [t for t, _ in start_scores[:beam_width]]
+    opener_count = beam_width
+    if energy_profile == EnergyProfile.WARMUP_TO_PEAK:
+        opener_count = min(beam_width, max(2, int(np.ceil(len(tracks) / 3))))
+    initial_tracks = [t for t, _ in start_scores[:opener_count]]
 
     # Each beam state: (track_ids, total_score, total_duration)
     beams = []
+    start_score_by_id = {track.id: score for track, score in start_scores}
     for t in initial_tracks:
-        beams.append(([t.id], 0.0, t.duration_sec))
+        beams.append(([t.id], start_score_by_id[t.id] * 0.35, t.duration_sec))
 
     best_paths = []
 
@@ -260,7 +334,10 @@ def _beam_search(
                     continue
 
                 # Score this transition
-                edge_score = compat.overall_score
+                musical_edge = (musical_edge_matrix or {}).get(
+                    (last_id, t.id), compat.overall_score,
+                )
+                edge_score = 0.45 * compat.overall_score + 0.55 * musical_edge
 
                 # Apply preference bonuses (bounded to [-0.15, +0.15])
                 pref_bonuses = compute_preference_bonuses(
@@ -326,7 +403,19 @@ def _beam_search(
         avg_score = score / max(len(path_ids), 1)
         # Add energy trajectory bonus
         trajectory_bonus = _score_energy_trajectory(path_ids, track_by_id, energy_profile)
-        return avg_score * 0.7 + duration_fit * 0.2 + trajectory_bonus * 0.1
+        warmup_end_penalty = 0.0
+        if (
+            energy_profile == EnergyProfile.WARMUP_TO_PEAK
+            and track_by_id[path_ids[-1]].mean_energy
+            < track_by_id[path_ids[0]].mean_energy + 0.02
+        ):
+            warmup_end_penalty = 0.30
+        return (
+            avg_score * 0.6
+            + duration_fit * 0.15
+            + trajectory_bonus * 0.25
+            - warmup_end_penalty
+        )
 
     best_paths.sort(key=path_key, reverse=True)
     best_path_ids = best_paths[0][0]
@@ -431,7 +520,14 @@ def _score_energy_trajectory(
     if energy_profile == EnergyProfile.STEADY:
         # Penalize variance
         variance = np.var(energies)
-        score = -variance * 0.2
+        score = float(0.15 - variance * 2.0)
+
+    elif energy_profile == EnergyProfile.SLOW_BUILD:
+        diffs = np.diff(energies)
+        positive = float(np.mean(diffs >= -0.02)) if len(diffs) else 0.0
+        severe_drops = float(np.sum(np.minimum(diffs + 0.08, 0.0)))
+        net_change = energies[-1] - energies[0]
+        score = positive * 0.18 + net_change * 0.35 + severe_drops * 1.2
 
     elif energy_profile == EnergyProfile.WARMUP_TO_PEAK:
         # Expect: start low, peak around 70%, stay or drop slightly
@@ -439,16 +535,19 @@ def _score_energy_trajectory(
         # Penalty if peak is too early
         actual_peak_pos = int(np.argmax(energies))
         if actual_peak_pos < peak_expected_pos * 0.6:
-            score -= 0.1  # Peaked too early
+            score -= 0.25  # Peaked too early
         # Penalty if start is too high
         if energies[0] > 0.6:
-            score -= (energies[0] - 0.6) * 0.3
+            score -= (energies[0] - 0.6) * 0.8
         # Reward gradual build
         diffs = np.diff(energies)
         early_increases = diffs[:peak_expected_pos]
         if len(early_increases) > 0:
             positive = np.sum(early_increases > 0) / len(early_increases)
-            score += positive * 0.1
+            score += positive * 0.25
+            early_drops = np.minimum(early_increases + 0.05, 0.0)
+            score += float(np.sum(early_drops)) * 1.5
+        score += (energies[min(peak_expected_pos, n - 1)] - energies[0]) * 0.35
 
     elif energy_profile == EnergyProfile.COOLDOWN:
         # Expect: peak early, then decrease
@@ -539,75 +638,27 @@ def _build_set_plan(
     energy_profile: EnergyProfile,
     max_transition_bars: int,
     allowed_transition_types: Optional[list[TransitionType]] = None,
+    intent: Optional[SetIntent] = None,
 ) -> SetPlan:
-    """Convert a track ordering into a full SetPlan with transitions."""
+    """Jointly select musical exit, entry, length, and transition style."""
+    from djenius.core.transition_quality import (
+        playtime_bounds,
+        score_transition_candidate,
+        target_entry_limit,
+    )
+
     transitions = []
     total_duration = 0.0
+    transition_types = allowed_transition_types or list(TransitionType)
 
     for i in range(len(best_path) - 1):
         source = best_path[i]
         target = best_path[i + 1]
-
-        # Get compatibility
         compat = compat_matrix.get((source.id, target.id))
         if compat is None:
             compat = score_compatibility(source, target)
-
-        # Calculate timing
         avg_bpm = (source.bpm + target.bpm) / 2
         bar_duration = 4 * 60.0 / max(avg_bpm, 60)
-
-        # Determine transition length using phrase-aware scoring
-        from djenius.core.phrasing import (
-            score_entry_point, score_exit_point, compute_transition_length_bars,
-        )
-        source_exit_candidates = source.analysis.possible_exit_points
-        target_entry_candidates = target.analysis.possible_entry_points
-
-        # Score the best exit/entry points
-        best_exit_score = 0.0
-        best_exit_time = source.duration_sec * 0.85
-        scored_exits = []
-        for t in source_exit_candidates:
-            s = score_exit_point(
-                t, source.analysis.bar_times, source.analysis.bar_energies,
-                source.analysis.outro_start, source.duration_sec, source.bpm,
-            )
-            scored_exits.append((s, t))
-            if s > best_exit_score:
-                best_exit_score = s
-                best_exit_time = t
-
-        best_entry_score = 0.0
-        best_entry_time = target.analysis.intro_end + 5.0
-        scored_entries = []
-        for t in target_entry_candidates:
-            s = score_entry_point(
-                t, target.analysis.bar_times, target.analysis.bar_energies,
-                target.analysis.intro_end, target.duration_sec, target.bpm,
-            )
-            scored_entries.append((s, t))
-            if s > best_entry_score:
-                best_entry_score = s
-                best_entry_time = t
-
-        ttype, conf, reasoning = recommend_transition_type(
-            source,
-            target,
-            allowed_types=allowed_transition_types,
-            source_exit_time=best_exit_time,
-            target_entry_time=best_entry_time,
-        )
-
-        # MASHUP transitions benefit from longer overlaps for smoother vocal/instrumental blending
-        is_mashup = (ttype == TransitionType.MASHUP)
-
-        length_bars = compute_transition_length_bars(
-            best_exit_score, best_entry_score, avg_bpm,
-            max_bars=max_transition_bars + (8 if is_mashup else 0),
-        )
-        overlap = bar_duration * length_bars
-
         incoming_cursor = 0.0
         if transitions:
             previous = transitions[-1]
@@ -620,67 +671,169 @@ def _build_set_plan(
                 previous.requires_stretch,
             )
 
-        max_source_exit = source.duration_sec - overlap
-        valid_exits = [
-            (score, time_sec) for score, time_sec in scored_exits
-            if incoming_cursor <= time_sec <= max_source_exit
-        ]
-        if valid_exits:
-            best_exit_score, source_exit = max(
-                valid_exits, key=lambda item: (item[0], -item[1])
-            )
-        else:
-            source_exit = min(source.duration_sec * 0.85, max_source_exit)
-            source_exit = max(incoming_cursor, source_exit)
-
-        bpm_delta_pct = abs(source.bpm - target.bpm) / max(source.bpm, 1.0) * 100
-        requires_stretch = bpm_delta_pct > 1.0 and compat.tempo_score > 0.5
-        stretch_amount = bpm_delta_pct if requires_stretch else 0.0
-        target_bpm = source.bpm if requires_stretch else 0.0
-
-        target_consumed = _target_consumed_seconds(
-            ttype, overlap, source.bpm, target.bpm, requires_stretch,
+        minimum_body, _preferred_body, maximum_body = playtime_bounds(source)
+        source_candidates = _musical_points(source, is_exit=True)
+        target_candidates = _musical_points(target, is_exit=False)
+        candidate_plans = []
+        pair_analysis_confidence = min(
+            source.analysis.analysis_confidence,
+            target.analysis.analysis_confidence,
+            source.analysis.bpm_confidence,
+            target.analysis.bpm_confidence,
         )
-        max_target_entry = target.duration_sec - target_consumed
-        valid_entries = [
-            (score, time_sec) for score, time_sec in scored_entries
-            if 0.0 <= time_sec <= max_target_entry
-        ]
-        if valid_entries:
-            best_entry_score, target_entry = max(
-                valid_entries, key=lambda item: (item[0], -item[1])
-            )
-        else:
-            target_entry = min(max(0.0, best_entry_time), max_target_entry)
+        candidate_types = transition_types
+        if pair_analysis_confidence < 0.55:
+            conservative_types = {
+                TransitionType.CROSSFADE,
+                TransitionType.BEATMATCHED_BLEND,
+                TransitionType.FILTER_SWEEP,
+            }
+            candidate_types = [
+                transition_type for transition_type in transition_types
+                if transition_type in conservative_types
+            ] or [TransitionType.CROSSFADE]
 
-        if source_exit < incoming_cursor or max_source_exit < incoming_cursor:
+        for transition_type in candidate_types:
+            for length_bars in _length_options(
+                transition_type, intent, max_transition_bars,
+            ):
+                overlap = bar_duration * length_bars
+                requires_stretch = (
+                    transition_type == TransitionType.BEATMATCHED_BLEND
+                    and abs(source.bpm - target.bpm) / max(source.bpm, 1.0) > 0.01
+                    and compat.tempo_score > 0.5
+                )
+                target_bpm = source.bpm if requires_stretch else 0.0
+                target_consumed = _target_consumed_seconds(
+                    transition_type, overlap, source.bpm, target.bpm, requires_stretch,
+                )
+                earliest_exit = incoming_cursor + minimum_body
+                latest_exit = min(
+                    incoming_cursor + maximum_body,
+                    source.duration_sec - overlap,
+                )
+                entry_limit = min(
+                    target_entry_limit(target),
+                    target.duration_sec - target_consumed - 20.0,
+                )
+                exits = [
+                    point for point in source_candidates
+                    if earliest_exit <= point <= latest_exit
+                ]
+                entries = [
+                    point for point in target_candidates
+                    if 0.0 <= point <= entry_limit
+                ]
+                for source_exit in exits:
+                    for target_entry in entries:
+                        quality, recipe, context = score_transition_candidate(
+                            source,
+                            target,
+                            source_exit,
+                            target_entry,
+                            overlap,
+                            transition_type,
+                            incoming_source_cursor=incoming_cursor,
+                            intent=intent,
+                            energy_profile=energy_profile,
+                        )
+                        if (
+                            intent
+                            and intent.effective_vocal_preference() == "vocal_safe"
+                            and context["vocal_collision"] > 0.16
+                            and transition_type not in (
+                                TransitionType.PHRASE_CUT,
+                                TransitionType.MASHUP,
+                            )
+                        ):
+                            continue
+                        if (
+                            intent
+                            and intent.effective_transition_style() == "smooth"
+                            and context["vocal_collision"] > 0.25
+                        ):
+                            continue
+                        if context["predicted_transition_trough_db"] > 3.5:
+                            continue
+                        if (
+                            energy_profile == EnergyProfile.WARMUP_TO_PEAK
+                            and i < max(1, int((len(best_path) - 1) * 0.7))
+                            and context["energy_delta_db"] < -2.5
+                        ):
+                            continue
+                        aggressive = transition_type in (
+                            TransitionType.BASS_SWAP,
+                            TransitionType.PHRASE_CUT,
+                            TransitionType.ECHO_OUT,
+                            TransitionType.LOOP_BLEND,
+                            TransitionType.MASHUP,
+                        )
+                        selection_score = quality.overall_score
+                        if aggressive and recipe.confidence < 0.62:
+                            selection_score *= 0.65
+                        candidate_plans.append((
+                            selection_score,
+                            source_exit,
+                            target_entry,
+                            overlap,
+                            length_bars,
+                            transition_type,
+                            requires_stretch,
+                            target_bpm,
+                            quality,
+                            recipe,
+                            context,
+                        ))
+
+        if not candidate_plans:
             raise ValueError(
                 f"No forward transition window remains in {source.title}: "
-                f"incoming cursor {incoming_cursor:.3f}s, duration {source.duration_sec:.3f}s, "
-                f"overlap {overlap:.3f}s"
-            )
-        if target_entry < 0 or target_entry + target_consumed > target.duration_sec + 1e-6:
-            raise ValueError(
-                f"Transition into {target.title} exceeds its duration"
+                f"cursor {incoming_cursor:.3f}s, duration {source.duration_sec:.3f}s"
             )
 
-        transition = TransitionPlan(
+        candidate_plans.sort(
+            key=lambda item: (
+                item[0],
+                item[8].phrase_alignment_score,
+                item[8].target_landing_score,
+                -item[1],
+            ),
+            reverse=True,
+        )
+        (
+            _selection_score,
+            source_exit,
+            target_entry,
+            overlap,
+            length_bars,
+            transition_type,
+            requires_stretch,
+            target_bpm,
+            quality,
+            recipe,
+            context,
+        ) = candidate_plans[0]
+        bpm_delta_pct = abs(source.bpm - target.bpm) / max(source.bpm, 1.0) * 100
+        transitions.append(TransitionPlan(
             source_track_id=source.id,
             target_track_id=target.id,
-            transition_type=ttype,
+            transition_type=transition_type,
             source_exit_time=round(source_exit, 3),
             target_entry_time=round(target_entry, 3),
             overlap_duration=round(overlap, 3),
             length_bars=length_bars,
             target_bpm=target_bpm,
             requires_stretch=requires_stretch,
-            stretch_amount_pct=round(stretch_amount, 1),
+            stretch_amount_pct=round(bpm_delta_pct if requires_stretch else 0.0, 1),
             compatibility_score=compat,
-            confidence=conf,
-            reasoning=reasoning,
-        )
-        transitions.append(transition)
+            confidence=recipe.confidence,
+            reasoning=f"{transition_type.value}: {recipe.reasoning}",
+            quality_score=quality,
+            recipe=recipe,
+            context=context,
+        ))
 
+    final_track_end_time = None
     if transitions:
         total_duration = transitions[0].source_exit_time
         for index, transition in enumerate(transitions):
@@ -697,7 +850,17 @@ def _build_set_plan(
             if index + 1 < len(transitions):
                 total_duration += max(0.0, transitions[index + 1].source_exit_time - target_cursor)
             else:
-                total_duration += max(0.0, target.duration_sec - target_cursor)
+                _minimum, preferred_final, maximum_final = playtime_bounds(target)
+                final_body = min(
+                    maximum_final,
+                    max(preferred_final, target_duration - total_duration),
+                    max(0.0, target.duration_sec - target_cursor),
+                )
+                final_track_end_time = min(
+                    target.duration_sec,
+                    target_cursor + final_body,
+                )
+                total_duration += max(0.0, final_track_end_time - target_cursor)
     elif best_path:
         total_duration = best_path[0].duration_sec
 
@@ -712,11 +875,54 @@ def _build_set_plan(
             3,
         ),
         score=round(
-            float(np.mean([t.compatibility_score.overall_score for t in transitions
-                          if t.compatibility_score])) if transitions else 0.0,
+            float(np.mean([t.quality_score.overall_score for t in transitions
+                          if t.quality_score])) if transitions else 0.0,
             3,
         ),
+        final_track_end_time=(
+            round(final_track_end_time, 3) if final_track_end_time is not None else None
+        ),
     )
+
+
+def _musical_points(track: TrackProfile, is_exit: bool) -> list[float]:
+    """Return phrase and grouped-bar candidates without arbitrary timestamps."""
+    points = set(track.analysis.phrase_boundaries)
+    points.update(
+        time_sec for index, time_sec in enumerate(track.analysis.bar_times)
+        if index % 4 == 0
+    )
+    points.update(
+        track.analysis.possible_exit_points
+        if is_exit else track.analysis.possible_entry_points
+    )
+    bar_duration = 4 * 60.0 / max(track.bpm, 60.0)
+    if len(track.analysis.bar_times) < 8:
+        points.update(np.arange(0.0, track.duration_sec, bar_duration * 4))
+    return sorted(round(float(point), 4) for point in points if point >= 0.0)
+
+
+def _length_options(
+    transition_type: TransitionType,
+    intent: Optional[SetIntent],
+    max_transition_bars: int,
+) -> list[int]:
+    minimum, maximum = (
+        intent.effective_transition_length_bars() if intent else (4, max_transition_bars)
+    )
+    maximum = min(maximum, max_transition_bars)
+    if transition_type in (TransitionType.PHRASE_CUT, TransitionType.ECHO_OUT):
+        preferred = [4]
+    elif transition_type == TransitionType.LOOP_BLEND:
+        preferred = [4, 8]
+    elif transition_type in (TransitionType.BASS_SWAP, TransitionType.MASHUP):
+        preferred = [4, 8]
+    elif transition_type == TransitionType.FILTER_SWEEP:
+        preferred = [8, 12, 16]
+    else:
+        preferred = [8, 12, 16]
+    allowed = [bars for bars in preferred if bars <= maximum and bars >= min(minimum, 8)]
+    return allowed or [max(4, min(maximum, 8))]
 
 
 def _target_consumed_seconds(

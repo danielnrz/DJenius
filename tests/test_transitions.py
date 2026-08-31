@@ -87,6 +87,21 @@ class TestIndividualTransitions:
         assert len(result) > 0
         assert np.all(np.isfinite(result))
 
+    def test_filter_sweep_keeps_a_dry_energy_floor(self, sr):
+        duration = 8
+        time = np.arange(sr * duration, dtype=np.float32) / sr
+        source = 0.2 * np.sin(2 * np.pi * 110 * time)
+        target = 0.2 * np.sin(2 * np.pi * 440 * time)
+
+        result = _filter_sweep(source, target, sr)
+        input_rms = float(np.sqrt(np.mean(source ** 2)))
+        frame_rms = [
+            float(np.sqrt(np.mean(result[start:start + sr] ** 2)))
+            for start in range(0, len(result), sr)
+        ]
+
+        assert min(frame_rms) >= input_rms * 10 ** (-6.0 / 20.0)
+
     def test_echo_out_length(self, mono_audio, sr):
         mid = len(mono_audio) // 2
         result = _echo_out(mono_audio[:mid], mono_audio[mid:], sr)
@@ -111,6 +126,31 @@ class TestIndividualTransitions:
 
 
 class TestApplyTransitionFull:
+    def test_transition_gain_floor_is_bounded_and_slow(self):
+        sample_rate = 8000
+        source = np.full(sample_rate * 30, 0.1, dtype=np.float32)
+        target = np.full(sample_rate * 30, 0.1, dtype=np.float32)
+        source[sample_rate * 10:sample_rate * 20] = 0.04
+        target[:sample_rate * 10] = 0.04
+
+        result = apply_transition(
+            source,
+            target,
+            sample_rate,
+            "crossfade",
+            sample_rate * 10,
+            sample_rate * 10,
+            0,
+        )
+        frame_rms = [
+            float(np.sqrt(np.mean(result[start:start + sample_rate] ** 2)))
+            for start in range(0, len(result), sample_rate)
+        ]
+        drop_db = 20.0 * np.log10(0.1 / min(frame_rms))
+
+        assert drop_db <= 4.7
+        assert max(frame_rms) <= 0.04 * 10 ** (4.0 / 20.0) + 1e-4
+
     def test_all_transition_types(self, full_tracks, sr):
         source, target = full_tracks
         overlap_samples = sr * 2  # 2-second overlap
