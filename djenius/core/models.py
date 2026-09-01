@@ -146,6 +146,16 @@ class SemanticProfile:
     style_scores: dict[str, float] = field(default_factory=dict)
     semantic_tags: list[str] = field(default_factory=list)
     semantic_confidence: float = 0.0
+    # V7.1 keeps the track summary for the existing planner, but also retains
+    # the evidence used to make it.  Scores are relative model matches, not
+    # calibrated probabilities.
+    sample_windows: list[dict] = field(default_factory=list)
+    whole_track_summary: dict[str, dict[str, float]] = field(default_factory=dict)
+    raw_score_summary: dict[str, dict[str, float]] = field(default_factory=dict)
+    group_metrics: dict[str, dict[str, float | str]] = field(default_factory=dict)
+    reliability_by_group: dict[str, float] = field(default_factory=dict)
+    semantic_variability: float = 0.0
+    score_calibration: str = "relative_match"
     source_file_hash: str = ""
     analyzed_at: float = 0.0
 
@@ -160,6 +170,13 @@ class SemanticProfile:
             "style_scores": self.style_scores,
             "semantic_tags": self.semantic_tags,
             "semantic_confidence": self.semantic_confidence,
+            "sample_windows": self.sample_windows,
+            "whole_track_summary": self.whole_track_summary,
+            "raw_score_summary": self.raw_score_summary,
+            "group_metrics": self.group_metrics,
+            "reliability_by_group": self.reliability_by_group,
+            "semantic_variability": self.semantic_variability,
+            "score_calibration": self.score_calibration,
             "source_file_hash": self.source_file_hash,
             "analyzed_at": self.analyzed_at,
         }

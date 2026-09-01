@@ -128,3 +128,99 @@ def test_seeded_plans_are_reproducible_but_can_choose_an_alternative(tmp_path):
     alternative = plan_set(tracks, target_duration_sec=300.0, seed=2)
     assert [track.id for track in first.tracks] == [track.id for track in repeat.tracks]
     assert [track.id for track in first.tracks] != [track.id for track in alternative.tracks]
+
+
+def test_semantic_windows_span_the_whole_track():
+    from djenius.audio.semantic import representative_windows
+
+    windows = representative_windows(210.0)
+    assert len(windows) == 4
+    assert windows[0]["start_sec"] > 0
+    assert windows[-1]["end_sec"] < 210.0
+    assert windows[-1]["start_sec"] > 150.0
+
+
+def test_prompt_ensemble_is_averaged_and_normalized():
+    import numpy as np
+    from djenius.audio.semantic import _average_prompt_embeddings
+
+    features = np.asarray([[1.0, 0.0], [1.0, 0.0], [0.0, 1.0], [0.0, 1.0]])
+    result = _average_prompt_embeddings(features, 2)
+    assert result.shape == (2, 2)
+    assert np.allclose(result[0], [1.0, 0.0])
+    assert np.allclose(result[1], [0.0, 1.0])
+
+
+def test_flat_semantic_distribution_stays_uncertain():
+    from djenius.core.semantic import score_separation
+
+    evidence = score_separation({"sad": 0.25, "happy": 0.25, "calm": 0.25, "dark": 0.25})
+    assert evidence["entropy"] > 0.99
+    assert evidence["reliability"] < 0.55
+
+
+def test_separated_semantic_distribution_is_reliable():
+    from djenius.core.semantic import score_separation
+
+    evidence = score_separation(
+        {"sad": 0.72, "happy": 0.12, "calm": 0.10, "dark": 0.06},
+        {"sad": 0.40, "happy": 0.02, "calm": 0.01, "dark": -0.02},
+        [{"sad": 0.72, "happy": 0.12, "calm": 0.10, "dark": 0.06}],
+    )
+    assert evidence["margin"] > 0.5
+    assert evidence["reliability"] >= 0.55
+
+
+def test_semantic_confidence_scales_planner_and_pair_influence(tmp_path):
+    high = SemanticProfile(
+        embedding=[1.0, 0.0], mood_scores={"sad": 0.9, "happy": 0.1},
+        activity_scores={"late_night": 0.9}, semantic_confidence=1.0,
+    )
+    low = SemanticProfile(
+        embedding=[1.0, 0.0], mood_scores={"sad": 0.9, "happy": 0.1},
+        activity_scores={"late_night": 0.9}, semantic_confidence=0.0,
+    )
+    source = _profile(tmp_path / "source.wav", "source", high)
+    target_high = _profile(tmp_path / "high.wav", "high", high)
+    target_low = _profile(tmp_path / "low.wav", "low", low)
+    high_score = score_compatibility(source, target_high)
+    low_score = score_compatibility(source, target_low)
+    assert high_score.overall_score != low_score.overall_score
+
+
+def test_semantic_profile_v71_fields_round_trip():
+    profile = SemanticProfile(
+        model_version="2", sample_windows=[{"start_sec": 10.0, "end_sec": 20.0}],
+        group_metrics={"mood_scores": {"margin": 0.2}},
+        score_calibration="relative_match", semantic_variability=0.03,
+    )
+    restored = SemanticProfile.from_dict(profile.to_dict())
+    assert restored.sample_windows == profile.sample_windows
+    assert restored.group_metrics == profile.group_metrics
+    assert restored.score_calibration == "relative_match"
+
+
+def test_semantic_version_bump_is_not_an_old_cache_version():
+    from djenius.audio.semantic import SEMANTIC_ANALYSIS_VERSION
+    from djenius.db.cache import compute_file_hash
+    import tempfile
+
+    assert SEMANTIC_ANALYSIS_VERSION == "2"
+    with tempfile.TemporaryDirectory() as directory:
+        path = Path(directory) / "track.wav"
+        path.write_bytes(b"same-audio")
+        cache = AnalysisCache(str(Path(directory) / "cache.db"))
+        try:
+            profile = SemanticProfile(model_name="test", model_version="1", source_file_hash=compute_file_hash(str(path)))
+            cache.put_semantic(str(path), profile)
+            assert cache.get_semantic(str(path), "test", SEMANTIC_ANALYSIS_VERSION) is None
+        finally:
+            cache.close()
+
+
+def test_semantic_similarity_matrix_is_symmetric():
+    from djenius.core.semantic import semantic_similarity_matrix
+
+    matrix = semantic_similarity_matrix({"a": [1.0, 0.0], "b": [0.0, 1.0], "c": [1.0, 0.0]})
+    assert matrix["a"]["b"] == matrix["b"]["a"]
+    assert matrix["a"]["c"] > matrix["a"]["b"]

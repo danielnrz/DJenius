@@ -10,7 +10,7 @@ A fully local personal smart DJ application that analyzes your music library, pl
 - **Transition Selection** - Intelligent transition type selection (crossfade, phrase cut, EQ swap, beatmatched blend, etc.)
 - **Mix Rendering** - Continuous DJ mix output with LUFS normalization
 - **Caching** - SQLite-backed analysis cache with file fingerprinting
-- **Musical Feeling** - Optional local CLAP audio-text analysis for mood, activity, intensity, and broad style cues
+- **Musical Feeling** - Optional local CLAP audio-text analysis for mood, activity, intensity, and broad style cues. Analysis samples representative windows across the track, stores window evidence, and leaves weak labels uncertain.
 
 ## Requirements
 
@@ -70,10 +70,17 @@ Optional local tools:
   parsing remains the default. When enabled for a free-form request, the app
   sends that request to the configured local model and shows the parser source.
 - **Semantic analysis** uses `laion/clap-htsat-unfused` locally through
-  Transformers. It is an estimate, not ground truth, and is cached by source
-  file hash and model version. The model is loaded only by the explicit
-  `Analyze musical feeling` action and released afterward.
+  Transformers. It is an estimate, not ground truth: displayed values are
+  relative model matches, not probabilities. It is cached by source file hash,
+  model, and semantic analysis version. The model is loaded only by the
+  explicit `Analyze musical feeling` action and released afterward. CUDA
+  inference falls back to CPU if the local PyTorch/cuDNN installation is
+  incompatible.
 - **FFmpeg** is used for decoding formats that SoundFile cannot read.
+
+Lyrics semantic understanding is not implemented yet; the V7.1 semantic layer
+uses audio only. A later optional local transcription layer can be evaluated
+separately.
 
 ```bash
 # Scan your music library

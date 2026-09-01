@@ -188,9 +188,17 @@ def score_compatibility(
             + score.mood_continuity_score
             + score.activity_compatibility_score
         ) / 3.0
-        # Keep the V5.3 acoustic score dominant and only add semantics when
-        # both profiles were explicitly analyzed.
-        score.overall_score = round(0.90 * acoustic_score + 0.10 * semantic_score, 3)
+        # Semantic estimates are soft evidence. Unreliable profiles should
+        # have almost no effect on the accepted acoustic ordering.
+        reliability = min(
+            float(source.semantic.semantic_confidence),
+            float(target.semantic.semantic_confidence),
+        )
+        semantic_weight = 0.10 * max(0.0, min(1.0, reliability))
+        score.overall_score = round(
+            (1.0 - semantic_weight) * acoustic_score + semantic_weight * semantic_score,
+            3,
+        )
     else:
         score.overall_score = round(acoustic_score, 3)
 

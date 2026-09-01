@@ -534,7 +534,8 @@ def _semantic_track_preference(track: TrackProfile, intent: Optional[SetIntent])
         max(track.semantic.mood_scores.get(label, 0.0) for label in trajectory_labels)
         if trajectory_labels else 0.5
     )
-    return (0.55 * mood_score + 0.30 * activity_score + 0.15 * trajectory_score)
+    reliability = max(0.0, min(1.0, float(track.semantic.semantic_confidence)))
+    return (0.55 * mood_score + 0.30 * activity_score + 0.15 * trajectory_score) * reliability
 
 
 def _starting_energy_preference(

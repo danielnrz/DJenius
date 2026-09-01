@@ -231,9 +231,15 @@ class LocalAppService:
             "bpm": round(profile.bpm, 1) if profile else None,
             "key": profile.camelot if profile else None,
             "energy": round(profile.mean_energy, 3) if profile else None,
-            "semantic_status": "ready" if semantic else "not_analyzed",
+            "semantic_status": (
+                "ready" if semantic and semantic.semantic_tags
+                else "uncertain" if semantic else "not_analyzed"
+            ),
             "semantic_tags": list(semantic.semantic_tags[:4]) if semantic else [],
             "semantic_confidence": round(semantic.semantic_confidence, 3) if semantic else None,
+            "semantic_reliability": semantic.reliability_by_group if semantic else {},
+            "semantic_variability": round(semantic.semantic_variability, 4) if semantic else None,
+            "semantic_windows": semantic.sample_windows if semantic else [],
         }
 
     def scan_library(self, library_path: str | None = None) -> dict[str, Any]:
@@ -399,6 +405,11 @@ class LocalAppService:
                 "camelot": track.camelot,
                 "energy": round(track.mean_energy, 3),
                 "semantic_tags": list(track.semantic.semantic_tags[:5]) if track.semantic else [],
+                "semantic_status": (
+                    "ready" if track.semantic and track.semantic.semantic_tags
+                    else "uncertain" if track.semantic else "not_analyzed"
+                ),
+                "semantic_confidence": round(track.semantic.semantic_confidence, 3) if track.semantic else None,
                 "moods": sorted(track.semantic.mood_scores, key=track.semantic.mood_scores.get, reverse=True)[:3] if track.semantic else [],
                 "activity": sorted(track.semantic.activity_scores, key=track.semantic.activity_scores.get, reverse=True)[:2] if track.semantic else [],
             })
