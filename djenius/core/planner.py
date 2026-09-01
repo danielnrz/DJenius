@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import logging
 import random
+import hashlib
+import re
 from typing import Optional
 
 import numpy as np
@@ -22,6 +24,7 @@ from djenius.core.scorer import (
     score_with_preferences,
 )
 from djenius.core.intent import SetIntent
+from djenius.core.semantic import intent_match
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +40,8 @@ def plan_set(
     seed: Optional[int] = None,
     intent: Optional[SetIntent] = None,
     preference_bonuses: Optional[dict] = None,
+    avoid_track_ids: Optional[set[str]] = None,
+    avoid_edges: Optional[set[tuple[str, str]]] = None,
 ) -> SetPlan:
     """Plan an optimal set from available tracks.
 
@@ -69,16 +74,25 @@ def plan_set(
     allowed_transition_types = None
     effective_max_transition_bars = max_transition_length_bars
 
+    relaxed_note = None
     if intent:
         effective_energy_profile = intent.effective_energy_profile()
         effective_bpm_range = preferred_bpm_range or (
             (intent.bpm_min, intent.bpm_max) if intent.bpm_min and intent.bpm_max else None
         )
         # Apply hard constraints: filter tracks by intent constraints
+        original_tracks = tracks
         tracks = _filter_tracks_by_intent(tracks, intent)
         if len(tracks) < 2:
             logger.warning("Intent filtering left fewer than 2 tracks. Using all tracks.")
-            tracks = tracks  # Fall back to all tracks
+            tracks = original_tracks
+        if (
+            intent.raw_text
+            and re.search(r"\b(?:only|exclude|never|must|without|avoid)\b", intent.raw_text.lower())
+            and len(tracks) == len(original_tracks)
+            and (intent.bpm_min is not None or intent.energy_min is not None or intent.desired_moods or intent.desired_activity)
+        ):
+            relaxed_note = "No tracks strongly matched every explicit constraint; using the closest available library tracks."
         effective_max_tracks = max_tracks  # Keep original max_tracks
         allowed_transition_types = intent.allowed_transition_types()
         _, intent_max_bars = intent.effective_transition_length_bars()
@@ -119,6 +133,10 @@ def plan_set(
         preferred_transition_types=preferred_trans,
         disliked_transition_types=disliked_trans,
         musical_edge_matrix=musical_edge_matrix,
+        intent=intent,
+        seed=seed,
+        avoid_track_ids=avoid_track_ids,
+        avoid_edges=avoid_edges,
     )
 
     # Build the set plan with transition details
@@ -135,6 +153,8 @@ def plan_set(
 
     # Attach intent to plan
     set_plan.intent_used = intent
+    if relaxed_note:
+        set_plan.human_readable_reasons.append(relaxed_note)
 
     return set_plan
 
@@ -280,6 +300,9 @@ def _filter_tracks_by_intent(
     must_exclude_ids = set(intent.must_exclude)
 
     filtered = []
+    explicit_hard = bool(
+        intent.raw_text and re.search(r"\b(?:only|exclude|excluded|never|must|without|avoid)\b", intent.raw_text.lower())
+    )
     for track in tracks:
         # Always keep must_include tracks
         if track.id in must_include_ids or track.metadata.filepath in must_include_ids:
@@ -290,17 +313,26 @@ def _filter_tracks_by_intent(
         if track.id in must_exclude_ids or track.metadata.filepath in must_exclude_ids:
             continue
 
-        # BPM constraint
-        if intent.bpm_min is not None and track.bpm < intent.bpm_min:
+        # Preset/explicit technical ranges remain hard. Natural-language
+        # preferences are soft so a small library does not collapse.
+        hard_ranges = intent.raw_text is None or explicit_hard
+        if hard_ranges and intent.bpm_min is not None and track.bpm < intent.bpm_min:
             continue
-        if intent.bpm_max is not None and track.bpm > intent.bpm_max:
+        if hard_ranges and intent.bpm_max is not None and track.bpm > intent.bpm_max:
             continue
 
-        # Energy constraint
-        if intent.energy_min is not None and track.mean_energy < intent.energy_min:
+        if hard_ranges and intent.energy_min is not None and track.mean_energy < intent.energy_min:
             continue
-        if intent.energy_max is not None and track.mean_energy > intent.energy_max:
+        if hard_ranges and intent.energy_max is not None and track.mean_energy > intent.energy_max:
             continue
+
+        if explicit_hard and track.semantic:
+            if intent.avoid_moods and any(track.semantic.mood_scores.get(mood, 0.0) >= 0.20 for mood in intent.avoid_moods):
+                continue
+            if intent.desired_moods and max(track.semantic.mood_scores.get(mood, 0.0) for mood in intent.desired_moods) < 0.12:
+                continue
+            if intent.desired_activity and max(track.semantic.activity_scores.get(label, 0.0) for label in intent.desired_activity) < 0.12:
+                continue
 
         filtered.append(track)
 
@@ -329,6 +361,10 @@ def _beam_search(
     preferred_transition_types: Optional[dict[str, float]] = None,
     disliked_transition_types: Optional[dict[str, float]] = None,
     musical_edge_matrix: Optional[dict[tuple[str, str], float]] = None,
+    intent: Optional[SetIntent] = None,
+    seed: Optional[int] = None,
+    avoid_track_ids: Optional[set[str]] = None,
+    avoid_edges: Optional[set[tuple[str, str]]] = None,
 ) -> list[TrackProfile]:
     """Find the best track ordering using beam search.
 
@@ -342,6 +378,13 @@ def _beam_search(
     start_scores = []
     for t in tracks:
         energy_pref = _starting_energy_preference(t, energy_profile)
+        energy_pref += _semantic_track_preference(t, intent) * 0.18
+        if avoid_track_ids and t.id in avoid_track_ids:
+            energy_pref -= 0.14
+        if seed is not None:
+            # Controlled tie-breaking, never a shuffle. Same seed is stable.
+            stable_id = int(hashlib.sha1(t.id.encode()).hexdigest()[:8], 16)
+            energy_pref += random.Random(seed + stable_id).random() * 0.08
         start_scores.append((t, energy_pref))
 
     start_scores.sort(key=lambda x: x[1], reverse=True)
@@ -383,6 +426,8 @@ def _beam_search(
                     (last_id, t.id), compat.overall_score,
                 )
                 edge_score = 0.45 * compat.overall_score + 0.55 * musical_edge
+                if avoid_edges and (last_id, t.id) in avoid_edges:
+                    edge_score -= 0.18
 
                 # Apply preference bonuses (bounded to [-0.15, +0.15])
                 pref_bonuses = compute_preference_bonuses(
@@ -409,6 +454,9 @@ def _beam_search(
 
                 new_duration = duration + t.duration_sec - overlap
                 new_score = score + edge_score + energy_bonus
+                new_score += _semantic_track_preference(t, intent) * 0.12
+                if avoid_track_ids and t.id in avoid_track_ids:
+                    new_score -= 0.10
 
                 candidates.append(
                     (path_ids + [t.id], new_score, new_duration)
@@ -418,7 +466,14 @@ def _beam_search(
             break
 
         # Sort by score and keep top beam_width
-        candidates.sort(key=lambda x: x[1] / max(len(x[0]), 1), reverse=True)
+        candidates.sort(
+            key=lambda x: (x[1] / max(len(x[0]), 1),
+                           random.Random((seed or 0) + sum(
+                               int(hashlib.sha1(item.encode()).hexdigest()[:8], 16)
+                               for item in x[0]
+                           )).random() * 0.01),
+            reverse=True,
+        )
 
         # Prune paths that exceed target duration
         active = []
@@ -466,6 +521,20 @@ def _beam_search(
     best_path_ids = best_paths[0][0]
 
     return [track_by_id[tid] for tid in best_path_ids]
+
+
+def _semantic_track_preference(track: TrackProfile, intent: Optional[SetIntent]) -> float:
+    """Softly align a track with semantic intent; absent profiles are neutral."""
+    if not intent or not track.semantic:
+        return 0.0
+    mood_score = intent_match(track.semantic.mood_scores, intent.desired_moods, intent.avoid_moods)
+    activity_score = intent_match(track.semantic.activity_scores, intent.desired_activity)
+    trajectory_labels = [label for label in intent.mood_trajectory if label in track.semantic.mood_scores]
+    trajectory_score = (
+        max(track.semantic.mood_scores.get(label, 0.0) for label in trajectory_labels)
+        if trajectory_labels else 0.5
+    )
+    return (0.55 * mood_score + 0.30 * activity_score + 0.15 * trajectory_score)
 
 
 def _starting_energy_preference(

@@ -11,7 +11,7 @@ from typing import Optional
 
 import xxhash
 
-from djenius.core.models import TrackMetadata, TrackAnalysis, TrackProfile
+from djenius.core.models import TrackMetadata, TrackAnalysis, TrackProfile, SemanticProfile
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +73,16 @@ class AnalysisCache:
         self._conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_filepath ON tracks(filepath)
         """)
+        self._conn.execute("""
+            CREATE TABLE IF NOT EXISTS semantic_tracks (
+                file_hash TEXT PRIMARY KEY,
+                filepath TEXT NOT NULL,
+                semantic_json TEXT NOT NULL,
+                semantic_version TEXT NOT NULL,
+                created_at REAL NOT NULL,
+                updated_at REAL NOT NULL
+            )
+        """)
         # Migrate existing databases that lack the analysis_version column.
         try:
             self._conn.execute(
@@ -111,7 +121,49 @@ class AnalysisCache:
             metadata=metadata,
             analysis=analysis,
         )
+        semantic = self._get_semantic_by_hash(file_hash)
+        if semantic is not None:
+            profile.semantic = semantic
         return profile
+
+    def _get_semantic_by_hash(self, file_hash: str) -> Optional[SemanticProfile]:
+        cursor = self._conn.execute(
+            "SELECT semantic_json FROM semantic_tracks WHERE file_hash = ?",
+            (file_hash,),
+        )
+        row = cursor.fetchone()
+        if row is None:
+            return None
+        try:
+            return SemanticProfile.from_dict(json.loads(row[0]))
+        except (TypeError, ValueError, json.JSONDecodeError):
+            logger.warning("Ignoring invalid semantic cache entry for %s", file_hash)
+            return None
+
+    def get_semantic(self, filepath: str, model_name: str, semantic_version: str) -> Optional[SemanticProfile]:
+        file_hash = compute_file_hash(filepath)
+        if not file_hash:
+            return None
+        profile = self._get_semantic_by_hash(file_hash)
+        if profile is None or profile.model_name != model_name or profile.model_version != semantic_version:
+            return None
+        if profile.source_file_hash and profile.source_file_hash != file_hash:
+            return None
+        return profile
+
+    def put_semantic(self, filepath: str, profile: SemanticProfile) -> None:
+        file_hash = compute_file_hash(filepath)
+        if not file_hash:
+            raise FileNotFoundError(filepath)
+        profile.source_file_hash = file_hash
+        now = time.time()
+        self._conn.execute(
+            """INSERT OR REPLACE INTO semantic_tracks
+            (file_hash, filepath, semantic_json, semantic_version, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?)""",
+            (file_hash, filepath, json.dumps(profile.to_dict()), profile.model_version, now, now),
+        )
+        self._conn.commit()
 
     def put(self, profile: TrackProfile):
         """Store an analysis result in the cache."""
@@ -161,6 +213,7 @@ class AnalysisCache:
                 id=row[0],
                 metadata=metadata,
                 analysis=analysis,
+                semantic=self._get_semantic_by_hash(row[0]),
             ))
         return profiles
 
@@ -172,12 +225,14 @@ class AnalysisCache:
         cursor = self._conn.execute(
             "DELETE FROM tracks WHERE file_hash = ?", (file_hash,)
         )
+        self._conn.execute("DELETE FROM semantic_tracks WHERE file_hash = ?", (file_hash,))
         self._conn.commit()
         return cursor.rowcount > 0
 
     def clear(self):
         """Clear all cached data."""
         self._conn.execute("DELETE FROM tracks")
+        self._conn.execute("DELETE FROM semantic_tracks")
         self._conn.commit()
 
     def count(self) -> int:

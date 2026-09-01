@@ -12,7 +12,9 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
+import time
 from typing import Optional
 
 from djenius.core.intent import (
@@ -20,6 +22,7 @@ from djenius.core.intent import (
     EnergyPreference, make_intent, PRESETS,
 )
 from djenius.core.models import EnergyProfile
+from djenius.core.semantic import ACTIVITIES, MOODS
 
 logger = logging.getLogger(__name__)
 
@@ -112,6 +115,19 @@ _ENERGY_LEVEL_KEYWORDS: dict[str, str] = {
     "high-energy": EnergyPreference.HIGH,
     "pumping": EnergyPreference.HIGH,
     "intense": EnergyPreference.HIGH,
+}
+
+_MOOD_KEYWORDS = {
+    "happy": "happy", "sad": "sad", "melancholic": "melancholic",
+    "emotional": "melancholic", "romantic": "romantic", "euphoric": "euphoric",
+    "dark": "dark", "dreamy": "dreamy", "calm": "calm", "relaxed": "calm",
+    "angry": "angry", "hopeful": "hopeful", "nostalgic": "nostalgic",
+}
+_ACTIVITY_KEYWORDS = {
+    "dance": "dance", "danceable": "dance", "dancing": "dance",
+    "party": "party", "workout": "workout", "driving": "driving",
+    "late night": "late_night", "late-night": "late_night",
+    "relaxing": "relaxing", "background": "background", "focused": "focused",
 }
 
 # Preset keywords (map to preset names)
@@ -264,13 +280,44 @@ def parse_deterministic(text: str) -> SetIntent:
     if "stem" in text_lower:
         intent.prefer_stems = True
 
+    # 11. Semantic descriptors. These remain soft preferences unless the
+    # request explicitly uses exclusion language.
+    for keyword, mood in _MOOD_KEYWORDS.items():
+        if keyword in text_lower and mood not in intent.desired_moods:
+            intent.desired_moods.append(mood)
+    for keyword, activity in _ACTIVITY_KEYWORDS.items():
+        if keyword in text_lower and activity not in intent.desired_activity:
+            intent.desired_activity.append(activity)
+    for keyword, mood in _MOOD_KEYWORDS.items():
+        if re.search(rf"(?:no|avoid|without|never)\s+(?:\w+\s+){{0,2}}{re.escape(keyword)}", text_lower):
+            if mood in intent.desired_moods:
+                intent.desired_moods.remove(mood)
+            if mood not in intent.avoid_moods:
+                intent.avoid_moods.append(mood)
+    trajectory_patterns = (
+        (r"(?:melancholic|sad|dark).*?(?:become|turn|get|grow|move).*?(?:hopeful|happy|euphoric)", ["melancholic", "hopeful"]),
+        (r"(?:melancholic|sad|dark).*?(?:become|turn|get|grow|move).*?(?:energetic|dance)", ["melancholic", "energetic"]),
+        (r"(?:calm|relaxed|chill).*?(?:become|turn|get|grow|move).*?(?:energetic|euphoric|dance)", ["calm", "energetic"]),
+        (r"(?:dark).*?(?:become|turn|get|grow|move).*?(?:euphoric|happy)", ["dark", "euphoric"]),
+    )
+    for pattern, trajectory in trajectory_patterns:
+        if re.search(pattern, text_lower):
+            intent.mood_trajectory = trajectory
+            intent.energy_profile = intent.energy_profile or EnergyProfile.SLOW_BUILD
+            break
+
     return intent
 
 
 # ---- Ollama LLM Parser ----
 
 _OLLAMA_URL = "http://localhost:11434"
-_OLLAMA_MODEL = "qwen2.5:3b"  # Small, fast model for intent parsing
+_OLLAMA_MODEL = os.environ.get("DJENIUS_OLLAMA_MODEL", "granite4:3b")
+
+
+def ollama_model_name() -> str:
+    """Return the configured local model name shown by the app."""
+    return _OLLAMA_MODEL
 
 _SYSTEM_PROMPT = """You are a DJ intent parser. Convert the user's natural language request into a JSON SetIntent object.
 
@@ -286,6 +333,11 @@ Valid fields:
 - energy_max: maximum energy 0.0-1.0
 - transition_length: one of "short", "medium", "long"
 - prefer_stems: boolean
+- desired_moods: list of labels from happy, sad, melancholic, romantic, euphoric, dark, dreamy, calm, angry, hopeful, nostalgic
+- avoid_moods: list of mood labels to avoid
+- desired_activity: list of labels from dance, party, workout, driving, late_night, relaxing, background, focused
+- mood_trajectory: ordered mood labels, for example ["melancholic", "hopeful"]
+- semantic_strength: number from 0.0 to 1.0
 
 Return ONLY the JSON object, no explanation. If a field is not mentioned, omit it.
 Example: {"preset": "chill", "energy_profile": "steady", "transition_style": "smooth"}
@@ -312,6 +364,7 @@ def parse_with_ollama(
     Returns:
         A SetIntent if parsing succeeds, None otherwise.
     """
+    started = time.perf_counter()
     try:
         import httpx
     except ImportError:
@@ -356,6 +409,9 @@ def parse_with_ollama(
         intent = SetIntent(
             raw_text=text,
             source="llm",
+            parser_model=model,
+            parser_latency_ms=round((time.perf_counter() - started) * 1000.0, 1),
+            llm_attempted=True,
             preset=data.get("preset"),
             target_duration_sec=data.get("target_duration_sec", 1800.0),
             bpm_min=data.get("bpm_min"),
@@ -364,6 +420,11 @@ def parse_with_ollama(
             energy_max=data.get("energy_max"),
             transition_length=data.get("transition_length"),
             prefer_stems=data.get("prefer_stems"),
+            desired_moods=[value for value in data.get("desired_moods", []) if value in MOODS],
+            avoid_moods=[value for value in data.get("avoid_moods", []) if value in MOODS],
+            desired_activity=[value for value in data.get("desired_activity", []) if value in ACTIVITIES],
+            mood_trajectory=[value for value in data.get("mood_trajectory", []) if value in set(MOODS) | {"energetic"}],
+            semantic_strength=float(data.get("semantic_strength", 0.7)),
         )
 
         # Set enum fields
@@ -381,6 +442,10 @@ def parse_with_ollama(
             if data["vocal_preference"] in VocalPreference.ALL:
                 intent.vocal_preference = data["vocal_preference"]
 
+        errors = intent.validate()
+        if errors:
+            logger.warning("Ollama returned invalid intent: %s", "; ".join(errors))
+            return None
         return intent
 
     except Exception as e:
@@ -411,22 +476,35 @@ def parse_request(
     Returns:
         A SetIntent (always non-None, may have default values).
     """
-    # Always try deterministic first
     intent = parse_deterministic(text)
-
-    # If we got a good result, use it
-    if _intent_has_substantial_info(intent):
-        return intent
-
-    # Try LLM as fallback
-    if use_llm:
+    if use_llm and text.strip():
+        # Explicit LLM selection means a free-form request is actually sent
+        # to Ollama. Deterministic parsing then supplements omitted fields.
         llm_intent = parse_with_ollama(text, model=llm_model, url=llm_url)
-        if llm_intent and _intent_has_substantial_info(llm_intent):
-            # Merge: LLM gives structure, deterministic gives raw_text
-            llm_intent.raw_text = text
-            return llm_intent
+        if llm_intent is not None:
+            return _merge_intents(llm_intent, intent)
+        intent.source = "llm_fallback"
+        intent.parser_model = llm_model
+        intent.llm_attempted = True
+        intent.parser_error = "Ollama was unavailable or returned invalid structured intent"
 
     return intent
+
+
+def _merge_intents(primary: SetIntent, supplement: SetIntent) -> SetIntent:
+    """Keep the LLM's interpretation and fill only missing fields locally."""
+    for name in (
+        "preset", "energy_profile", "transition_style", "vocal_preference",
+        "bpm_min", "bpm_max", "energy_min", "energy_max", "transition_length",
+        "prefer_stems", "target_duration_sec",
+    ):
+        if getattr(primary, name) in (None, 1800.0) and getattr(supplement, name) not in (None, 1800.0):
+            setattr(primary, name, getattr(supplement, name))
+    for name in ("desired_moods", "avoid_moods", "desired_activity", "mood_trajectory"):
+        values = list(dict.fromkeys(getattr(primary, name) + getattr(supplement, name)))
+        setattr(primary, name, values)
+    primary.raw_text = supplement.raw_text or primary.raw_text
+    return primary
 
 
 def _intent_has_substantial_info(intent: SetIntent) -> bool:
@@ -442,5 +520,9 @@ def _intent_has_substantial_info(intent: SetIntent) -> bool:
         intent.energy_max is not None,
         intent.transition_length is not None,
         len(intent.must_include) > 0,
+        bool(intent.desired_moods),
+        bool(intent.avoid_moods),
+        bool(intent.desired_activity),
+        bool(intent.mood_trajectory),
     ]
     return sum(indicators) >= 2  # At least 2 meaningful fields

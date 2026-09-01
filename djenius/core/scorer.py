@@ -10,6 +10,7 @@ import numpy as np
 
 from djenius.core.models import TrackProfile, CompatibilityScore, TransitionType
 from djenius.utils.camelot import score_key_compatibility, parse_camelot
+from djenius.core.semantic import cosine_similarity, distribution_similarity
 
 logger = logging.getLogger(__name__)
 
@@ -161,17 +162,37 @@ def score_compatibility(
     # --- Vocal Safety ---
     score.vocal_safety = _score_vocal_safety(source, target)
 
+    # --- Semantic Continuity (optional, deliberately a secondary signal) ---
+    if source.semantic and target.semantic:
+        score.semantic_similarity_score = cosine_similarity(
+            source.semantic.embedding, target.semantic.embedding,
+        )
+        score.mood_continuity_score = distribution_similarity(
+            source.semantic.mood_scores, target.semantic.mood_scores,
+        )
+        score.activity_compatibility_score = distribution_similarity(
+            source.semantic.activity_scores, target.semantic.activity_scores,
+        )
+
     # --- Overall Score ---
     total_weight = sum(weights.values())
-    score.overall_score = round(
-        (
+    acoustic_score = (
             weights["tempo"] * score.tempo_score
             + weights["key"] * score.key_score
             + weights["energy"] * score.energy_score
             + weights["spectral"] * score.spectral_score
-        ) / total_weight,
-        3,
-    )
+        ) / total_weight
+    if source.semantic and target.semantic:
+        semantic_score = (
+            score.semantic_similarity_score
+            + score.mood_continuity_score
+            + score.activity_compatibility_score
+        ) / 3.0
+        # Keep the V5.3 acoustic score dominant and only add semantics when
+        # both profiles were explicitly analyzed.
+        score.overall_score = round(0.90 * acoustic_score + 0.10 * semantic_score, 3)
+    else:
+        score.overall_score = round(acoustic_score, 3)
 
     # Build reasoning
     score.reasoning = _build_reasoning(source, target, score)
@@ -625,5 +646,13 @@ def _build_reasoning(
     elif score.energy_score < 0.4:
         direction = "rise" if target.mean_energy > source.mean_energy else "drop"
         parts.append(f"energy {direction}")
+
+    if source.semantic and target.semantic:
+        if score.mood_continuity_score >= 0.7:
+            parts.append("continuous mood")
+        elif score.mood_continuity_score < 0.4:
+            parts.append("contrasting mood")
+        if score.activity_compatibility_score >= 0.7:
+            parts.append("compatible activity")
 
     return "; ".join(parts) if parts else "mixed compatibility"

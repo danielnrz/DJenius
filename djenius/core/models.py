@@ -130,11 +130,53 @@ class TrackAnalysis:
 
 
 @dataclass
+class SemanticProfile:
+    """Local model estimates of a track's mood, activity, and style.
+
+    Scores are model estimates, not ground truth.  The embedding is retained
+    so future intent vocabularies can be scored without decoding audio again.
+    """
+
+    model_name: str = ""
+    model_version: str = ""
+    embedding: list[float] = field(default_factory=list)
+    mood_scores: dict[str, float] = field(default_factory=dict)
+    activity_scores: dict[str, float] = field(default_factory=dict)
+    intensity_scores: dict[str, float] = field(default_factory=dict)
+    style_scores: dict[str, float] = field(default_factory=dict)
+    semantic_tags: list[str] = field(default_factory=list)
+    semantic_confidence: float = 0.0
+    source_file_hash: str = ""
+    analyzed_at: float = 0.0
+
+    def to_dict(self) -> dict:
+        return {
+            "model_name": self.model_name,
+            "model_version": self.model_version,
+            "embedding": self.embedding,
+            "mood_scores": self.mood_scores,
+            "activity_scores": self.activity_scores,
+            "intensity_scores": self.intensity_scores,
+            "style_scores": self.style_scores,
+            "semantic_tags": self.semantic_tags,
+            "semantic_confidence": self.semantic_confidence,
+            "source_file_hash": self.source_file_hash,
+            "analyzed_at": self.analyzed_at,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "SemanticProfile":
+        known = {f.name for f in cls.__dataclass_fields__.values()}
+        return cls(**{key: value for key, value in data.items() if key in known})
+
+
+@dataclass
 class TrackProfile:
     """Complete profile of a track - metadata + analysis combined."""
     id: str = ""               # unique identifier (file hash)
     metadata: TrackMetadata = field(default_factory=TrackMetadata)
     analysis: TrackAnalysis = field(default_factory=TrackAnalysis)
+    semantic: Optional[SemanticProfile] = None
 
     @property
     def filepath(self) -> str:
@@ -173,6 +215,9 @@ class CompatibilityScore:
     energy_score: float = 0.0
     spectral_score: float = 0.0
     vocal_safety: float = 1.0  # 1.0 = safe, 0.0 = likely vocal clash
+    semantic_similarity_score: float = 0.5
+    mood_continuity_score: float = 0.5
+    activity_compatibility_score: float = 0.5
 
     # Weighted final score
     overall_score: float = 0.0
@@ -375,14 +420,17 @@ class SetPlan:
             "id": track.id,
             "metadata": track.metadata.__dict__,
             "analysis": track.analysis.to_dict(),
+            "semantic": track.semantic.to_dict() if track.semantic else None,
         }
 
     @staticmethod
     def _track_from_dict(d: dict) -> TrackProfile:
         metadata = TrackMetadata(**d.get("metadata", {}))
         analysis = TrackAnalysis.from_dict(d.get("analysis", {}))
+        semantic_data = d.get("semantic")
         return TrackProfile(
             id=d.get("id", ""),
             metadata=metadata,
             analysis=analysis,
+            semantic=SemanticProfile.from_dict(semantic_data) if semantic_data else None,
         )

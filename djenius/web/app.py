@@ -73,6 +73,10 @@ def create_app(service: LocalAppService | None = None) -> FastAPI:
     def index() -> FileResponse:
         return FileResponse(STATIC_DIR / "index.html")
 
+    @app.get("/favicon.ico")
+    def favicon() -> FileResponse:
+        return FileResponse(STATIC_DIR / "favicon.svg", media_type="image/svg+xml")
+
     @app.get("/api/health")
     def health() -> dict:
         return {"status": "ok", "service": "djenius", "core": "ready"}
@@ -96,6 +100,13 @@ def create_app(service: LocalAppService | None = None) -> FastAPI:
     def analyze(request: AnalyzeRequest) -> dict:
         try:
             return {"job_id": service.start_analysis(request.path, request.force)}
+        except (FileNotFoundError, ValueError) as exc:
+            raise fail(exc) from exc
+
+    @app.post("/api/library/semantic")
+    def semantic(request: AnalyzeRequest) -> dict:
+        try:
+            return {"job_id": service.start_semantic_analysis(request.path, request.force)}
         except (FileNotFoundError, ValueError) as exc:
             raise fail(exc) from exc
 

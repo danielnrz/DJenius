@@ -22,7 +22,7 @@ from djenius.audio.scanner import extract_metadata, scan_directory
 from djenius.core.explanations import explain_transition
 from djenius.core.intent import ALL_PRESETS, SetIntent, make_intent
 from djenius.core.models import SetPlan, TrackMetadata, TrackProfile
-from djenius.core.nl_parser import parse_request
+from djenius.core.nl_parser import ollama_model_name, parse_request
 from djenius.core.planner import plan_ordered_set, plan_set
 from djenius.db.cache import AnalysisCache
 from djenius.db.preferences import PreferenceProfile
@@ -216,6 +216,7 @@ class LocalAppService:
 
     @staticmethod
     def _metadata_view(metadata: TrackMetadata, status: str, profile: TrackProfile | None = None) -> dict[str, Any]:
+        semantic = profile.semantic if profile else None
         return {
             "filepath": metadata.filepath,
             "filename": Path(metadata.filepath).name,
@@ -230,10 +231,14 @@ class LocalAppService:
             "bpm": round(profile.bpm, 1) if profile else None,
             "key": profile.camelot if profile else None,
             "energy": round(profile.mean_energy, 3) if profile else None,
+            "semantic_status": "ready" if semantic else "not_analyzed",
+            "semantic_tags": list(semantic.semantic_tags[:4]) if semantic else [],
+            "semantic_confidence": round(semantic.semantic_confidence, 3) if semantic else None,
         }
 
     def scan_library(self, library_path: str | None = None) -> dict[str, Any]:
         path = self.resolve_library(library_path)
+        from djenius.audio.semantic import SEMANTIC_ANALYSIS_VERSION, semantic_model_name
         cache = AnalysisCache(str(self.paths.cache_path))
         try:
             metadata = scan_directory(str(path))
@@ -241,6 +246,11 @@ class LocalAppService:
             ready = 0
             for item in metadata:
                 profile = cache.get(item.filepath)
+                if profile and profile.semantic and (
+                    profile.semantic.model_name != semantic_model_name()
+                    or profile.semantic.model_version != SEMANTIC_ANALYSIS_VERSION
+                ):
+                    profile.semantic = None
                 status = "ready" if profile else (
                     "failed" if item.filepath in self._analysis_failures else "not_analyzed"
                 )
@@ -291,11 +301,56 @@ class LocalAppService:
 
         return self.submit_job("analysis", action)
 
+    def start_semantic_analysis(self, library_path: str | None = None, force: bool = False) -> str:
+        """Run the optional local CLAP layer as an explicit background job."""
+        path = self.resolve_library(library_path)
+        self._remember_state(library_path=str(path))
+
+        def action(progress: Callable[[float, str], None]) -> dict[str, Any]:
+            from djenius.audio.semantic import (
+                SEMANTIC_ANALYSIS_VERSION, SemanticAnalyzer, semantic_model_name,
+            )
+            profiles = self._profiles_for_library(path)
+            cache = AnalysisCache(str(self.paths.cache_path))
+            analyzer = SemanticAnalyzer(model_name=semantic_model_name())
+            analyzed = skipped = 0
+            try:
+                pending = []
+                for profile in profiles:
+                    if not force and cache.get_semantic(
+                        profile.filepath, analyzer.model_name, SEMANTIC_ANALYSIS_VERSION,
+                    ):
+                        skipped += 1
+                    else:
+                        pending.append(profile)
+                analyzer.load()
+                total = max(len(pending), 1)
+                for index, profile in enumerate(pending):
+                    semantic = analyzer.analyze(profile.filepath)
+                    cache.put_semantic(profile.filepath, semantic)
+                    analyzed += 1
+                    progress((index + 1) / total * 100.0, f"Semantic tags: {profile.title}")
+            finally:
+                analyzer.release()
+                cache.close()
+            result = self.scan_library(str(path))
+            result.update({"semantic_analyzed": analyzed, "semantic_skipped": skipped})
+            return result
+
+        return self.submit_job("semantic", action)
+
     def _profiles_for_library(self, path: Path) -> list[TrackProfile]:
         metadata = scan_directory(str(path))
+        from djenius.audio.semantic import SEMANTIC_ANALYSIS_VERSION, semantic_model_name
         cache = AnalysisCache(str(self.paths.cache_path))
         try:
             profiles = [cache.get(item.filepath) for item in metadata]
+            for profile in profiles:
+                if profile and profile.semantic and (
+                    profile.semantic.model_name != semantic_model_name()
+                    or profile.semantic.model_version != SEMANTIC_ANALYSIS_VERSION
+                ):
+                    profile.semantic = None
         finally:
             cache.close()
         ready = [profile for profile in profiles if profile is not None]
@@ -343,6 +398,9 @@ class LocalAppService:
                 "key": track.analysis.key,
                 "camelot": track.camelot,
                 "energy": round(track.mean_energy, 3),
+                "semantic_tags": list(track.semantic.semantic_tags[:5]) if track.semantic else [],
+                "moods": sorted(track.semantic.mood_scores, key=track.semantic.mood_scores.get, reverse=True)[:3] if track.semantic else [],
+                "activity": sorted(track.semantic.activity_scores, key=track.semantic.activity_scores.get, reverse=True)[:2] if track.semantic else [],
             })
         transitions = []
         for index, transition in enumerate(plan.transitions):
@@ -371,7 +429,35 @@ class LocalAppService:
             "avg_transition_confidence": round(plan.avg_transition_confidence, 3),
             "score": round(plan.score, 3),
             "reasons": list(plan.human_readable_reasons),
+            "intent": LocalAppService._intent_view(plan.intent_used),
             "markers": [],
+        }
+
+    @staticmethod
+    def _intent_view(intent: SetIntent | None) -> dict[str, Any] | None:
+        if intent is None:
+            return None
+        source_labels = {
+            "manual": "Manual",
+            "nl_parser": "Deterministic",
+            "llm": "Ollama",
+            "llm_fallback": "Ollama failed -> deterministic fallback",
+        }
+        return {
+            "source": source_labels.get(intent.source, intent.source),
+            "source_code": intent.source,
+            "model": intent.parser_model,
+            "latency_ms": intent.parser_latency_ms,
+            "error": intent.parser_error,
+            "moods": list(intent.desired_moods),
+            "avoid_moods": list(intent.avoid_moods),
+            "activity": list(intent.desired_activity),
+            "trajectory": list(intent.mood_trajectory),
+            "preset": intent.preset,
+            "energy_profile": intent.effective_energy_profile().value,
+            "transition_style": intent.effective_transition_style(),
+            "vocal_preference": intent.effective_vocal_preference(),
+            "duration_sec": round(intent.target_duration_sec, 1),
         }
 
     def start_plan(
@@ -381,6 +467,7 @@ class LocalAppService:
         preset: str | None = None,
         duration_minutes: float | None = None,
         use_llm: bool = False,
+        seed: int | None = None,
     ) -> str:
         path = self.resolve_library(library_path)
         self._remember_state(
@@ -395,6 +482,15 @@ class LocalAppService:
             profiles = self._profiles_for_library(path)
             progress(30, "Parsing set request")
             intent, duration = self._intent(request, preset, duration_minutes, use_llm)
+            self._remember_state(
+                ollama_last_request={
+                    "source": intent.source,
+                    "model": intent.parser_model,
+                    "latency_ms": intent.parser_latency_ms,
+                    "error": intent.parser_error,
+                    "at": time.time(),
+                }
+            )
             progress(45, "Planning musical order and transitions")
             prefs = PreferenceProfile(str(self.paths.preferences_path))
             try:
@@ -406,6 +502,7 @@ class LocalAppService:
                 target_duration_sec=duration,
                 intent=intent,
                 preference_bonuses=preference_bonuses,
+                seed=seed,
             )
             from djenius.core.explanations import explain_set_plan
 
@@ -452,11 +549,21 @@ class LocalAppService:
             bonuses = prefs.get_scoring_bonuses()
         finally:
             prefs.close()
+        previous_ids = {track.id for track in current.tracks}
+        previous_edges = {
+            (current.tracks[index].id, current.tracks[index + 1].id)
+            for index in range(len(current.tracks) - 1)
+        }
+        attempt = int(self._state.get("regeneration_attempt", 0)) + 1
+        self._remember_state(regeneration_attempt=attempt)
         updated = plan_set(
             tracks=profiles,
             target_duration_sec=current.target_duration_sec,
             intent=current.intent_used,
             preference_bonuses=bonuses,
+            seed=attempt,
+            avoid_track_ids=previous_ids,
+            avoid_edges=previous_edges,
         )
         from djenius.core.explanations import explain_set_plan
 
@@ -618,6 +725,7 @@ class LocalAppService:
 
     def system_status(self) -> dict[str, Any]:
         from djenius.audio.stems import gpu_available, stems_available
+        from djenius.audio.semantic import semantic_dependencies_available, semantic_model_name
 
         ollama = False
         try:
@@ -640,6 +748,11 @@ class LocalAppService:
             "demucs": stems_available(),
             "gpu": gpu_available(),
             "ollama": ollama,
+            "ollama_model": self._state.get("ollama_last_request", {}).get("model") or ollama_model_name(),
+            "ollama_last_request": self._state.get("ollama_last_request"),
+            "semantic": semantic_dependencies_available(),
+            "semantic_model": semantic_model_name(),
+            "lyrics": "deferred",
             "preference_db": preference_db,
         }
 
@@ -649,6 +762,7 @@ class LocalAppService:
             "preset": self._state.get("preset", "balanced"),
             "duration_minutes": self._state.get("duration_minutes", 30),
             "use_llm": self._state.get("use_llm", False),
+            "ollama_last_request": self._state.get("ollama_last_request"),
             "presets": ALL_PRESETS,
             "outputs": self.list_outputs(),
         }

@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from djenius.core.models import EnergyProfile, TransitionType
+from djenius.core.semantic import SEMANTIC_LABELS
 
 
 # ---- Enums for intent-specific preferences ----
@@ -139,7 +140,18 @@ class SetIntent:
 
     # -- Source metadata --
     raw_text: Optional[str] = None     # Original NL text if parsed from language
-    source: str = "manual"             # "manual", "nl_parser", "llm"
+    source: str = "manual"             # "manual", "nl_parser", "llm", "llm_fallback"
+    parser_model: Optional[str] = None
+    parser_latency_ms: Optional[float] = None
+    parser_error: Optional[str] = None
+    llm_attempted: bool = False
+
+    # -- Semantic preferences --
+    desired_moods: list[str] = field(default_factory=list)
+    avoid_moods: list[str] = field(default_factory=list)
+    desired_activity: list[str] = field(default_factory=list)
+    mood_trajectory: list[str] = field(default_factory=list)
+    semantic_strength: float = 0.5
 
     # -- Stems --
     prefer_stems: Optional[bool] = None  # None = no preference
@@ -162,6 +174,15 @@ class SetIntent:
         if self.vocal_preference and self.vocal_preference not in VocalPreference.ALL:
             valid = ", ".join(sorted(VocalPreference.ALL))
             errors.append(f"Unknown vocal_preference '{self.vocal_preference}'. Valid: {valid}")
+
+        for field_name in ("desired_moods", "avoid_moods", "desired_activity", "mood_trajectory"):
+            values = getattr(self, field_name)
+            invalid = sorted(set(values) - SEMANTIC_LABELS)
+            if invalid:
+                errors.append(f"Unknown semantic labels in {field_name}: {', '.join(invalid)}")
+
+        if not 0.0 <= self.semantic_strength <= 1.0:
+            errors.append(f"semantic_strength must be between 0.0 and 1.0, got {self.semantic_strength}")
 
         if self.bpm_min is not None and self.bpm_max is not None:
             if self.bpm_min > self.bpm_max:

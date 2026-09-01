@@ -72,6 +72,7 @@ def test_health_and_static_startup(tmp_path):
     assert page.status_code == 200
     assert "Create a mix" in page.text
     assert client.get("/static/app.js").status_code == 200
+    assert client.get("/favicon.ico").status_code == 200
 
 
 def test_scan_and_empty_library_are_graceful(tmp_path):
@@ -87,6 +88,18 @@ def test_scan_and_empty_library_are_graceful(tmp_path):
     result = client.post("/api/library/scan", json={"path": str(tmp_path / "missing")})
     assert result.status_code == 404
     assert "exists" in result.json()["detail"]
+
+
+def test_system_reports_optional_semantic_and_ollama_state(tmp_path, monkeypatch):
+    service = LocalAppService(data_dir=tmp_path / "data", output_dir=tmp_path / "output")
+    monkeypatch.setattr(service, "system_status", lambda: {
+        "core": "ready", "ollama": False, "ollama_model": "granite4:3b",
+        "semantic": False, "semantic_model": "laion/clap-htsat-unfused",
+    })
+    client = ApiClient(create_app(service))
+    status = client.get("/api/system").json()
+    assert status["semantic"] is False
+    assert status["ollama_model"] == "granite4:3b"
 
 
 def test_analysis_job_lifecycle_and_cached_track_status(tmp_path, monkeypatch):

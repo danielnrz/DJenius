@@ -10,6 +10,7 @@ A fully local personal smart DJ application that analyzes your music library, pl
 - **Transition Selection** - Intelligent transition type selection (crossfade, phrase cut, EQ swap, beatmatched blend, etc.)
 - **Mix Rendering** - Continuous DJ mix output with LUFS normalization
 - **Caching** - SQLite-backed analysis cache with file fingerprinting
+- **Musical Feeling** - Optional local CLAP audio-text analysis for mood, activity, intensity, and broad style cues
 
 ## Requirements
 
@@ -25,6 +26,13 @@ cd DJenius
 python -m venv .venv
 source .venv/bin/activate
 pip install -e .
+```
+
+To enable local semantic analysis (downloads the CLAP model on the first
+explicit semantic-analysis run), install the optional extra:
+
+```bash
+pip install -e ".[semantic]"
 ```
 
 For development:
@@ -59,7 +67,12 @@ Optional local tools:
 
 - **Demucs** enables advanced stem transitions when explicitly selected.
 - **Ollama** enables optional local LLM request interpretation; deterministic
-  parsing remains the default.
+  parsing remains the default. When enabled for a free-form request, the app
+  sends that request to the configured local model and shows the parser source.
+- **Semantic analysis** uses `laion/clap-htsat-unfused` locally through
+  Transformers. It is an estimate, not ground truth, and is cached by source
+  file hash and model version. The model is loaded only by the explicit
+  `Analyze musical feeling` action and released afterward.
 - **FFmpeg** is used for decoding formats that SoundFile cannot read.
 
 ```bash

@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>DJenius - Local DJ</title>
+  <link rel="icon" href="/favicon.ico">
   <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body>
@@ -28,9 +29,9 @@
       <div class="section-heading"><div><p class="eyebrow">YOUR COLLECTION</p><h1>Choose your music</h1><p class="muted">DJenius reads your local files and keeps analysis on this computer.</p></div><span class="count-pill" id="track-count">0 tracks</span></div>
       <div class="folder-row"><label for="library-path">Music folder</label><input id="library-path" type="text" placeholder="/Users/you/Music or /home/you/Music"><button id="scan-button" class="button primary">Scan library</button></div>
       <div class="helper">Enter a folder path that contains MP3, WAV, FLAC, M4A, AAC, OGG, WMA, or AIFF files.</div>
-      <div class="library-toolbar"><button id="analyze-button" class="button secondary" disabled>Analyze missing tracks</button><span id="library-summary" class="muted">No folder scanned yet.</span></div>
+      <div class="library-toolbar"><button id="analyze-button" class="button secondary" disabled>Analyze missing tracks</button><button id="semantic-button" class="button secondary" disabled>Analyze musical feeling</button><span id="library-summary" class="muted">No folder scanned yet.</span></div>
       <div id="library-job" class="job-card hidden"></div>
-      <div class="table-wrap"><table><thead><tr><th>Track</th><th>Artist</th><th>Length</th><th>BPM</th><th>Key</th><th>Energy</th><th>Status</th></tr></thead><tbody id="library-rows"><tr><td colspan="7" class="empty">Choose a folder to begin.</td></tr></tbody></table></div>
+      <div class="table-wrap"><table><thead><tr><th>Track</th><th>Artist</th><th>Length</th><th>BPM</th><th>Key</th><th>Energy</th><th>Feeling</th><th>Status</th></tr></thead><tbody id="library-rows"><tr><td colspan="8" class="empty">Choose a folder to begin.</td></tr></tbody></table></div>
     </section>
 
     <section id="create-panel" class="panel">
@@ -48,7 +49,7 @@
     <section id="plan-panel" class="panel">
       <div class="section-heading"><div><p class="eyebrow">REVIEW BEFORE RENDER</p><h1>Your set plan</h1><p id="plan-subtitle" class="muted">Create a mix to see its order and transitions.</p></div><div class="action-row compact"><button id="regenerate-button" class="button ghost" disabled>Regenerate</button><button id="render-button" class="button primary" disabled>Render mix</button></div></div>
       <div id="plan-empty" class="empty-state"><div class="empty-icon">♫</div><h2>No proposal yet</h2><p>Once DJenius has analyzed your library, your track order will appear here.</p></div>
-      <div id="plan-content" class="hidden"><div id="plan-reasons" class="reason-row"></div><div id="plan-tracks"></div></div>
+      <div id="plan-content" class="hidden"><div id="intent-preview" class="intent-preview"></div><div id="plan-reasons" class="reason-row"></div><div id="plan-tracks"></div></div>
       <div id="render-job" class="job-card hidden"></div>
     </section>
 

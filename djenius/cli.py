@@ -679,12 +679,20 @@ def doctor():
     except Exception as e:
         checks.append(("Intent parser", False, str(e)))
 
-    # V5: httpx (optional, for LLM parser)
+    # Runtime dependency for explicit local Ollama parsing
     try:
         import httpx
-        checks.append(("httpx (optional LLM parser)", True, getattr(httpx, "__version__", "ok")))
+        checks.append(("httpx (Ollama runtime)", True, getattr(httpx, "__version__", "ok")))
     except ImportError:
-        checks.append(("httpx (optional LLM parser)", False, "not installed (optional: pip install httpx)"))
+        checks.append(("httpx (Ollama runtime)", False, "not installed (reinstall DJenius)"))
+
+    # Semantic analysis remains optional because its model is large.
+    try:
+        from djenius.audio.semantic import semantic_dependencies_available, semantic_model_name
+        semantic_ok = semantic_dependencies_available()
+        checks.append(("Semantic analysis (optional)", semantic_ok, semantic_model_name() if semantic_ok else "install with: pip install -e '.[semantic]'"))
+    except Exception as e:
+        checks.append(("Semantic analysis (optional)", False, str(e)))
 
     # Display
     table = Table(title="DJenius Doctor", box=box.ROUNDED)
