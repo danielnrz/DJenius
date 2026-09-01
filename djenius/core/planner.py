@@ -90,7 +90,12 @@ def plan_set(
             intent.raw_text
             and re.search(r"\b(?:only|exclude|never|must|without|avoid)\b", intent.raw_text.lower())
             and len(tracks) == len(original_tracks)
-            and (intent.bpm_min is not None or intent.energy_min is not None or intent.desired_moods or intent.desired_activity)
+            and (
+                intent.bpm_min is not None or intent.energy_min is not None
+                or intent.desired_moods or intent.desired_activity
+                or intent.desired_themes or intent.avoid_themes
+                or intent.desired_lyrical_moods or intent.avoid_lyrical_moods
+            )
         ):
             relaxed_note = "No tracks strongly matched every explicit constraint; using the closest available library tracks."
         effective_max_tracks = max_tracks  # Keep original max_tracks
