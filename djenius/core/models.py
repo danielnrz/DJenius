@@ -244,6 +244,10 @@ class LyricsProfile:
     language_confidence: float = 0.0
     hallucination_detected: bool = False
     meaning: Optional[LyricsMeaningProfile] = None
+    # Meaning is a separate, retryable artifact from transcript acquisition.
+    meaning_analysis_version: str = ""
+    meaning_error: str = ""
+    transcription_error: str = ""
     source_file_hash: str = ""
     analysis_version: str = ""
     analyzed_at: float = 0.0
@@ -272,6 +276,9 @@ class TrackProfile:
     analysis: TrackAnalysis = field(default_factory=TrackAnalysis)
     semantic: Optional[SemanticProfile] = None
     lyrics: Optional[LyricsProfile] = None
+    # Runtime-only overlay loaded from the local preference store. The raw
+    # automatic profile in the analysis cache remains unchanged.
+    manual_correction: dict = field(default_factory=dict)
 
     @property
     def filepath(self) -> str:
@@ -539,6 +546,7 @@ class SetPlan:
             "analysis": track.analysis.to_dict(),
             "semantic": track.semantic.to_dict() if track.semantic else None,
             "lyrics": track.lyrics.to_dict() if track.lyrics else None,
+            "manual_correction": track.manual_correction,
         }
 
     @staticmethod
@@ -553,4 +561,5 @@ class SetPlan:
             analysis=analysis,
             semantic=SemanticProfile.from_dict(semantic_data) if semantic_data else None,
             lyrics=LyricsProfile.from_dict(lyrics_data) if lyrics_data else None,
+            manual_correction=d.get("manual_correction", {}),
         )

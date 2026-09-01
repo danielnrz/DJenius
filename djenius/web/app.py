@@ -30,6 +30,7 @@ class LyricsAnalyzeRequest(BaseModel):
     use_llm: bool = True
     use_transcription: bool = True
     use_vocal_stem: bool = False
+    retry_unresolved: bool = False
 
 
 class PlanRequest(BaseModel):
@@ -63,6 +64,12 @@ class TransitionFeedbackRequest(BaseModel):
 class TrackFeedbackRequest(BaseModel):
     track_id: str = Field(min_length=1)
     liked: bool
+
+
+class TrackCorrectionRequest(BaseModel):
+    themes: list[str] = Field(default_factory=list)
+    lyrical_moods: list[str] = Field(default_factory=list)
+    audio_tags: list[str] = Field(default_factory=list)
 
 
 def create_app(service: LocalAppService | None = None) -> FastAPI:
@@ -124,6 +131,7 @@ def create_app(service: LocalAppService | None = None) -> FastAPI:
             return {"job_id": service.start_lyrics_analysis(
                 request.path, request.force, request.use_llm,
                 request.use_transcription, request.use_vocal_stem,
+                request.retry_unresolved,
             )}
         except (FileNotFoundError, ValueError) as exc:
             raise fail(exc) from exc
@@ -209,6 +217,14 @@ def create_app(service: LocalAppService | None = None) -> FastAPI:
     def track_feedback(request: TrackFeedbackRequest) -> dict:
         try:
             return service.save_track_feedback(request.track_id, request.liked)
+        except ValueError as exc:
+            raise fail(exc) from exc
+
+    @app.post("/api/library/tracks/{track_id}/correction")
+    def correction(track_id: str, request: TrackCorrectionRequest) -> dict:
+        try:
+            payload = request.model_dump() if hasattr(request, "model_dump") else request.dict()
+            return service.save_track_correction(track_id, payload)
         except ValueError as exc:
             raise fail(exc) from exc
 

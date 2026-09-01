@@ -13,6 +13,8 @@ A fully local personal smart DJ application that analyzes your music library, pl
 - **Musical Feeling** - Optional local CLAP audio-text analysis for mood, activity, intensity, and broad style cues. Analysis samples representative windows across the track, stores window evidence, and leaves weak labels uncertain.
 - **Lyrics and Meaning** - Optional local lyrics extraction, multilingual Whisper-family transcription, and validated local Ollama song-meaning estimates.
 - **Intent-first selection** - Requests rank tracks for lyrical meaning and audio feeling before the safe technical planner orders transitions. Unknown evidence is labeled as fallback, reliable contradictions are excluded only when the request makes that explicit, and shorter coherent sets are preferred to unrelated padding.
+- **Recoverable meaning analysis** - Transcript acquisition and meaning interpretation are cached as separate stages. Missing, stale, invalid, or failed meaning can be retried without retranscribing a valid local transcript.
+- **Human corrections** - The Library view can save local theme, lyrical-mood, and audio-character corrections. Corrections overlay automatic evidence for this library without overwriting the raw model result.
 
 ## Requirements
 
@@ -99,6 +101,18 @@ Optional local tools:
 
 Audio feeling and lyrical meaning remain separate evidence in the cache and
 planner. Missing lyrics never prevent standard analysis, planning, or rendering.
+
+Song meaning status is reported separately from job completion: meaning-ready,
+low-confidence, interpretation-failed, transcript-missing, unavailable, and
+stale results remain distinguishable. The `Retry unresolved meaning` action
+reuses valid transcripts whenever possible. All meaning data and corrections
+stay in the local ignored `data/` directory.
+
+## Future direction
+
+V9 is reserved for segment-based DJ performance and short-form multi-track
+mixing: playing selected sections, returning to a track, and composing a
+validated timeline rather than assuming one forward pass through each track.
 
 ```bash
 # Scan your music library

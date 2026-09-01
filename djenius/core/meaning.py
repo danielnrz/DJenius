@@ -24,9 +24,45 @@ LYRICAL_MOODS = (
     "nostalgic", "celebratory", "confident", "dark",
 )
 RELATIONSHIP_CONTEXTS = {"", "romantic", "friendship", "family", "self", "general"}
-MEANING_ANALYSIS_VERSION = "1"
-MEANING_MODEL_VERSION = "validated-json-v1"
+MEANING_ANALYSIS_VERSION = "2"
+MEANING_MODEL_VERSION = "validated-json-v2"
 _DEFAULT_MODEL = os.environ.get("DJENIUS_OLLAMA_MODEL", "granite4:3b")
+
+
+def meaning_model_name() -> str:
+    """Return the currently configured local meaning interpreter."""
+    return _DEFAULT_MODEL
+
+
+def meaning_state(profile, *, use_llm: bool = True) -> str:
+    """Classify lyrics and meaning independently for UI/retry decisions."""
+    if profile is None:
+        return "NOT_ANALYZED"
+    from djenius.db.cache import LYRICS_ANALYSIS_VERSION
+    if getattr(profile, "analysis_version", "") != LYRICS_ANALYSIS_VERSION:
+        return "STALE_VERSION"
+    if profile.source == "unavailable" and not profile.text:
+        return "TRANSCRIPTION_FAILED" if profile.transcription_error else "NO_LYRICS_AVAILABLE"
+    if not profile.text:
+        return "TRANSCRIPTION_FAILED"
+    expected_model = meaning_model_name() if use_llm else "deterministic-keyword-fallback"
+    meaning = profile.meaning
+    if meaning is None:
+        return "TRANSCRIPT_READY_MEANING_MISSING"
+    if (
+        profile.meaning_error
+        or profile.meaning_analysis_version != MEANING_ANALYSIS_VERSION
+        or meaning.model_version != MEANING_MODEL_VERSION
+        or meaning.model_name != expected_model
+    ):
+        return "MEANING_INVALID"
+    if meaning.meaning_confidence < 0.35 or profile.transcription_confidence < 0.35:
+        return "MEANING_LOW_CONFIDENCE"
+    return "MEANING_READY"
+
+
+def meaning_is_current(profile, *, use_llm: bool = True) -> bool:
+    return meaning_state(profile, use_llm=use_llm) in {"MEANING_READY", "MEANING_LOW_CONFIDENCE"}
 
 
 def _bounded(value: Any, low: float = 0.0, high: float = 1.0) -> float:

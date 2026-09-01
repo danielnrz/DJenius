@@ -193,16 +193,27 @@ class AnalysisCache:
             logger.warning("Ignoring invalid lyrics cache entry for %s", file_hash)
             return None
 
-    def get_lyrics(self, filepath: str, lyrics_version: str = LYRICS_ANALYSIS_VERSION, transcription_model: str = "") -> Optional[LyricsProfile]:
+    def get_lyrics_raw(self, filepath: str) -> Optional[LyricsProfile]:
+        """Return the hash-matched lyrics artifact regardless of its version.
+
+        Version filtering belongs to the application pipeline: an old meaning
+        result can still contain a perfectly reusable transcript.
+        """
         file_hash = compute_file_hash(filepath)
         if not file_hash:
             return None
         profile = self._get_lyrics_by_hash(file_hash)
+        if profile is None:
+            return None
+        if profile.source_file_hash and profile.source_file_hash != file_hash:
+            return None
+        return profile
+
+    def get_lyrics(self, filepath: str, lyrics_version: str = LYRICS_ANALYSIS_VERSION, transcription_model: str = "") -> Optional[LyricsProfile]:
+        profile = self.get_lyrics_raw(filepath)
         if profile is None or profile.analysis_version != lyrics_version:
             return None
         if transcription_model and profile.transcription_model and profile.transcription_model != transcription_model:
-            return None
-        if profile.source_file_hash and profile.source_file_hash != file_hash:
             return None
         return profile
 

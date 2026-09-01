@@ -10,6 +10,7 @@ Schema is versioned so future migrations can invalidate stale data.
 from __future__ import annotations
 
 import logging
+import json
 import time
 from pathlib import Path
 from typing import Optional
@@ -98,6 +99,12 @@ class PreferenceProfile:
                 mix_id    TEXT NOT NULL,
                 rating    INTEGER NOT NULL CHECK (rating BETWEEN 1 AND 5),
                 created_at REAL NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS track_corrections (
+                track_id TEXT PRIMARY KEY,
+                corrections_json TEXT NOT NULL,
+                updated_at REAL NOT NULL
             );
         """)
 
@@ -268,6 +275,47 @@ class PreferenceProfile:
             "SELECT track_id FROM track_feedback WHERE liked = -1"
         )
         return [row[0] for row in cur.fetchall()]
+
+    # ---- local semantic correction overlay ----
+
+    def save_track_correction(self, track_id: str, correction: dict) -> None:
+        """Store a user correction without changing automatic analysis."""
+        self._conn.execute(
+            """INSERT INTO track_corrections (track_id, corrections_json, updated_at)
+               VALUES (?, ?, ?)
+               ON CONFLICT(track_id) DO UPDATE SET
+                   corrections_json = excluded.corrections_json,
+                   updated_at = excluded.updated_at""",
+            (track_id, json.dumps(correction, sort_keys=True), time.time()),
+        )
+        self._conn.commit()
+
+    def get_track_correction(self, track_id: str) -> Optional[dict]:
+        row = self._conn.execute(
+            "SELECT corrections_json FROM track_corrections WHERE track_id = ?",
+            (track_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        try:
+            value = json.loads(row[0])
+            return value if isinstance(value, dict) else None
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return None
+
+    def get_track_corrections(self) -> dict[str, dict]:
+        rows = self._conn.execute(
+            "SELECT track_id, corrections_json FROM track_corrections"
+        ).fetchall()
+        result = {}
+        for track_id, payload in rows:
+            try:
+                value = json.loads(payload)
+                if isinstance(value, dict):
+                    result[track_id] = value
+            except (TypeError, ValueError, json.JSONDecodeError):
+                continue
+        return result
 
     def get_most_played(self, limit: int = 10) -> list[tuple[str, int]]:
         """Return the most played tracks as (track_id, play_count)."""

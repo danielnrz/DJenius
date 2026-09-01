@@ -8,6 +8,7 @@ preference learning remain in their existing engine modules.
 from __future__ import annotations
 
 import json
+import copy
 import logging
 import shutil
 import threading
@@ -21,10 +22,12 @@ from typing import Any, Callable, Optional
 from djenius.audio.scanner import extract_metadata, scan_directory
 from djenius.core.explanations import explain_transition
 from djenius.core.intent import ALL_PRESETS, SetIntent, make_intent
-from djenius.core.models import SetPlan, TrackMetadata, TrackProfile
+from djenius.core.models import SetPlan, TrackAnalysis, TrackMetadata, TrackProfile
 from djenius.core.nl_parser import ollama_model_name, parse_request
+from djenius.core.meaning import MEANING_ANALYSIS_VERSION, MEANING_MODEL_VERSION, THEMES, LYRICAL_MOODS, meaning_model_name, meaning_state
+from djenius.core.semantic import ACTIVITIES, INTENSITIES, MOODS, SEMANTIC_LABELS, STYLES
 from djenius.core.planner import plan_ordered_set, plan_set
-from djenius.db.cache import AnalysisCache
+from djenius.db.cache import AnalysisCache, compute_file_hash
 from djenius.db.preferences import PreferenceProfile
 
 logger = logging.getLogger(__name__)
@@ -215,10 +218,113 @@ class LocalAppService:
     # ---- library ----
 
     @staticmethod
+    def _normalize_correction(correction: dict[str, Any]) -> dict[str, list[str]]:
+        """Validate a small user overlay; automatic evidence stays cached."""
+        if not isinstance(correction, dict):
+            raise ValueError("Correction must be an object")
+        fields = {
+            "themes": set(THEMES),
+            "lyrical_moods": set(LYRICAL_MOODS),
+            "audio_tags": set(SEMANTIC_LABELS),
+        }
+        normalized: dict[str, list[str]] = {}
+        for field, allowed in fields.items():
+            value = correction.get(field, [])
+            if not isinstance(value, list) or any(not isinstance(item, str) for item in value):
+                raise ValueError(f"{field} must be a list of labels")
+            unknown = sorted(set(value) - allowed)
+            if unknown:
+                raise ValueError(f"Unknown correction labels in {field}: {', '.join(unknown)}")
+            normalized[field] = list(dict.fromkeys(value))[:8]
+        if not any(normalized.values()):
+            raise ValueError("Enter at least one correction label")
+        return normalized
+
+    def _corrections(self) -> dict[str, dict]:
+        prefs = PreferenceProfile(str(self.paths.preferences_path))
+        try:
+            return prefs.get_track_corrections()
+        finally:
+            prefs.close()
+
+    @staticmethod
+    def _apply_correction(profile: TrackProfile, correction: dict | None) -> TrackProfile:
+        if not correction:
+            return profile
+        result = copy.deepcopy(profile)
+        result.manual_correction = copy.deepcopy(correction)
+        themes = correction.get("themes", [])
+        moods = correction.get("lyrical_moods", [])
+        if themes or moods:
+            from djenius.core.models import LyricsMeaningProfile, LyricsProfile
+            if result.lyrics is None:
+                result.lyrics = LyricsProfile(source="manual", transcription_confidence=1.0)
+            if result.lyrics.meaning is None:
+                result.lyrics.meaning = LyricsMeaningProfile()
+            meaning = result.lyrics.meaning
+            if themes:
+                meaning.primary_themes = list(themes)
+                meaning.secondary_themes = []
+            if moods:
+                meaning.lyrical_moods = list(moods)
+            meaning.meaning_confidence = 1.0
+            meaning.model_name = meaning_model_name()
+            meaning.model_version = MEANING_MODEL_VERSION
+            meaning.meaning_source = "manual_correction"
+            result.lyrics.meaning_analysis_version = MEANING_ANALYSIS_VERSION
+            result.lyrics.meaning_error = ""
+        audio_tags = correction.get("audio_tags", [])
+        if audio_tags:
+            from djenius.core.models import SemanticProfile
+            if result.semantic is None:
+                result.semantic = SemanticProfile()
+            result.semantic.semantic_tags = list(audio_tags)
+            for label in audio_tags:
+                if label in MOODS:
+                    result.semantic.mood_scores[label] = 1.0
+                elif label in ACTIVITIES:
+                    result.semantic.activity_scores[label] = 1.0
+                elif label in INTENSITIES:
+                    result.semantic.intensity_scores[label] = 1.0
+                elif label in STYLES:
+                    result.semantic.style_scores[label] = 1.0
+            result.semantic.semantic_confidence = 1.0
+        return result
+
+    def _effective_profile(self, profile: TrackProfile | None, corrections: dict[str, dict] | None = None) -> TrackProfile | None:
+        if profile is None:
+            return None
+        corrections = corrections if corrections is not None else self._corrections()
+        return self._apply_correction(profile, corrections.get(profile.id))
+
+    @staticmethod
+    def _meaning_view(lyrics, correction: dict | None = None) -> dict[str, Any]:
+        state = meaning_state(lyrics, use_llm=True)
+        return {
+            "meaning_status": state,
+            "meaning_error": lyrics.meaning_error if lyrics else "",
+            "transcription_error": lyrics.transcription_error if lyrics else "",
+            "lyrics_status": {
+                "MEANING_READY": "ready",
+                "MEANING_LOW_CONFIDENCE": "low_confidence",
+                "MEANING_INVALID": "failed",
+                "TRANSCRIPT_READY_MEANING_MISSING": "meaning_missing",
+                "TRANSCRIPTION_FAILED": "failed",
+                "NO_LYRICS_AVAILABLE": "unavailable",
+                "NOT_ANALYZED": "not_analyzed",
+                "STALE_VERSION": "stale",
+            }.get(state, "uncertain"),
+            "meaning_origin": "manual_correction" if correction and (correction.get("themes") or correction.get("lyrical_moods")) else (
+                lyrics.meaning.meaning_source if lyrics and lyrics.meaning else None
+            ),
+        }
+
+    @staticmethod
     def _metadata_view(metadata: TrackMetadata, status: str, profile: TrackProfile | None = None) -> dict[str, Any]:
         semantic = profile.semantic if profile else None
         lyrics = profile.lyrics if profile else None
         meaning = lyrics.meaning if lyrics else None
+        meaning_view = LocalAppService._meaning_view(lyrics, profile.manual_correction if profile else None)
         return {
             "filepath": metadata.filepath,
             "filename": Path(metadata.filepath).name,
@@ -242,46 +348,71 @@ class LocalAppService:
             "semantic_reliability": semantic.reliability_by_group if semantic else {},
             "semantic_variability": round(semantic.semantic_variability, 4) if semantic else None,
             "semantic_windows": semantic.sample_windows if semantic else [],
-            "lyrics_status": "ready" if meaning and meaning.meaning_confidence >= 0.35 else "uncertain" if lyrics and lyrics.text else "unavailable" if lyrics else "not_analyzed",
+            **meaning_view,
             "lyrics_source": lyrics.source if lyrics else None,
             "lyrics_language": lyrics.language if lyrics else None,
             "transcription_confidence": round(lyrics.transcription_confidence, 3) if lyrics else None,
             "meaning_themes": (meaning.primary_themes + meaning.secondary_themes)[:5] if meaning else [],
             "lyrical_moods": meaning.lyrical_moods[:4] if meaning else [],
             "meaning_confidence": round(meaning.meaning_confidence, 3) if meaning else None,
+            "manual_correction": profile.manual_correction if profile else {},
         }
 
     def scan_library(self, library_path: str | None = None) -> dict[str, Any]:
         path = self.resolve_library(library_path)
         from djenius.audio.semantic import SEMANTIC_ANALYSIS_VERSION, semantic_model_name
-        from djenius.db.cache import LYRICS_ANALYSIS_VERSION
         cache = AnalysisCache(str(self.paths.cache_path))
+        corrections = self._corrections()
         try:
             metadata = scan_directory(str(path))
             tracks = []
             ready = 0
             for item in metadata:
                 profile = cache.get(item.filepath)
+                audio_profile = profile is not None
+                if profile is None:
+                    # Lyrics analysis is intentionally usable before acoustic
+                    # analysis finishes, so recovery state is not hidden from
+                    # the library view.
+                    lyrics = cache.get_lyrics_raw(item.filepath)
+                    if lyrics is not None:
+                        profile = TrackProfile(
+                            id=compute_file_hash(item.filepath), metadata=item,
+                            analysis=TrackAnalysis(), lyrics=lyrics,
+                        )
                 if profile and profile.semantic and (
                     profile.semantic.model_name != semantic_model_name()
                     or profile.semantic.model_version != SEMANTIC_ANALYSIS_VERSION
                 ):
                     profile.semantic = None
-                if profile and profile.lyrics and profile.lyrics.analysis_version != LYRICS_ANALYSIS_VERSION:
-                    profile.lyrics = None
-                status = "ready" if profile else (
+                profile = self._effective_profile(profile, corrections)
+                status = "ready" if audio_profile else "lyrics_only" if profile else (
                     "failed" if item.filepath in self._analysis_failures else "not_analyzed"
                 )
-                ready += status == "ready"
+                ready += audio_profile
                 tracks.append(self._metadata_view(item, status, profile))
         finally:
             cache.close()
         self._remember_state(library_path=str(path))
+        summary = {state: sum(track.get("meaning_status") == state for track in tracks) for state in (
+            "NOT_ANALYZED", "TRANSCRIPT_READY_MEANING_MISSING", "MEANING_INVALID",
+            "MEANING_LOW_CONFIDENCE", "MEANING_READY", "TRANSCRIPTION_FAILED",
+            "NO_LYRICS_AVAILABLE", "STALE_VERSION",
+        )}
         return {
             "library_path": str(path),
             "tracks": tracks,
             "track_count": len(tracks),
             "ready_count": ready,
+            "meaning_summary": {
+                "total": len(tracks),
+                "counts": summary,
+                "ready": summary["MEANING_READY"],
+                "low_confidence": summary["MEANING_LOW_CONFIDENCE"],
+                "failed": summary["MEANING_INVALID"] + summary["TRANSCRIPTION_FAILED"],
+                "unavailable": summary["NO_LYRICS_AVAILABLE"],
+                "missing": summary["TRANSCRIPT_READY_MEANING_MISSING"],
+            },
         }
 
     def start_analysis(self, library_path: str | None = None, force: bool = False) -> str:
@@ -331,7 +462,8 @@ class LocalAppService:
             profiles = self._profiles_for_library(path)
             cache = AnalysisCache(str(self.paths.cache_path))
             analyzer = SemanticAnalyzer(model_name=semantic_model_name())
-            analyzed = skipped = 0
+            analyzed = skipped = failed = 0
+            failures: list[dict[str, str]] = []
             try:
                 pending = []
                 for profile in profiles:
@@ -344,15 +476,22 @@ class LocalAppService:
                 analyzer.load()
                 total = max(len(pending), 1)
                 for index, profile in enumerate(pending):
-                    semantic = analyzer.analyze(profile.filepath)
-                    cache.put_semantic(profile.filepath, semantic)
-                    analyzed += 1
-                    progress((index + 1) / total * 100.0, f"Semantic tags: {profile.title}")
+                    try:
+                        semantic = analyzer.analyze(profile.filepath)
+                        cache.put_semantic(profile.filepath, semantic)
+                        analyzed += 1
+                        progress((index + 1) / total * 100.0, f"Semantic tags: {profile.title}")
+                    except Exception as exc:
+                        failed += 1
+                        failures.append({"track": profile.title, "error": str(exc)})
+                        self._analysis_failures[profile.filepath] = str(exc)
+                        logger.exception("Semantic analysis failed for %s", profile.filepath)
+                        progress((index + 1) / total * 100.0, f"Semantic failed: {profile.title}")
             finally:
                 analyzer.release()
                 cache.close()
             result = self.scan_library(str(path))
-            result.update({"semantic_analyzed": analyzed, "semantic_skipped": skipped})
+            result.update({"semantic_analyzed": analyzed, "semantic_skipped": skipped, "semantic_failed": failed, "semantic_failures": failures})
             return result
 
         return self.submit_job("semantic", action)
@@ -364,6 +503,7 @@ class LocalAppService:
         use_llm: bool = True,
         use_transcription: bool = True,
         use_vocal_stem: bool = False,
+        retry_unresolved: bool = False,
     ) -> str:
         """Run explicit, optional local lyrics and meaning analysis."""
         path = self.resolve_library(library_path)
@@ -371,24 +511,29 @@ class LocalAppService:
 
         def action(progress: Callable[[float, str], None]) -> dict[str, Any]:
             from djenius.audio.lyrics import analyze_track_lyrics
-            from djenius.audio.lyrics import DEFAULT_TRANSCRIPTION_MODEL
-            from djenius.db.cache import LYRICS_ANALYSIS_VERSION
+            from djenius.core.meaning import meaning_is_current, meaning_state
 
             metadata = scan_directory(str(path))
             cache = AnalysisCache(str(self.paths.cache_path))
             analyzed = skipped = 0
             try:
                 for index, item in enumerate(metadata):
-                    cached_lyrics = cache.get_lyrics(item.filepath, LYRICS_ANALYSIS_VERSION, DEFAULT_TRANSCRIPTION_MODEL)
-                    meaning_model = ollama_model_name() if use_llm else "deterministic-keyword-fallback"
-                    if (
-                        not force and cached_lyrics is not None
-                        and (cached_lyrics.meaning is None or cached_lyrics.meaning.model_name == meaning_model)
-                    ):
+                    cached_lyrics = cache.get_lyrics_raw(item.filepath)
+                    cached_state = meaning_state(cached_lyrics, use_llm=use_llm)
+                    reusable_transcript = bool(cached_lyrics and cached_lyrics.text)
+                    valid_meaning = meaning_is_current(cached_lyrics, use_llm=use_llm)
+                    safe_no_lyrics = cached_state == "NO_LYRICS_AVAILABLE" and not use_transcription
+                    safe_low_confidence = cached_state == "MEANING_LOW_CONFIDENCE" and not retry_unresolved
+                    if not force and cached_lyrics is not None and (valid_meaning or safe_no_lyrics or safe_low_confidence):
                         skipped += 1
-                        progress((index + 1) / max(len(metadata), 1) * 100.0, f"Lyrics cached: {item.title}")
+                        progress((index + 1) / max(len(metadata), 1) * 100.0, f"Meaning cached: {item.title}")
                         continue
-                    progress(index / max(len(metadata), 1) * 100.0, f"Reading lyrics: {item.title}")
+                    if reusable_transcript and not force and cached_state in {
+                        "TRANSCRIPT_READY_MEANING_MISSING", "MEANING_INVALID", "MEANING_LOW_CONFIDENCE",
+                    }:
+                        progress(index / max(len(metadata), 1) * 100.0, f"Reusing transcript; retrying meaning: {item.title}")
+                    else:
+                        progress(index / max(len(metadata), 1) * 100.0, f"Reading lyrics: {item.title}")
                     vocal_path = None
                     if use_vocal_stem:
                         from djenius.audio.stems import separate_stems, stems_available
@@ -401,6 +546,7 @@ class LocalAppService:
                         item.filepath, use_llm=use_llm, use_transcription=use_transcription,
                         use_vocal_stem=use_vocal_stem,
                         audio_path=vocal_path,
+                        existing_profile=cached_lyrics if reusable_transcript and not force else None,
                         progress=lambda message: progress(index / max(len(metadata), 1) * 100.0, f"{message}: {item.title}"),
                     )
                     cache.put_lyrics(item.filepath, profile)
@@ -409,15 +555,25 @@ class LocalAppService:
             finally:
                 cache.close()
             result = self.scan_library(str(path))
-            result.update({"lyrics_analyzed": analyzed, "lyrics_skipped": skipped})
+            result.update({"lyrics_analyzed": analyzed, "lyrics_skipped": skipped, "lyrics_retry_unresolved": retry_unresolved})
             return result
 
         return self.submit_job("lyrics", action)
+
+    def save_track_correction(self, track_id: str, correction: dict[str, Any]) -> dict[str, Any]:
+        normalized = self._normalize_correction(correction)
+        prefs = PreferenceProfile(str(self.paths.preferences_path))
+        try:
+            prefs.save_track_correction(track_id, normalized)
+        finally:
+            prefs.close()
+        return {"track_id": track_id, "correction": normalized}
 
     def _profiles_for_library(self, path: Path) -> list[TrackProfile]:
         metadata = scan_directory(str(path))
         from djenius.audio.semantic import SEMANTIC_ANALYSIS_VERSION, semantic_model_name
         cache = AnalysisCache(str(self.paths.cache_path))
+        corrections = self._corrections()
         try:
             profiles = [cache.get(item.filepath) for item in metadata]
             for profile in profiles:
@@ -426,12 +582,9 @@ class LocalAppService:
                     or profile.semantic.model_version != SEMANTIC_ANALYSIS_VERSION
                 ):
                     profile.semantic = None
-                if profile and profile.lyrics:
-                    from djenius.db.cache import LYRICS_ANALYSIS_VERSION
-                    if profile.lyrics.analysis_version != LYRICS_ANALYSIS_VERSION:
-                        profile.lyrics = None
         finally:
             cache.close()
+        profiles = [self._effective_profile(profile, corrections) for profile in profiles]
         ready = [profile for profile in profiles if profile is not None]
         if len(ready) < 2:
             missing = len(profiles) - len(ready)
@@ -470,6 +623,9 @@ class LocalAppService:
     def plan_view(plan_id: str, plan: SetPlan) -> dict[str, Any]:
         tracks = []
         for index, track in enumerate(plan.tracks):
+            meaning_view = LocalAppService._meaning_view(
+                track.lyrics, track.manual_correction,
+            )
             tracks.append({
                 "position": index + 1,
                 "id": track.id,
@@ -491,10 +647,11 @@ class LocalAppService:
                 "activity": sorted(track.semantic.activity_scores, key=track.semantic.activity_scores.get, reverse=True)[:2] if track.semantic else [],
                 "meaning_themes": (track.lyrics.meaning.primary_themes + track.lyrics.meaning.secondary_themes)[:5] if track.lyrics and track.lyrics.meaning else [],
                 "lyrical_moods": track.lyrics.meaning.lyrical_moods[:4] if track.lyrics and track.lyrics.meaning else [],
-                "lyrics_status": "ready" if track.lyrics and track.lyrics.meaning and track.lyrics.meaning.meaning_confidence >= 0.35 else "uncertain" if track.lyrics and track.lyrics.text else "unavailable" if track.lyrics else "not_analyzed",
+                **meaning_view,
                 "lyrics_source": track.lyrics.source if track.lyrics else None,
                 "lyrics_language": track.lyrics.language if track.lyrics else None,
                 "meaning_confidence": round(track.lyrics.meaning.meaning_confidence, 3) if track.lyrics and track.lyrics.meaning else None,
+                "manual_correction": track.manual_correction,
                 "intent_fit": plan.intent_track_scores.get(track.id),
             })
         transitions = []

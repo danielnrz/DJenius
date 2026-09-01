@@ -16,7 +16,7 @@ import time
 from pathlib import Path
 from typing import Callable, Optional
 
-from djenius.core.meaning import MEANING_ANALYSIS_VERSION, parse_lyrics_meaning, deterministic_meaning
+from djenius.core.meaning import MEANING_ANALYSIS_VERSION, parse_lyrics_meaning, deterministic_meaning, meaning_model_name
 from djenius.core.models import LyricsProfile
 from djenius.db.cache import compute_file_hash, LYRICS_ANALYSIS_VERSION
 
@@ -225,17 +225,34 @@ def analyze_track_lyrics(
     use_vocal_stem: bool = False,
     audio_path: str | None = None,
     progress: Optional[Callable[[str], None]] = None,
+    existing_profile: LyricsProfile | None = None,
 ) -> LyricsProfile:
     """Acquire and optionally interpret one track, never requiring lyrics."""
     started = time.time()
-    text, source, segments = extract_lyrics(filepath)
-    language = ""
-    backend = ""
-    transcription_model = ""
-    confidence = 1.0 if text and source in {"embedded", "sidecar"} else 0.0
-    language_confidence = 0.0
     hallucinated = False
     error = ""
+    transcription_error = ""
+    if existing_profile and existing_profile.text:
+        # Meaning retries reuse the expensive transcript and all acquisition
+        # metadata.  Only a source-file hash/version change invalidates it.
+        text = existing_profile.text
+        source = existing_profile.source
+        segments = list(existing_profile.segments)
+        language = existing_profile.language
+        backend = existing_profile.transcription_backend
+        transcription_model = existing_profile.transcription_model
+        confidence = existing_profile.transcription_confidence
+        language_confidence = existing_profile.language_confidence
+        hallucinated = existing_profile.hallucination_detected
+        error = ""
+        transcription_error = existing_profile.transcription_error
+    else:
+        text, source, segments = extract_lyrics(filepath)
+        language = ""
+        backend = ""
+        transcription_model = ""
+        confidence = 1.0 if text and source in {"embedded", "sidecar"} else 0.0
+        language_confidence = 0.0
     if not text and use_transcription and lyrics_dependencies_available():
         if progress: progress("Transcribing locally")
         owned = transcriber is None
@@ -250,7 +267,8 @@ def analyze_track_lyrics(
                 text = ""
                 source = "unavailable"
         except Exception as exc:
-            error = str(exc)
+            transcription_error = str(exc)
+            error = transcription_error
             source = "unavailable"
         finally:
             if owned:
@@ -267,7 +285,7 @@ def analyze_track_lyrics(
         if progress: progress("Understanding lyrics locally")
         try:
             if use_llm:
-                meaning, _latency = parse_lyrics_meaning(text, language=language)
+                meaning, _latency = parse_lyrics_meaning(text, language=language, model=meaning_model_name())
             else:
                 meaning = deterministic_meaning(text, language)
         except Exception as exc:
@@ -280,6 +298,9 @@ def analyze_track_lyrics(
         transcription_backend=backend, transcription_model=transcription_model,
             transcription_model_version="faster-whisper-1.2.1", transcription_confidence=confidence,
         language_confidence=language_confidence, hallucination_detected=hallucinated, meaning=meaning,
+        meaning_analysis_version=MEANING_ANALYSIS_VERSION if meaning else "",
+        meaning_error=meaning_error,
+        transcription_error=transcription_error,
         source_file_hash=compute_file_hash(filepath), analysis_version=LYRICS_ANALYSIS_VERSION,
         analyzed_at=time.time(), error=meaning_error or error,
     )
