@@ -92,6 +92,13 @@ class PreferenceProfile:
                 preferred_max REAL,
                 updated_at    REAL
             );
+
+            CREATE TABLE IF NOT EXISTS mix_ratings (
+                id        INTEGER PRIMARY KEY AUTOINCREMENT,
+                mix_id    TEXT NOT NULL,
+                rating    INTEGER NOT NULL CHECK (rating BETWEEN 1 AND 5),
+                created_at REAL NOT NULL
+            );
         """)
 
         # Schema version tracking
@@ -270,6 +277,27 @@ class PreferenceProfile:
             (limit,),
         )
         return [(row[0], row[1]) for row in cur.fetchall()]
+
+    # ---- whole-mix ratings ----
+
+    def rate_mix(self, mix_id: str, rating: int):
+        """Record a 1-5 rating for a rendered mix."""
+        rating = max(1, min(5, int(rating)))
+        self._conn.execute(
+            "INSERT INTO mix_ratings (mix_id, rating, created_at) VALUES (?, ?, ?)",
+            (mix_id, rating, time.time()),
+        )
+        self._conn.commit()
+
+    def get_mix_ratings(self) -> list[dict]:
+        """Return recorded mix ratings, newest first."""
+        cur = self._conn.execute(
+            "SELECT mix_id, rating, created_at FROM mix_ratings ORDER BY created_at DESC"
+        )
+        return [
+            {"mix_id": row[0], "rating": row[1], "created_at": row[2]}
+            for row in cur.fetchall()
+        ]
 
     # ---- BPM preference ----
 

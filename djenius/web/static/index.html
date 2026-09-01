@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DJenius - Local DJ</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="brand-mark">DJ</span><span>DJENIUS</span><small>LOCAL DJ</small></div>
+    <div class="top-status"><span class="status-dot"></span><span id="core-status">Core ready</span></div>
+  </header>
+
+  <main class="shell">
+    <nav class="nav-tabs" aria-label="Primary navigation">
+      <button class="nav-tab active" data-panel="library-panel">Library</button>
+      <button class="nav-tab" data-panel="create-panel">Create mix</button>
+      <button class="nav-tab" data-panel="plan-panel">Set plan</button>
+      <button class="nav-tab" data-panel="listen-panel">Now playing</button>
+      <button class="nav-tab" data-panel="preferences-panel">Preferences</button>
+      <button class="nav-tab" data-panel="system-panel">System</button>
+    </nav>
+
+    <div id="toast" class="toast" role="status"></div>
+
+    <section id="library-panel" class="panel active">
+      <div class="section-heading"><div><p class="eyebrow">YOUR COLLECTION</p><h1>Choose your music</h1><p class="muted">DJenius reads your local files and keeps analysis on this computer.</p></div><span class="count-pill" id="track-count">0 tracks</span></div>
+      <div class="folder-row"><label for="library-path">Music folder</label><input id="library-path" type="text" placeholder="/Users/you/Music or /home/you/Music"><button id="scan-button" class="button primary">Scan library</button></div>
+      <div class="helper">Enter a folder path that contains MP3, WAV, FLAC, M4A, AAC, OGG, WMA, or AIFF files.</div>
+      <div class="library-toolbar"><button id="analyze-button" class="button secondary" disabled>Analyze missing tracks</button><span id="library-summary" class="muted">No folder scanned yet.</span></div>
+      <div id="library-job" class="job-card hidden"></div>
+      <div class="table-wrap"><table><thead><tr><th>Track</th><th>Artist</th><th>Length</th><th>BPM</th><th>Key</th><th>Energy</th><th>Status</th></tr></thead><tbody id="library-rows"><tr><td colspan="7" class="empty">Choose a folder to begin.</td></tr></tbody></table></div>
+    </section>
+
+    <section id="create-panel" class="panel">
+      <div class="section-heading"><div><p class="eyebrow">MAKE SOMETHING TO LISTEN TO</p><h1>Create a mix</h1><p class="muted">Start with a preset, then describe the feeling in your own words.</p></div></div>
+      <div class="create-grid">
+        <div class="form-card"><label for="preset">Preset</label><select id="preset"></select><div class="preset-chips" id="preset-chips"></div></div>
+        <div class="form-card"><label for="duration">Target duration <span class="unit">minutes</span></label><input id="duration" type="number" min="1" max="1440" step="1" value="30"><p class="field-note">A target; the engine chooses a safe musical ending.</p></div>
+      </div>
+      <div class="form-card request-card"><label for="request">What do you want to hear?</label><textarea id="request" rows="3" placeholder="Make me a chill 30 minute mix that slowly becomes more energetic."></textarea><p class="field-note">Natural language is parsed locally. Ollama is optional and never used for audio rendering.</p></div>
+      <div class="option-row"><label class="check"><input id="use-llm" type="checkbox"><span>Use local LLM for request interpretation</span></label><span id="llm-note" class="option-note">Checking availability...</span><label class="check"><input id="use-stems" type="checkbox"><span>Use advanced stem transitions</span></label><span id="stems-note" class="option-note">Checking availability...</span></div>
+      <div class="action-row"><button id="plan-button" class="button primary large">Create proposed set</button><span id="create-note" class="muted">Scan and analyze a library first.</span></div>
+      <div id="plan-job" class="job-card hidden"></div>
+    </section>
+
+    <section id="plan-panel" class="panel">
+      <div class="section-heading"><div><p class="eyebrow">REVIEW BEFORE RENDER</p><h1>Your set plan</h1><p id="plan-subtitle" class="muted">Create a mix to see its order and transitions.</p></div><div class="action-row compact"><button id="regenerate-button" class="button ghost" disabled>Regenerate</button><button id="render-button" class="button primary" disabled>Render mix</button></div></div>
+      <div id="plan-empty" class="empty-state"><div class="empty-icon">♫</div><h2>No proposal yet</h2><p>Once DJenius has analyzed your library, your track order will appear here.</p></div>
+      <div id="plan-content" class="hidden"><div id="plan-reasons" class="reason-row"></div><div id="plan-tracks"></div></div>
+      <div id="render-job" class="job-card hidden"></div>
+    </section>
+
+    <section id="listen-panel" class="panel">
+      <div class="section-heading"><div><p class="eyebrow">LISTEN BACK</p><h1>Now playing</h1><p class="muted">Rendered mixes stay in your local output folder.</p></div></div>
+      <div id="player-card" class="player-card"><div class="player-art">DJ</div><div class="player-main"><div class="now-label">READY WHEN YOU ARE</div><div id="player-title" class="player-title">No rendered mix selected</div><audio id="audio-player" controls preload="metadata"></audio><div id="markers" class="markers"></div></div></div>
+      <h2 class="subheading">Rendered mixes</h2><div id="outputs-list" class="outputs-list"><div class="empty">No mixes rendered yet.</div></div>
+      <div id="feedback-card" class="feedback-card hidden"><div><p class="eyebrow">HOW DID IT FLOW?</p><h2>Rate this mix</h2></div><div class="stars" id="mix-stars"></div></div>
+    </section>
+
+    <section id="preferences-panel" class="panel"><div class="section-heading"><div><p class="eyebrow">LEARN YOUR TASTE</p><h1>Preferences</h1><p class="muted">Feedback is stored locally and influences future plans.</p></div></div><div id="preferences-content" class="preference-grid"></div></section>
+
+    <section id="system-panel" class="panel"><div class="section-heading"><div><p class="eyebrow">LOCAL STATUS</p><h1>System</h1><p class="muted">Optional tools improve certain workflows but are never required for standard mixes.</p></div><button id="refresh-system" class="button ghost">Refresh</button></div><div id="system-content" class="system-grid"></div><div class="privacy-note"><span>◎</span><div><strong>Private by default</strong><p>DJenius binds to localhost. Your music, analysis, renders, and feedback stay on this machine.</p></div></div></section>
+  </main>
+  <script src="/static/app.js"></script>
+</body>
+</html>

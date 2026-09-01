@@ -123,7 +123,10 @@ def render_mix(
         if track.id in stem_track_ids and track.analysis.stems:
             try:
                 from djenius.audio.stems import load_stems
-                stems = load_stems(track.filepath, sr=sample_rate)
+                stem_dir = "stems"
+                if track.analysis.stems:
+                    stem_dir = str(Path(next(iter(track.analysis.stems.values()))).parent)
+                stems = load_stems(track.filepath, sr=sample_rate, stem_dir=stem_dir)
                 if stems:
                     gain = db_to_linear(track_gain_db[track.id])
                     stems = {name: audio * gain for name, audio in stems.items()}

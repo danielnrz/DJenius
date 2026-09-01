@@ -139,6 +139,51 @@ def plan_set(
     return set_plan
 
 
+def plan_ordered_set(
+    tracks: list[TrackProfile],
+    ordered_ids: list[str],
+    target_duration_sec: float = 1800.0,
+    intent: Optional[SetIntent] = None,
+    max_transition_length_bars: int = 16,
+) -> SetPlan:
+    """Build a validated plan for a user-selected track order.
+
+    This is the small editing seam used by the local application.  It keeps
+    the planner's existing transition candidate search and safety rules while
+    fixing only the track order chosen by the user.
+    """
+    by_id = {track.id: track for track in tracks}
+    if len(ordered_ids) < 2:
+        raise ValueError("A set needs at least two tracks")
+    if len(set(ordered_ids)) != len(ordered_ids):
+        raise ValueError("A set cannot contain duplicate tracks")
+    missing = [track_id for track_id in ordered_ids if track_id not in by_id]
+    if missing:
+        raise ValueError("Edited plan contains tracks that are not in the library")
+
+    ordered_tracks = [by_id[track_id] for track_id in ordered_ids]
+    energy_profile = (
+        intent.effective_energy_profile() if intent else EnergyProfile.STEADY
+    )
+    allowed_types = intent.allowed_transition_types() if intent else None
+    max_bars = max_transition_length_bars
+    if intent:
+        _minimum, intent_max = intent.effective_transition_length_bars()
+        max_bars = min(max_bars, intent_max)
+
+    plan = _build_set_plan(
+        best_path=ordered_tracks,
+        compat_matrix=_build_compatibility_matrix(ordered_tracks),
+        target_duration=target_duration_sec,
+        energy_profile=energy_profile,
+        max_transition_bars=max_bars,
+        allowed_transition_types=allowed_types,
+        intent=intent,
+    )
+    plan.intent_used = intent
+    return plan
+
+
 def _build_compatibility_matrix(
     tracks: list[TrackProfile],
 ) -> dict[tuple[str, str], CompatibilityScore]:

@@ -35,6 +35,33 @@ pip install -e ".[dev]"
 
 ## Quick Start
 
+### Local app
+
+Launch the local DJenius interface:
+
+```bash
+djenius app
+```
+
+Then open `http://127.0.0.1:8765`. Enter a music folder, scan it, analyze any
+missing tracks, and create a mix from a preset or a natural-language request.
+Review and reorder the proposed set before rendering. Rendered WAV files and
+the timeline markers appear in the Now Playing view.
+
+The app keeps its local analysis cache, preferences, app state, and optional
+stem cache under `data/`; rendered audio is written under `output/`. These
+paths are ignored by Git and are never uploaded anywhere.
+
+Use `djenius serve --port 9000` to choose another local port. The server binds
+to localhost by default.
+
+Optional local tools:
+
+- **Demucs** enables advanced stem transitions when explicitly selected.
+- **Ollama** enables optional local LLM request interpretation; deterministic
+  parsing remains the default.
+- **FFmpeg** is used for decoding formats that SoundFile cannot read.
+
 ```bash
 # Scan your music library
 djenius scan /path/to/music

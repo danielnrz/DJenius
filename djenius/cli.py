@@ -44,6 +44,36 @@ def _get_cache(cache_path: str):
     return AnalysisCache(str(path))
 
 
+def _serve_local(host: str, port: int):
+    """Run the local web application."""
+    try:
+        import uvicorn
+        from djenius.web.app import app as web_app
+    except ImportError as exc:
+        console.print("[red]Web app dependencies are missing. Install with 'pip install -e .'.[/]")
+        raise typer.Exit(1) from exc
+    console.print(f"[green]DJenius is running at http://{host}:{port}[/]")
+    uvicorn.run(web_app, host=host, port=port, log_level="info")
+
+
+@app.command(name="serve")
+def serve(
+    host: str = typer.Option("127.0.0.1", "--host", help="Bind address (localhost by default)"),
+    port: int = typer.Option(8765, "--port", min=1, max=65535, help="Local web port"),
+):
+    """Launch the local DJenius web application."""
+    _serve_local(host, port)
+
+
+@app.command(name="app")
+def app_command(
+    host: str = typer.Option("127.0.0.1", "--host", help="Bind address (localhost by default)"),
+    port: int = typer.Option(8765, "--port", min=1, max=65535, help="Local web port"),
+):
+    """Launch the local DJenius web application."""
+    _serve_local(host, port)
+
+
 @app.command()
 def scan(
     library_path: str = typer.Argument(..., help="Path to music library"),
