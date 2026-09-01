@@ -10,6 +10,7 @@ import httpx
 import soundfile as sf
 
 from djenius.application import LocalAppService
+from djenius.core.intent import SetIntent
 from djenius.core.models import SetPlan, TrackAnalysis, TrackMetadata, TrackProfile
 from djenius.web.app import create_app
 
@@ -152,6 +153,18 @@ def test_plan_job_uses_engine_and_rejects_unsafe_edits(tmp_path, monkeypatch):
     unsafe = client.post(f"/api/plans/{plan_id}/edit", json={"order": ["one", "one"]})
     assert unsafe.status_code == 400
     assert "duplicate" in unsafe.json()["detail"]
+
+
+def test_free_form_request_is_not_mislabeled_as_selected_preset(tmp_path, monkeypatch):
+    service = LocalAppService(data_dir=tmp_path / "data", output_dir=tmp_path / "output")
+    monkeypatch.setattr(
+        "djenius.application.parse_request",
+        lambda request, use_llm: SetIntent(preset="balanced"),
+    )
+    intent, _duration = service._intent(
+        "make it heartbreak", "balanced", 10, False,
+    )
+    assert intent.preset is None
 
 
 def test_output_path_traversal_and_feedback_persistence(tmp_path):

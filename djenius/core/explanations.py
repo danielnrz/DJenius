@@ -44,6 +44,17 @@ def explain_set_plan(plan: SetPlan) -> list[str]:
         intent_reasons = _explain_intent_alignment(plan)
         reasons.extend(intent_reasons)
 
+        if plan.intent_coverage:
+            coverage = plan.intent_coverage
+            reasons.append(
+                "Intent match: "
+                f"{coverage.get('label', 'Limited')} "
+                f"({coverage.get('strong_match_count', 0)} strong, "
+                f"{coverage.get('partial_match_count', 0)} partial, "
+                f"{coverage.get('unknown_count', 0)} fallback)"
+            )
+        reasons.extend(plan.intent_relaxation_steps)
+
     return reasons
 
 

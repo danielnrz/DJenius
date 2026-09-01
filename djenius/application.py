@@ -451,6 +451,10 @@ class LocalAppService:
     ) -> tuple[SetIntent, float]:
         if request and request.strip():
             intent = parse_request(request.strip(), use_llm=use_llm)
+            # A free-form request is the source of truth.  An LLM may emit a
+            # convenient preset-like interpretation, but that is not a user
+            # selected preset and must not be presented as one in the UI.
+            intent.preset = None
         elif preset:
             intent = make_intent(preset)
         else:
@@ -491,6 +495,7 @@ class LocalAppService:
                 "lyrics_source": track.lyrics.source if track.lyrics else None,
                 "lyrics_language": track.lyrics.language if track.lyrics else None,
                 "meaning_confidence": round(track.lyrics.meaning.meaning_confidence, 3) if track.lyrics and track.lyrics.meaning else None,
+                "intent_fit": plan.intent_track_scores.get(track.id),
             })
         transitions = []
         for index, transition in enumerate(plan.transitions):
@@ -519,6 +524,10 @@ class LocalAppService:
             "avg_transition_confidence": round(plan.avg_transition_confidence, 3),
             "score": round(plan.score, 3),
             "reasons": list(plan.human_readable_reasons),
+            "intent_coverage": _json_safe(plan.intent_coverage),
+            "intent_candidate_pool_ids": list(plan.intent_candidate_pool_ids),
+            "intent_excluded_track_ids": list(plan.intent_excluded_track_ids),
+            "intent_relaxation_steps": list(plan.intent_relaxation_steps),
             "intent": LocalAppService._intent_view(plan.intent_used),
             "markers": [],
         }

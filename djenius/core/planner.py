@@ -25,6 +25,14 @@ from djenius.core.scorer import (
 )
 from djenius.core.intent import SetIntent
 from djenius.core.semantic import intent_match
+from djenius.core.intent_scoring import (
+    IntentCandidatePool,
+    intent_requests_semantics,
+    score_track_intent,
+    select_intent_candidate_pool,
+    summarize_intent_coverage,
+    trajectory_label_score,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -80,28 +88,44 @@ def plan_set(
         effective_bpm_range = preferred_bpm_range or (
             (intent.bpm_min, intent.bpm_max) if intent.bpm_min and intent.bpm_max else None
         )
-        # Apply hard constraints: filter tracks by intent constraints
+        # Stage A: select a relevance-first candidate pool.  Technical DJ
+        # planning happens below, inside this pool, so a great BPM/key pair
+        # cannot make an unrelated song win the request.
         original_tracks = tracks
-        tracks = _filter_tracks_by_intent(tracks, intent)
-        if len(tracks) < 2:
-            logger.warning("Intent filtering left fewer than 2 tracks. Using all tracks.")
-            tracks = original_tracks
-        if (
-            intent.raw_text
-            and re.search(r"\b(?:only|exclude|never|must|without|avoid)\b", intent.raw_text.lower())
-            and len(tracks) == len(original_tracks)
-            and (
-                intent.bpm_min is not None or intent.energy_min is not None
-                or intent.desired_moods or intent.desired_activity
-                or intent.desired_themes or intent.avoid_themes
-                or intent.desired_lyrical_moods or intent.avoid_lyrical_moods
-            )
-        ):
-            relaxed_note = "No tracks strongly matched every explicit constraint; using the closest available library tracks."
+        candidate_pool = select_intent_candidate_pool(
+            original_tracks, intent, target_duration_sec,
+        )
+        tracks = _filter_tracks_by_intent(
+            candidate_pool.tracks, intent, apply_semantic=False,
+        )
+        if candidate_pool.relaxation_steps:
+            relaxed_note = " ".join(candidate_pool.relaxation_steps)
+        if candidate_pool.excluded_track_ids:
+            excluded_count = len(candidate_pool.excluded_track_ids)
+            exclusion_note = f"Excluded {excluded_count} reliable semantic contradiction{'s' if excluded_count != 1 else ''} from the candidate pool."
+            relaxed_note = f"{relaxed_note} {exclusion_note}" if relaxed_note else exclusion_note
         effective_max_tracks = max_tracks  # Keep original max_tracks
         allowed_transition_types = intent.allowed_transition_types()
         _, intent_max_bars = intent.effective_transition_length_bars()
         effective_max_transition_bars = min(max_transition_length_bars, intent_max_bars)
+
+        if len(tracks) < 2:
+            # There is no safe two-track set after an explicit exclusion.  A
+            # short diagnostic plan is preferable to silently reintroducing
+            # tracks the user asked us to avoid.
+            plan = SetPlan(
+                tracks=tracks,
+                target_duration_sec=target_duration_sec,
+                energy_profile=effective_energy_profile,
+                intent_used=intent,
+            )
+            _attach_intent_diagnostics(plan, candidate_pool)
+            if relaxed_note:
+                plan.human_readable_reasons.append(relaxed_note)
+            plan.human_readable_reasons.append(
+                f"Only {len(tracks)} non-contradictory track{'s' if len(tracks) != 1 else ''} remained; no safe two-track set can be rendered."
+            )
+            return plan
 
     # Merge preference bonuses
     prefs = preference_bonuses or {}
@@ -158,6 +182,8 @@ def plan_set(
 
     # Attach intent to plan
     set_plan.intent_used = intent
+    if intent:
+        _attach_intent_diagnostics(set_plan, candidate_pool)
     if relaxed_note:
         set_plan.human_readable_reasons.append(relaxed_note)
 
@@ -206,6 +232,25 @@ def plan_ordered_set(
         intent=intent,
     )
     plan.intent_used = intent
+    if intent and intent_requests_semantics(intent):
+        ordered_scores = {
+            track.id: score_track_intent(track, intent) for track in ordered_tracks
+        }
+        excluded = [
+            track_id for track_id, score in ordered_scores.items()
+            if score.explicit_exclusion_penalty >= 0.8
+        ]
+        if excluded:
+            raise ValueError(
+                "Edited plan contains a reliable track excluded by the request"
+            )
+        _attach_intent_diagnostics(
+            plan,
+            IntentCandidatePool(
+                tracks=ordered_tracks,
+                scores=ordered_scores,
+            ),
+        )
     return plan
 
 
@@ -289,6 +334,7 @@ def _build_musical_edge_matrix(
 def _filter_tracks_by_intent(
     tracks: list[TrackProfile],
     intent: SetIntent,
+    apply_semantic: bool = True,
 ) -> list[TrackProfile]:
     """Apply hard constraints from SetIntent to filter tracks.
 
@@ -331,14 +377,14 @@ def _filter_tracks_by_intent(
         if hard_ranges and intent.energy_max is not None and track.mean_energy > intent.energy_max:
             continue
 
-        if explicit_hard and track.semantic:
+        if apply_semantic and explicit_hard and track.semantic:
             if intent.avoid_moods and any(track.semantic.mood_scores.get(mood, 0.0) >= 0.20 for mood in intent.avoid_moods):
                 continue
             if intent.desired_moods and max(track.semantic.mood_scores.get(mood, 0.0) for mood in intent.desired_moods) < 0.12:
                 continue
             if intent.desired_activity and max(track.semantic.activity_scores.get(label, 0.0) for label in intent.desired_activity) < 0.12:
                 continue
-        if explicit_hard and track.lyrics and track.lyrics.meaning:
+        if apply_semantic and explicit_hard and track.lyrics and track.lyrics.meaning:
             meaning = track.lyrics.meaning
             if meaning.meaning_confidence >= 0.6:
                 themes = set(meaning.primary_themes + meaning.secondary_themes)
@@ -363,6 +409,50 @@ def _filter_tracks_by_intent(
         return tracks
 
     return filtered
+
+
+def _attach_intent_diagnostics(
+    plan: SetPlan,
+    candidate_pool: IntentCandidatePool,
+) -> None:
+    """Attach compact Stage A evidence to a plan for API/UI explanations."""
+    plan.intent_track_scores = {
+        track_id: score.to_dict()
+        for track_id, score in candidate_pool.scores.items()
+    }
+    plan.intent_candidate_pool_ids = candidate_pool.candidate_track_ids
+    plan.intent_excluded_track_ids = list(candidate_pool.excluded_track_ids)
+    plan.intent_relaxation_steps = list(candidate_pool.relaxation_steps)
+    intent = plan.intent_used
+    trajectory_supported = None
+    if intent and intent.meaning_trajectory:
+        endpoint = intent.meaning_trajectory[-1]
+        endpoint_available = any(
+            track.lyrics
+            and track.lyrics.meaning
+            and track.lyrics.meaning.meaning_confidence >= 0.6
+            and trajectory_label_score(track, endpoint) >= 0.8
+            for track in candidate_pool.tracks
+        )
+        if not endpoint_available:
+            trajectory_supported = False
+            plan.intent_relaxation_steps.append(
+                f"Requested trajectory has no reliable '{endpoint}' endpoint in this library; using the closest available ending."
+            )
+        elif plan.tracks and trajectory_label_score(plan.tracks[-1], endpoint) < 0.8:
+            trajectory_supported = False
+            plan.intent_relaxation_steps.append(
+                f"Requested trajectory had a reliable '{endpoint}' track, but technical ordering could not place it at the ending."
+            )
+        else:
+            trajectory_supported = True
+    plan.intent_coverage = summarize_intent_coverage(
+        plan.tracks, candidate_pool.scores, plan.target_duration_sec,
+    )
+    if trajectory_supported is not None:
+        plan.intent_coverage["trajectory_supported"] = trajectory_supported
+        if not trajectory_supported:
+            plan.intent_coverage["label"] = "Limited"
 
 
 def _beam_search(
@@ -473,6 +563,14 @@ def _beam_search(
                 new_duration = duration + t.duration_sec - overlap
                 new_score = score + edge_score + energy_bonus
                 new_score += _semantic_track_preference(t, intent) * 0.12
+                if intent and intent.meaning_trajectory:
+                    progress = len(path_ids) / max(max_tracks - 1, 1)
+                    label_index = min(
+                        len(intent.meaning_trajectory) - 1,
+                        int(round(progress * (len(intent.meaning_trajectory) - 1))),
+                    )
+                    target_label = intent.meaning_trajectory[label_index]
+                    new_score += (trajectory_label_score(t, target_label) - 0.5) * 0.22
                 if avoid_track_ids and t.id in avoid_track_ids:
                     new_score -= 0.10
 
@@ -521,6 +619,10 @@ def _beam_search(
         avg_score = score / max(len(path_ids), 1)
         # Add energy trajectory bonus
         trajectory_bonus = _score_energy_trajectory(path_ids, track_by_id, energy_profile)
+        if intent and intent.meaning_trajectory:
+            trajectory_bonus += _score_meaning_trajectory(
+                path_ids, track_by_id, intent.meaning_trajectory,
+            ) * 0.18
         warmup_end_penalty = 0.0
         if (
             energy_profile == EnergyProfile.WARMUP_TO_PEAK
@@ -539,6 +641,21 @@ def _beam_search(
     best_path_ids = best_paths[0][0]
 
     return [track_by_id[tid] for tid in best_path_ids]
+
+
+def _score_meaning_trajectory(
+    path_ids: list[str],
+    track_by_id: dict[str, TrackProfile],
+    trajectory: list[str],
+) -> float:
+    if len(path_ids) < 2 or not trajectory:
+        return 0.0
+    scores = []
+    for index, track_id in enumerate(path_ids):
+        progress = index / max(len(path_ids) - 1, 1)
+        label_index = min(len(trajectory) - 1, int(round(progress * (len(trajectory) - 1))))
+        scores.append(trajectory_label_score(track_by_id[track_id], trajectory[label_index]))
+    return float(np.mean(scores) - 0.5)
 
 
 def _semantic_track_preference(track: TrackProfile, intent: Optional[SetIntent]) -> float:

@@ -450,6 +450,15 @@ class SetPlan:
     intent_used: Optional[SetIntent] = None
     human_readable_reasons: list[str] = field(default_factory=list)
 
+    # V8.1: relevance-first planning diagnostics.  These fields are
+    # additive and optional so plans written by earlier versions remain
+    # readable.
+    intent_coverage: dict = field(default_factory=dict)
+    intent_track_scores: dict[str, dict] = field(default_factory=dict)
+    intent_candidate_pool_ids: list[str] = field(default_factory=list)
+    intent_excluded_track_ids: list[str] = field(default_factory=list)
+    intent_relaxation_steps: list[str] = field(default_factory=list)
+
     def get_track_by_id(self, track_id: str) -> Optional[TrackProfile]:
         for t in self.tracks:
             if t.id == track_id:
@@ -486,6 +495,11 @@ class SetPlan:
             "score": self.score,
             "final_track_end_time": self.final_track_end_time,
             "human_readable_reasons": self.human_readable_reasons,
+            "intent_coverage": self.intent_coverage,
+            "intent_track_scores": self.intent_track_scores,
+            "intent_candidate_pool_ids": self.intent_candidate_pool_ids,
+            "intent_excluded_track_ids": self.intent_excluded_track_ids,
+            "intent_relaxation_steps": self.intent_relaxation_steps,
         }
 
     @classmethod
@@ -510,6 +524,11 @@ class SetPlan:
             score=d.get("score", 0.0),
             final_track_end_time=d.get("final_track_end_time"),
             human_readable_reasons=d.get("human_readable_reasons", []),
+            intent_coverage=d.get("intent_coverage", {}),
+            intent_track_scores=d.get("intent_track_scores", {}),
+            intent_candidate_pool_ids=d.get("intent_candidate_pool_ids", []),
+            intent_excluded_track_ids=d.get("intent_excluded_track_ids", []),
+            intent_relaxation_steps=d.get("intent_relaxation_steps", []),
         )
 
     @staticmethod

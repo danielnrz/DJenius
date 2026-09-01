@@ -37,7 +37,7 @@
     <section id="create-panel" class="panel">
       <div class="section-heading"><div><p class="eyebrow">MAKE SOMETHING TO LISTEN TO</p><h1>Create a mix</h1><p class="muted">Start with a preset, then describe the feeling in your own words.</p></div></div>
       <div class="create-grid">
-        <div class="form-card"><label for="preset">Preset</label><select id="preset"></select><div class="preset-chips" id="preset-chips"></div></div>
+        <div class="form-card"><label for="preset">Preset</label><select id="preset"></select><div class="preset-chips" id="preset-chips"></div><p id="preset-note" class="field-note">Auto / Request decides follows the free-form request; a preset is used when no request is entered.</p></div>
         <div class="form-card"><label for="duration">Target duration <span class="unit">minutes</span></label><input id="duration" type="number" min="1" max="1440" step="1" value="30"><p class="field-note">A target; the engine chooses a safe musical ending.</p></div>
       </div>
       <div class="form-card request-card"><label for="request">What do you want to hear?</label><textarea id="request" rows="3" placeholder="Make me a chill 30 minute mix that slowly becomes more energetic."></textarea><p class="field-note">Natural language is parsed locally. Ollama is optional and never used for audio rendering.</p></div>

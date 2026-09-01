@@ -12,6 +12,7 @@ A fully local personal smart DJ application that analyzes your music library, pl
 - **Caching** - SQLite-backed analysis cache with file fingerprinting
 - **Musical Feeling** - Optional local CLAP audio-text analysis for mood, activity, intensity, and broad style cues. Analysis samples representative windows across the track, stores window evidence, and leaves weak labels uncertain.
 - **Lyrics and Meaning** - Optional local lyrics extraction, multilingual Whisper-family transcription, and validated local Ollama song-meaning estimates.
+- **Intent-first selection** - Requests rank tracks for lyrical meaning and audio feeling before the safe technical planner orders transitions. Unknown evidence is labeled as fallback, reliable contradictions are excluded only when the request makes that explicit, and shorter coherent sets are preferred to unrelated padding.
 
 ## Requirements
 
@@ -62,6 +63,11 @@ Then open `http://127.0.0.1:8765`. Enter a music folder, scan it, analyze any
 missing tracks, and create a mix from a preset or a natural-language request.
 Review and reorder the proposed set before rendering. Rendered WAV files and
 the timeline markers appear in the Now Playing view.
+
+In Create a mix, `Auto / Request decides` is the default. A free-form request
+is the source of truth; a preset is used when no request is entered. The plan
+shows the requested meaning, per-track match status, fallbacks, and intent
+coverage so a small library is not silently padded with contradictory songs.
 
 The app keeps its local analysis cache, preferences, app state, and optional
 stem cache under `data/`; rendered audio is written under `output/`. These
