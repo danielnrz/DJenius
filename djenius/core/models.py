@@ -188,12 +188,90 @@ class SemanticProfile:
 
 
 @dataclass
+class LyricsMeaningProfile:
+    """Validated, local estimates of what a song's lyrics express.
+
+    Numeric values are bounded model estimates, never claims about objective
+    meaning.  The taxonomy is deliberately small so planner behavior remains
+    inspectable.
+    """
+
+    model_name: str = ""
+    model_version: str = ""
+    primary_themes: list[str] = field(default_factory=list)
+    secondary_themes: list[str] = field(default_factory=list)
+    lyrical_moods: list[str] = field(default_factory=list)
+    emotional_valence: float = 0.0  # -1 = negative, +1 = positive
+    emotional_intensity: float = 0.0
+    relationship_context: str = ""
+    party_context: float = 0.0
+    hopefulness: float = 0.0
+    sadness: float = 0.0
+    romance: float = 0.0
+    anger: float = 0.0
+    celebration: float = 0.0
+    meaning_confidence: float = 0.0
+    meaning_source: str = ""
+    analyzed_at: float = 0.0
+
+    def to_dict(self) -> dict:
+        return self.__dict__.copy()
+
+    @classmethod
+    def from_dict(cls, data: dict | None) -> "LyricsMeaningProfile | None":
+        if not data:
+            return None
+        known = {f.name for f in cls.__dataclass_fields__.values()}
+        values = {key: value for key, value in data.items() if key in known}
+        for key in ("emotional_valence", "emotional_intensity", "party_context", "hopefulness", "sadness", "romance", "anger", "celebration", "meaning_confidence"):
+            if key in values:
+                values[key] = float(values[key])
+        return cls(**values)
+
+
+@dataclass
+class LyricsProfile:
+    """Lyrics acquisition plus optional song-level meaning interpretation."""
+
+    source: str = "unavailable"
+    language: str = ""
+    text: str = ""
+    segments: list[dict] = field(default_factory=list)
+    transcription_backend: str = ""
+    transcription_model: str = ""
+    transcription_model_version: str = ""
+    transcription_confidence: float = 0.0
+    language_confidence: float = 0.0
+    hallucination_detected: bool = False
+    meaning: Optional[LyricsMeaningProfile] = None
+    source_file_hash: str = ""
+    analysis_version: str = ""
+    analyzed_at: float = 0.0
+    error: str = ""
+
+    def to_dict(self) -> dict:
+        result = self.__dict__.copy()
+        result["meaning"] = self.meaning.to_dict() if self.meaning else None
+        return result
+
+    @classmethod
+    def from_dict(cls, data: dict | None) -> "LyricsProfile | None":
+        if not data:
+            return None
+        known = {f.name for f in cls.__dataclass_fields__.values()}
+        values = {key: value for key, value in data.items() if key in known}
+        values["meaning"] = LyricsMeaningProfile.from_dict(values.get("meaning"))
+        return cls(**values)
+
+
+@dataclass
 class TrackProfile:
     """Complete profile of a track - metadata + analysis combined."""
     id: str = ""               # unique identifier (file hash)
     metadata: TrackMetadata = field(default_factory=TrackMetadata)
     analysis: TrackAnalysis = field(default_factory=TrackAnalysis)
     semantic: Optional[SemanticProfile] = None
+    lyrics: Optional[LyricsProfile] = None
 
     @property
     def filepath(self) -> str:
@@ -235,6 +313,9 @@ class CompatibilityScore:
     semantic_similarity_score: float = 0.5
     mood_continuity_score: float = 0.5
     activity_compatibility_score: float = 0.5
+    lyrical_theme_similarity: float = 0.5
+    lyrical_mood_continuity: float = 0.5
+    lyrical_context_compatibility: float = 0.5
 
     # Weighted final score
     overall_score: float = 0.0
@@ -438,6 +519,7 @@ class SetPlan:
             "metadata": track.metadata.__dict__,
             "analysis": track.analysis.to_dict(),
             "semantic": track.semantic.to_dict() if track.semantic else None,
+            "lyrics": track.lyrics.to_dict() if track.lyrics else None,
         }
 
     @staticmethod
@@ -445,9 +527,11 @@ class SetPlan:
         metadata = TrackMetadata(**d.get("metadata", {}))
         analysis = TrackAnalysis.from_dict(d.get("analysis", {}))
         semantic_data = d.get("semantic")
+        lyrics_data = d.get("lyrics")
         return TrackProfile(
             id=d.get("id", ""),
             metadata=metadata,
             analysis=analysis,
             semantic=SemanticProfile.from_dict(semantic_data) if semantic_data else None,
+            lyrics=LyricsProfile.from_dict(lyrics_data) if lyrics_data else None,
         )

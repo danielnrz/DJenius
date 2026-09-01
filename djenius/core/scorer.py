@@ -11,6 +11,7 @@ import numpy as np
 from djenius.core.models import TrackProfile, CompatibilityScore, TransitionType
 from djenius.utils.camelot import score_key_compatibility, parse_camelot
 from djenius.core.semantic import cosine_similarity, distribution_similarity
+from djenius.core.meaning import meaning_similarity
 
 logger = logging.getLogger(__name__)
 
@@ -173,6 +174,12 @@ def score_compatibility(
         score.activity_compatibility_score = distribution_similarity(
             source.semantic.activity_scores, target.semantic.activity_scores,
         )
+    if source.lyrics and target.lyrics and source.lyrics.meaning and target.lyrics.meaning:
+        (
+            score.lyrical_theme_similarity,
+            score.lyrical_mood_continuity,
+            score.lyrical_context_compatibility,
+        ) = meaning_similarity(source.lyrics.meaning, target.lyrics.meaning)
 
     # --- Overall Score ---
     total_weight = sum(weights.values())
@@ -195,10 +202,25 @@ def score_compatibility(
             float(target.semantic.semantic_confidence),
         )
         semantic_weight = 0.10 * max(0.0, min(1.0, reliability))
+        lyric_score = (
+            score.lyrical_theme_similarity
+            + score.lyrical_mood_continuity
+            + score.lyrical_context_compatibility
+        ) / 3.0
+        lyric_reliability = 0.0
+        if source.lyrics and target.lyrics and source.lyrics.meaning and target.lyrics.meaning:
+            lyric_reliability = min(source.lyrics.meaning.meaning_confidence, target.lyrics.meaning.meaning_confidence)
+        lyric_weight = 0.08 * max(0.0, min(1.0, lyric_reliability))
+        total_semantic_weight = min(0.18, semantic_weight + lyric_weight)
+        semantic_mix = (semantic_weight * semantic_score + lyric_weight * lyric_score) / max(total_semantic_weight, 1e-9)
         score.overall_score = round(
-            (1.0 - semantic_weight) * acoustic_score + semantic_weight * semantic_score,
+            (1.0 - total_semantic_weight) * acoustic_score + total_semantic_weight * semantic_mix,
             3,
         )
+    elif source.lyrics and target.lyrics and source.lyrics.meaning and target.lyrics.meaning:
+        lyric_score = (score.lyrical_theme_similarity + score.lyrical_mood_continuity + score.lyrical_context_compatibility) / 3.0
+        lyric_weight = 0.08 * min(source.lyrics.meaning.meaning_confidence, target.lyrics.meaning.meaning_confidence)
+        score.overall_score = round((1.0 - lyric_weight) * acoustic_score + lyric_weight * lyric_score, 3)
     else:
         score.overall_score = round(acoustic_score, 3)
 
@@ -662,5 +684,10 @@ def _build_reasoning(
             parts.append("contrasting mood")
         if score.activity_compatibility_score >= 0.7:
             parts.append("compatible activity")
+    if source.lyrics and target.lyrics and source.lyrics.meaning and target.lyrics.meaning:
+        if score.lyrical_theme_similarity >= 0.5:
+            parts.append("shared lyrical themes")
+        elif score.lyrical_theme_similarity < 0.2:
+            parts.append("contrasting lyrical themes")
 
     return "; ".join(parts) if parts else "mixed compatibility"

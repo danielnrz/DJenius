@@ -11,7 +11,7 @@ from typing import Optional
 
 import xxhash
 
-from djenius.core.models import TrackMetadata, TrackAnalysis, TrackProfile, SemanticProfile
+from djenius.core.models import TrackMetadata, TrackAnalysis, TrackProfile, SemanticProfile, LyricsProfile
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +19,7 @@ DB_NAME = "djenius_cache.db"
 
 # Bump this to invalidate all cached analysis results.
 ANALYSIS_VERSION = 4
+LYRICS_ANALYSIS_VERSION = "1"
 
 # Chunk size for reading files during hashing (64 KB).
 _HASH_CHUNK_SIZE = 64 * 1024
@@ -83,6 +84,16 @@ class AnalysisCache:
                 updated_at REAL NOT NULL
             )
         """)
+        self._conn.execute("""
+            CREATE TABLE IF NOT EXISTS lyrics_tracks (
+                file_hash TEXT PRIMARY KEY,
+                filepath TEXT NOT NULL,
+                lyrics_json TEXT NOT NULL,
+                lyrics_version TEXT NOT NULL,
+                created_at REAL NOT NULL,
+                updated_at REAL NOT NULL
+            )
+        """)
         # Migrate existing databases that lack the analysis_version column.
         try:
             self._conn.execute(
@@ -124,6 +135,9 @@ class AnalysisCache:
         semantic = self._get_semantic_by_hash(file_hash)
         if semantic is not None:
             profile.semantic = semantic
+        lyrics = self._get_lyrics_by_hash(file_hash)
+        if lyrics is not None:
+            profile.lyrics = lyrics
         return profile
 
     def _get_semantic_by_hash(self, file_hash: str) -> Optional[SemanticProfile]:
@@ -162,6 +176,47 @@ class AnalysisCache:
             (file_hash, filepath, semantic_json, semantic_version, created_at, updated_at)
             VALUES (?, ?, ?, ?, ?, ?)""",
             (file_hash, filepath, json.dumps(profile.to_dict()), profile.model_version, now, now),
+        )
+        self._conn.commit()
+
+    def _get_lyrics_by_hash(self, file_hash: str) -> Optional[LyricsProfile]:
+        cursor = self._conn.execute(
+            "SELECT lyrics_json FROM lyrics_tracks WHERE file_hash = ?",
+            (file_hash,),
+        )
+        row = cursor.fetchone()
+        if row is None:
+            return None
+        try:
+            return LyricsProfile.from_dict(json.loads(row[0]))
+        except (TypeError, ValueError, json.JSONDecodeError):
+            logger.warning("Ignoring invalid lyrics cache entry for %s", file_hash)
+            return None
+
+    def get_lyrics(self, filepath: str, lyrics_version: str = LYRICS_ANALYSIS_VERSION, transcription_model: str = "") -> Optional[LyricsProfile]:
+        file_hash = compute_file_hash(filepath)
+        if not file_hash:
+            return None
+        profile = self._get_lyrics_by_hash(file_hash)
+        if profile is None or profile.analysis_version != lyrics_version:
+            return None
+        if transcription_model and profile.transcription_model and profile.transcription_model != transcription_model:
+            return None
+        if profile.source_file_hash and profile.source_file_hash != file_hash:
+            return None
+        return profile
+
+    def put_lyrics(self, filepath: str, profile: LyricsProfile) -> None:
+        file_hash = compute_file_hash(filepath)
+        if not file_hash:
+            raise FileNotFoundError(filepath)
+        profile.source_file_hash = file_hash
+        now = time.time()
+        self._conn.execute(
+            """INSERT OR REPLACE INTO lyrics_tracks
+            (file_hash, filepath, lyrics_json, lyrics_version, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?)""",
+            (file_hash, filepath, json.dumps(profile.to_dict()), profile.analysis_version, now, now),
         )
         self._conn.commit()
 
@@ -214,6 +269,7 @@ class AnalysisCache:
                 metadata=metadata,
                 analysis=analysis,
                 semantic=self._get_semantic_by_hash(row[0]),
+                lyrics=self._get_lyrics_by_hash(row[0]),
             ))
         return profiles
 
@@ -226,6 +282,7 @@ class AnalysisCache:
             "DELETE FROM tracks WHERE file_hash = ?", (file_hash,)
         )
         self._conn.execute("DELETE FROM semantic_tracks WHERE file_hash = ?", (file_hash,))
+        self._conn.execute("DELETE FROM lyrics_tracks WHERE file_hash = ?", (file_hash,))
         self._conn.commit()
         return cursor.rowcount > 0
 
@@ -233,6 +290,7 @@ class AnalysisCache:
         """Clear all cached data."""
         self._conn.execute("DELETE FROM tracks")
         self._conn.execute("DELETE FROM semantic_tracks")
+        self._conn.execute("DELETE FROM lyrics_tracks")
         self._conn.commit()
 
     def count(self) -> int:

@@ -694,6 +694,15 @@ def doctor():
     except Exception as e:
         checks.append(("Semantic analysis (optional)", False, str(e)))
 
+    # Lyrics transcription is optional and lazy; model weights are never
+    # downloaded by doctor.
+    try:
+        from djenius.audio.lyrics import lyrics_dependencies_available, DEFAULT_TRANSCRIPTION_MODEL
+        lyrics_ok = lyrics_dependencies_available()
+        checks.append(("Lyrics transcription (optional)", lyrics_ok, DEFAULT_TRANSCRIPTION_MODEL if lyrics_ok else "install with: pip install -e '.[lyrics]'"))
+    except Exception as e:
+        checks.append(("Lyrics transcription (optional)", False, str(e)))
+
     # Display
     table = Table(title="DJenius Doctor", box=box.ROUNDED)
     table.add_column("Check", style="cyan")

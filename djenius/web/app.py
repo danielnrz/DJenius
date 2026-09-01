@@ -24,6 +24,14 @@ class AnalyzeRequest(BaseModel):
     force: bool = False
 
 
+class LyricsAnalyzeRequest(BaseModel):
+    path: Optional[str] = None
+    force: bool = False
+    use_llm: bool = True
+    use_transcription: bool = True
+    use_vocal_stem: bool = False
+
+
 class PlanRequest(BaseModel):
     path: Optional[str] = None
     request: Optional[str] = None
@@ -107,6 +115,16 @@ def create_app(service: LocalAppService | None = None) -> FastAPI:
     def semantic(request: AnalyzeRequest) -> dict:
         try:
             return {"job_id": service.start_semantic_analysis(request.path, request.force)}
+        except (FileNotFoundError, ValueError) as exc:
+            raise fail(exc) from exc
+
+    @app.post("/api/library/lyrics")
+    def lyrics(request: LyricsAnalyzeRequest) -> dict:
+        try:
+            return {"job_id": service.start_lyrics_analysis(
+                request.path, request.force, request.use_llm,
+                request.use_transcription, request.use_vocal_stem,
+            )}
         except (FileNotFoundError, ValueError) as exc:
             raise fail(exc) from exc
 

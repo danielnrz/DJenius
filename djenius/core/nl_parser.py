@@ -23,6 +23,7 @@ from djenius.core.intent import (
 )
 from djenius.core.models import EnergyProfile
 from djenius.core.semantic import ACTIVITIES, MOODS
+from djenius.core.meaning import THEMES, LYRICAL_MOODS
 
 logger = logging.getLogger(__name__)
 
@@ -128,6 +129,17 @@ _ACTIVITY_KEYWORDS = {
     "party": "party", "workout": "workout", "driving": "driving",
     "late night": "late_night", "late-night": "late_night",
     "relaxing": "relaxing", "background": "background", "focused": "focused",
+}
+
+_THEME_KEYWORDS = {
+    "heartbreak": "heartbreak", "broken heart": "heartbreak", "breakup": "breakup",
+    "break up": "breakup", "love": "love", "romantic": "romance", "romance": "romance",
+    "longing": "longing", "friendship": "friendship", "party": "party",
+    "celebration": "celebration", "celebrate": "celebration", "confidence": "confidence",
+    "success": "success", "struggle": "struggle", "anger": "anger", "hope": "hope",
+    "hopeful": "hope", "healing": "healing", "freedom": "freedom", "lonely": "loneliness",
+    "loneliness": "loneliness", "loss": "loss", "self-reflection": "self_reflection",
+    "motivation": "motivation",
 }
 
 # Preset keywords (map to preset names)
@@ -288,12 +300,36 @@ def parse_deterministic(text: str) -> SetIntent:
     for keyword, activity in _ACTIVITY_KEYWORDS.items():
         if keyword in text_lower and activity not in intent.desired_activity:
             intent.desired_activity.append(activity)
+    lyrical_mood_keywords = {
+        "happy": "happy", "sad": "sad", "melancholic": "melancholic", "emotional": "melancholic",
+        "romantic": "romantic", "hopeful": "hopeful", "angry": "angry", "nostalgic": "nostalgic",
+        "celebratory": "celebratory", "positive lyrics": "hopeful", "positive song": "hopeful",
+        "dark lyrics": "dark",
+    }
+    for keyword, theme in _THEME_KEYWORDS.items():
+        if keyword in text_lower and theme not in intent.desired_themes:
+            intent.desired_themes.append(theme)
+    for keyword, mood in lyrical_mood_keywords.items():
+        if keyword in text_lower and mood not in intent.desired_lyrical_moods:
+            intent.desired_lyrical_moods.append(mood)
     for keyword, mood in _MOOD_KEYWORDS.items():
         if re.search(rf"(?:no|avoid|without|never)\s+(?:\w+\s+){{0,2}}{re.escape(keyword)}", text_lower):
             if mood in intent.desired_moods:
                 intent.desired_moods.remove(mood)
             if mood not in intent.avoid_moods:
                 intent.avoid_moods.append(mood)
+    for keyword, theme in _THEME_KEYWORDS.items():
+        if re.search(rf"(?:no|avoid|without|never|exclude)\s+(?:\w+\s+){{0,2}}{re.escape(keyword)}", text_lower):
+            if theme in intent.desired_themes:
+                intent.desired_themes.remove(theme)
+            if theme not in intent.avoid_themes:
+                intent.avoid_themes.append(theme)
+    for keyword, mood in lyrical_mood_keywords.items():
+        if re.search(rf"(?:no|avoid|without|never|exclude)\s+(?:\w+\s+){{0,2}}{re.escape(keyword)}", text_lower):
+            if mood in intent.desired_lyrical_moods:
+                intent.desired_lyrical_moods.remove(mood)
+            if mood not in intent.avoid_lyrical_moods:
+                intent.avoid_lyrical_moods.append(mood)
     trajectory_patterns = (
         (r"(?:melancholic|sad|dark).*?(?:become|turn|get|grow|move).*?(?:hopeful|happy|euphoric)", ["melancholic", "hopeful"]),
         (r"(?:melancholic|sad|dark).*?(?:become|turn|get|grow|move).*?(?:energetic|dance)", ["melancholic", "energetic"]),
@@ -304,6 +340,13 @@ def parse_deterministic(text: str) -> SetIntent:
         if re.search(pattern, text_lower):
             intent.mood_trajectory = trajectory
             intent.energy_profile = intent.energy_profile or EnergyProfile.SLOW_BUILD
+            break
+    for pattern, trajectory in (
+        (r"(?:sad|melancholic|heartbreak).*?(?:become|turn|get|grow|move).*?(?:hopeful|positive|happy|celebrat)", ["sad", "hopeful"]),
+        (r"(?:heartbreak|sad).*?(?:become|turn|get|grow|move).*?(?:hope|heal)", ["sad", "hopeful"]),
+    ):
+        if re.search(pattern, text_lower):
+            intent.meaning_trajectory = trajectory
             break
 
     return intent
@@ -338,6 +381,12 @@ Valid fields:
 - desired_activity: list of labels from dance, party, workout, driving, late_night, relaxing, background, focused
 - mood_trajectory: ordered mood labels, for example ["melancholic", "hopeful"]
 - semantic_strength: number from 0.0 to 1.0
+- desired_themes: list from love, romance, heartbreak, breakup, longing, nostalgia, friendship, celebration, party, confidence, success, struggle, anger, hope, healing, freedom, loneliness, loss, self_reflection, motivation
+- avoid_themes: lyric themes to avoid
+- desired_lyrical_moods: list from happy, sad, melancholic, romantic, hopeful, angry, nostalgic, celebratory, confident, dark
+- avoid_lyrical_moods: lyric moods to avoid
+- meaning_trajectory: ordered lyrical moods, for example ["sad", "hopeful"]
+- lyrics_strength: number from 0.0 to 1.0
 
 Return ONLY the JSON object, no explanation. If a field is not mentioned, omit it.
 Example: {"preset": "chill", "energy_profile": "steady", "transition_style": "smooth"}
@@ -401,6 +450,16 @@ def parse_with_ollama(
 
         data = json.loads(json_match.group())
 
+        for field_name, allowed in (
+            ("desired_themes", THEMES), ("avoid_themes", THEMES),
+            ("desired_lyrical_moods", LYRICAL_MOODS),
+            ("avoid_lyrical_moods", LYRICAL_MOODS),
+        ):
+            values = data.get(field_name, [])
+            if not isinstance(values, list) or any(value not in allowed for value in values):
+                logger.warning("Ollama returned invalid %s", field_name)
+                return None
+
         # Convert duration if specified
         if "target_duration_sec" in data:
             data["target_duration_sec"] = float(data["target_duration_sec"])
@@ -425,6 +484,12 @@ def parse_with_ollama(
             desired_activity=[value for value in data.get("desired_activity", []) if value in ACTIVITIES],
             mood_trajectory=[value for value in data.get("mood_trajectory", []) if value in set(MOODS) | {"energetic"}],
             semantic_strength=float(data.get("semantic_strength", 0.7)),
+            desired_themes=[value for value in data.get("desired_themes", []) if value in THEMES],
+            avoid_themes=[value for value in data.get("avoid_themes", []) if value in THEMES],
+            desired_lyrical_moods=[value for value in data.get("desired_lyrical_moods", []) if value in LYRICAL_MOODS],
+            avoid_lyrical_moods=[value for value in data.get("avoid_lyrical_moods", []) if value in LYRICAL_MOODS],
+            meaning_trajectory=[value for value in data.get("meaning_trajectory", []) if value in LYRICAL_MOODS],
+            lyrics_strength=float(data.get("lyrics_strength", 0.7)),
         )
 
         # Set enum fields
@@ -500,7 +565,7 @@ def _merge_intents(primary: SetIntent, supplement: SetIntent) -> SetIntent:
     ):
         if getattr(primary, name) in (None, 1800.0) and getattr(supplement, name) not in (None, 1800.0):
             setattr(primary, name, getattr(supplement, name))
-    for name in ("desired_moods", "avoid_moods", "desired_activity", "mood_trajectory"):
+    for name in ("desired_moods", "avoid_moods", "desired_activity", "mood_trajectory", "desired_themes", "avoid_themes", "desired_lyrical_moods", "avoid_lyrical_moods", "meaning_trajectory"):
         values = list(dict.fromkeys(getattr(primary, name) + getattr(supplement, name)))
         setattr(primary, name, values)
     primary.raw_text = supplement.raw_text or primary.raw_text
@@ -524,5 +589,9 @@ def _intent_has_substantial_info(intent: SetIntent) -> bool:
         bool(intent.avoid_moods),
         bool(intent.desired_activity),
         bool(intent.mood_trajectory),
+        bool(intent.desired_themes),
+        bool(intent.avoid_themes),
+        bool(intent.desired_lyrical_moods),
+        bool(intent.avoid_lyrical_moods),
     ]
     return sum(indicators) >= 2  # At least 2 meaningful fields

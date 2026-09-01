@@ -333,6 +333,19 @@ def _filter_tracks_by_intent(
                 continue
             if intent.desired_activity and max(track.semantic.activity_scores.get(label, 0.0) for label in intent.desired_activity) < 0.12:
                 continue
+        if explicit_hard and track.lyrics and track.lyrics.meaning:
+            meaning = track.lyrics.meaning
+            if meaning.meaning_confidence >= 0.6:
+                themes = set(meaning.primary_themes + meaning.secondary_themes)
+                moods = set(meaning.lyrical_moods)
+                if intent.avoid_themes and themes.intersection(intent.avoid_themes):
+                    continue
+                if intent.avoid_lyrical_moods and moods.intersection(intent.avoid_lyrical_moods):
+                    continue
+                if intent.desired_themes and not themes.intersection(intent.desired_themes):
+                    continue
+                if intent.desired_lyrical_moods and not moods.intersection(intent.desired_lyrical_moods):
+                    continue
 
         filtered.append(track)
 
@@ -525,17 +538,32 @@ def _beam_search(
 
 def _semantic_track_preference(track: TrackProfile, intent: Optional[SetIntent]) -> float:
     """Softly align a track with semantic intent; absent profiles are neutral."""
-    if not intent or not track.semantic:
+    if not intent:
         return 0.0
-    mood_score = intent_match(track.semantic.mood_scores, intent.desired_moods, intent.avoid_moods)
-    activity_score = intent_match(track.semantic.activity_scores, intent.desired_activity)
-    trajectory_labels = [label for label in intent.mood_trajectory if label in track.semantic.mood_scores]
-    trajectory_score = (
-        max(track.semantic.mood_scores.get(label, 0.0) for label in trajectory_labels)
-        if trajectory_labels else 0.5
-    )
-    reliability = max(0.0, min(1.0, float(track.semantic.semantic_confidence)))
-    return (0.55 * mood_score + 0.30 * activity_score + 0.15 * trajectory_score) * reliability
+    audio_score = 0.5
+    audio_reliability = 0.0
+    if track.semantic:
+        mood_score = intent_match(track.semantic.mood_scores, intent.desired_moods, intent.avoid_moods)
+        activity_score = intent_match(track.semantic.activity_scores, intent.desired_activity)
+        trajectory_labels = [label for label in intent.mood_trajectory if label in track.semantic.mood_scores]
+        trajectory_score = max((track.semantic.mood_scores.get(label, 0.0) for label in trajectory_labels), default=0.5)
+        audio_score = 0.55 * mood_score + 0.30 * activity_score + 0.15 * trajectory_score
+        audio_reliability = max(0.0, min(1.0, float(track.semantic.semantic_confidence)))
+    lyric_score = 0.5
+    lyric_reliability = 0.0
+    if track.lyrics and track.lyrics.meaning:
+        meaning = track.lyrics.meaning
+        themes = {label: 1.0 for label in meaning.primary_themes + meaning.secondary_themes}
+        moods = {label: 1.0 for label in meaning.lyrical_moods}
+        theme_score = intent_match(themes, intent.desired_themes, intent.avoid_themes)
+        mood_score = intent_match(moods, intent.desired_lyrical_moods, intent.avoid_lyrical_moods)
+        trajectory_score = max((moods.get(label, 0.0) for label in intent.meaning_trajectory), default=0.5)
+        lyric_score = 0.50 * theme_score + 0.35 * mood_score + 0.15 * trajectory_score
+        lyric_reliability = max(0.0, min(1.0, float(meaning.meaning_confidence)))
+    total = audio_reliability + lyric_reliability * max(0.0, min(1.0, intent.lyrics_strength))
+    if total <= 0:
+        return 0.0
+    return (audio_score * audio_reliability + lyric_score * lyric_reliability * intent.lyrics_strength) / total
 
 
 def _starting_energy_preference(

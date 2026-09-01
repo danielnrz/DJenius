@@ -217,6 +217,8 @@ class LocalAppService:
     @staticmethod
     def _metadata_view(metadata: TrackMetadata, status: str, profile: TrackProfile | None = None) -> dict[str, Any]:
         semantic = profile.semantic if profile else None
+        lyrics = profile.lyrics if profile else None
+        meaning = lyrics.meaning if lyrics else None
         return {
             "filepath": metadata.filepath,
             "filename": Path(metadata.filepath).name,
@@ -240,11 +242,19 @@ class LocalAppService:
             "semantic_reliability": semantic.reliability_by_group if semantic else {},
             "semantic_variability": round(semantic.semantic_variability, 4) if semantic else None,
             "semantic_windows": semantic.sample_windows if semantic else [],
+            "lyrics_status": "ready" if meaning and meaning.meaning_confidence >= 0.35 else "uncertain" if lyrics and lyrics.text else "unavailable" if lyrics else "not_analyzed",
+            "lyrics_source": lyrics.source if lyrics else None,
+            "lyrics_language": lyrics.language if lyrics else None,
+            "transcription_confidence": round(lyrics.transcription_confidence, 3) if lyrics else None,
+            "meaning_themes": (meaning.primary_themes + meaning.secondary_themes)[:5] if meaning else [],
+            "lyrical_moods": meaning.lyrical_moods[:4] if meaning else [],
+            "meaning_confidence": round(meaning.meaning_confidence, 3) if meaning else None,
         }
 
     def scan_library(self, library_path: str | None = None) -> dict[str, Any]:
         path = self.resolve_library(library_path)
         from djenius.audio.semantic import SEMANTIC_ANALYSIS_VERSION, semantic_model_name
+        from djenius.db.cache import LYRICS_ANALYSIS_VERSION
         cache = AnalysisCache(str(self.paths.cache_path))
         try:
             metadata = scan_directory(str(path))
@@ -257,6 +267,8 @@ class LocalAppService:
                     or profile.semantic.model_version != SEMANTIC_ANALYSIS_VERSION
                 ):
                     profile.semantic = None
+                if profile and profile.lyrics and profile.lyrics.analysis_version != LYRICS_ANALYSIS_VERSION:
+                    profile.lyrics = None
                 status = "ready" if profile else (
                     "failed" if item.filepath in self._analysis_failures else "not_analyzed"
                 )
@@ -345,6 +357,63 @@ class LocalAppService:
 
         return self.submit_job("semantic", action)
 
+    def start_lyrics_analysis(
+        self,
+        library_path: str | None = None,
+        force: bool = False,
+        use_llm: bool = True,
+        use_transcription: bool = True,
+        use_vocal_stem: bool = False,
+    ) -> str:
+        """Run explicit, optional local lyrics and meaning analysis."""
+        path = self.resolve_library(library_path)
+        self._remember_state(library_path=str(path))
+
+        def action(progress: Callable[[float, str], None]) -> dict[str, Any]:
+            from djenius.audio.lyrics import analyze_track_lyrics
+            from djenius.audio.lyrics import DEFAULT_TRANSCRIPTION_MODEL
+            from djenius.db.cache import LYRICS_ANALYSIS_VERSION
+
+            metadata = scan_directory(str(path))
+            cache = AnalysisCache(str(self.paths.cache_path))
+            analyzed = skipped = 0
+            try:
+                for index, item in enumerate(metadata):
+                    cached_lyrics = cache.get_lyrics(item.filepath, LYRICS_ANALYSIS_VERSION, DEFAULT_TRANSCRIPTION_MODEL)
+                    meaning_model = ollama_model_name() if use_llm else "deterministic-keyword-fallback"
+                    if (
+                        not force and cached_lyrics is not None
+                        and (cached_lyrics.meaning is None or cached_lyrics.meaning.model_name == meaning_model)
+                    ):
+                        skipped += 1
+                        progress((index + 1) / max(len(metadata), 1) * 100.0, f"Lyrics cached: {item.title}")
+                        continue
+                    progress(index / max(len(metadata), 1) * 100.0, f"Reading lyrics: {item.title}")
+                    vocal_path = None
+                    if use_vocal_stem:
+                        from djenius.audio.stems import separate_stems, stems_available
+                        if not stems_available():
+                            raise ValueError("Optional stem separation is not installed. Standard lyrics analysis is still available.")
+                        progress(index / max(len(metadata), 1) * 100.0, f"Separating vocals: {item.title}")
+                        stem_paths = separate_stems(item.filepath, stem_dir=self.paths.data_dir / "stems")
+                        vocal_path = stem_paths.get("vocals")
+                    profile = analyze_track_lyrics(
+                        item.filepath, use_llm=use_llm, use_transcription=use_transcription,
+                        use_vocal_stem=use_vocal_stem,
+                        audio_path=vocal_path,
+                        progress=lambda message: progress(index / max(len(metadata), 1) * 100.0, f"{message}: {item.title}"),
+                    )
+                    cache.put_lyrics(item.filepath, profile)
+                    analyzed += 1
+                    progress((index + 1) / max(len(metadata), 1) * 100.0, f"Meaning saved: {item.title}")
+            finally:
+                cache.close()
+            result = self.scan_library(str(path))
+            result.update({"lyrics_analyzed": analyzed, "lyrics_skipped": skipped})
+            return result
+
+        return self.submit_job("lyrics", action)
+
     def _profiles_for_library(self, path: Path) -> list[TrackProfile]:
         metadata = scan_directory(str(path))
         from djenius.audio.semantic import SEMANTIC_ANALYSIS_VERSION, semantic_model_name
@@ -357,6 +426,10 @@ class LocalAppService:
                     or profile.semantic.model_version != SEMANTIC_ANALYSIS_VERSION
                 ):
                     profile.semantic = None
+                if profile and profile.lyrics:
+                    from djenius.db.cache import LYRICS_ANALYSIS_VERSION
+                    if profile.lyrics.analysis_version != LYRICS_ANALYSIS_VERSION:
+                        profile.lyrics = None
         finally:
             cache.close()
         ready = [profile for profile in profiles if profile is not None]
@@ -412,6 +485,12 @@ class LocalAppService:
                 "semantic_confidence": round(track.semantic.semantic_confidence, 3) if track.semantic else None,
                 "moods": sorted(track.semantic.mood_scores, key=track.semantic.mood_scores.get, reverse=True)[:3] if track.semantic else [],
                 "activity": sorted(track.semantic.activity_scores, key=track.semantic.activity_scores.get, reverse=True)[:2] if track.semantic else [],
+                "meaning_themes": (track.lyrics.meaning.primary_themes + track.lyrics.meaning.secondary_themes)[:5] if track.lyrics and track.lyrics.meaning else [],
+                "lyrical_moods": track.lyrics.meaning.lyrical_moods[:4] if track.lyrics and track.lyrics.meaning else [],
+                "lyrics_status": "ready" if track.lyrics and track.lyrics.meaning and track.lyrics.meaning.meaning_confidence >= 0.35 else "uncertain" if track.lyrics and track.lyrics.text else "unavailable" if track.lyrics else "not_analyzed",
+                "lyrics_source": track.lyrics.source if track.lyrics else None,
+                "lyrics_language": track.lyrics.language if track.lyrics else None,
+                "meaning_confidence": round(track.lyrics.meaning.meaning_confidence, 3) if track.lyrics and track.lyrics.meaning else None,
             })
         transitions = []
         for index, transition in enumerate(plan.transitions):
@@ -464,6 +543,11 @@ class LocalAppService:
             "avoid_moods": list(intent.avoid_moods),
             "activity": list(intent.desired_activity),
             "trajectory": list(intent.mood_trajectory),
+            "themes": list(intent.desired_themes),
+            "avoid_themes": list(intent.avoid_themes),
+            "lyrical_moods": list(intent.desired_lyrical_moods),
+            "avoid_lyrical_moods": list(intent.avoid_lyrical_moods),
+            "meaning_trajectory": list(intent.meaning_trajectory),
             "preset": intent.preset,
             "energy_profile": intent.effective_energy_profile().value,
             "transition_style": intent.effective_transition_style(),
@@ -737,6 +821,7 @@ class LocalAppService:
     def system_status(self) -> dict[str, Any]:
         from djenius.audio.stems import gpu_available, stems_available
         from djenius.audio.semantic import semantic_dependencies_available, semantic_model_name
+        from djenius.audio.lyrics import lyrics_dependencies_available, DEFAULT_TRANSCRIPTION_MODEL
 
         ollama = False
         try:
@@ -763,7 +848,9 @@ class LocalAppService:
             "ollama_last_request": self._state.get("ollama_last_request"),
             "semantic": semantic_dependencies_available(),
             "semantic_model": semantic_model_name(),
-            "lyrics": "deferred",
+            "lyrics": lyrics_dependencies_available(),
+            "lyrics_backend": "faster-whisper" if lyrics_dependencies_available() else None,
+            "lyrics_model": DEFAULT_TRANSCRIPTION_MODEL,
             "preference_db": preference_db,
         }
 

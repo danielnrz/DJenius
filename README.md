@@ -11,6 +11,7 @@ A fully local personal smart DJ application that analyzes your music library, pl
 - **Mix Rendering** - Continuous DJ mix output with LUFS normalization
 - **Caching** - SQLite-backed analysis cache with file fingerprinting
 - **Musical Feeling** - Optional local CLAP audio-text analysis for mood, activity, intensity, and broad style cues. Analysis samples representative windows across the track, stores window evidence, and leaves weak labels uncertain.
+- **Lyrics and Meaning** - Optional local lyrics extraction, multilingual Whisper-family transcription, and validated local Ollama song-meaning estimates.
 
 ## Requirements
 
@@ -33,6 +34,12 @@ explicit semantic-analysis run), install the optional extra:
 
 ```bash
 pip install -e ".[semantic]"
+```
+
+To enable optional local transcription and song-meaning analysis:
+
+```bash
+pip install -e ".[lyrics]"
 ```
 
 For development:
@@ -78,9 +85,14 @@ Optional local tools:
   incompatible.
 - **FFmpeg** is used for decoding formats that SoundFile cannot read.
 
-Lyrics semantic understanding is not implemented yet; the V7.1 semantic layer
-uses audio only. A later optional local transcription layer can be evaluated
-separately.
+- **Lyrics analysis** is explicit and optional. DJenius checks embedded lyrics,
+  then local `.lrc` or `.txt` sidecars, and only then can use `faster-whisper`.
+  Meaning interpretation stays on the configured local Ollama server. Lyrics
+  are not downloaded or scraped. Singing is harder than speech, so low-confidence
+  or repetitive transcriptions are rejected.
+
+Audio feeling and lyrical meaning remain separate evidence in the cache and
+planner. Missing lyrics never prevent standard analysis, planning, or rendering.
 
 ```bash
 # Scan your music library

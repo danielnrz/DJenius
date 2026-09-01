@@ -17,6 +17,7 @@ from typing import Optional
 
 from djenius.core.models import EnergyProfile, TransitionType
 from djenius.core.semantic import SEMANTIC_LABELS
+from djenius.core.meaning import THEMES, LYRICAL_MOODS
 
 
 # ---- Enums for intent-specific preferences ----
@@ -153,6 +154,15 @@ class SetIntent:
     mood_trajectory: list[str] = field(default_factory=list)
     semantic_strength: float = 0.5
 
+    # Lyrical meaning preferences. These are soft unless the request uses
+    # explicit exclusion language such as "avoid" or "only".
+    desired_themes: list[str] = field(default_factory=list)
+    avoid_themes: list[str] = field(default_factory=list)
+    desired_lyrical_moods: list[str] = field(default_factory=list)
+    avoid_lyrical_moods: list[str] = field(default_factory=list)
+    meaning_trajectory: list[str] = field(default_factory=list)
+    lyrics_strength: float = 0.5
+
     # -- Stems --
     prefer_stems: Optional[bool] = None  # None = no preference
 
@@ -181,8 +191,19 @@ class SetIntent:
             if invalid:
                 errors.append(f"Unknown semantic labels in {field_name}: {', '.join(invalid)}")
 
+        for field_name in ("desired_themes", "avoid_themes"):
+            invalid = sorted(set(getattr(self, field_name)) - set(THEMES))
+            if invalid:
+                errors.append(f"Unknown lyric themes in {field_name}: {', '.join(invalid)}")
+        for field_name in ("desired_lyrical_moods", "avoid_lyrical_moods", "meaning_trajectory"):
+            invalid = sorted(set(getattr(self, field_name)) - set(LYRICAL_MOODS))
+            if invalid:
+                errors.append(f"Unknown lyrical moods in {field_name}: {', '.join(invalid)}")
+
         if not 0.0 <= self.semantic_strength <= 1.0:
             errors.append(f"semantic_strength must be between 0.0 and 1.0, got {self.semantic_strength}")
+        if not 0.0 <= self.lyrics_strength <= 1.0:
+            errors.append(f"lyrics_strength must be between 0.0 and 1.0, got {self.lyrics_strength}")
 
         if self.bpm_min is not None and self.bpm_max is not None:
             if self.bpm_min > self.bpm_max:
