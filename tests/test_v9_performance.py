@@ -22,15 +22,16 @@ from djenius.core.performance import (
     require_valid_performance_timeline,
     validate_performance_timeline,
     reorder_performance_timeline,
+    score_segment_pair,
 )
 from djenius.audio.performance_renderer import render_performance_mix
 from djenius.core.planner import plan_set
 from djenius.application import LocalAppService
 
 
-def profile(track_id: str, *, duration: float = 180.0, energy: float = 0.5) -> TrackProfile:
+def profile(track_id: str, *, duration: float = 180.0, energy: float = 0.5, bpm: float = 120.0) -> TrackProfile:
     analysis = TrackAnalysis(
-        bpm=120.0,
+        bpm=bpm,
         bpm_confidence=0.95,
         bar_times=[float(index * 2) for index in range(int(duration // 2))],
         phrase_boundaries=[float(index * 8) for index in range(int(duration // 8))],
@@ -43,6 +44,44 @@ def profile(track_id: str, *, duration: float = 180.0, energy: float = 0.5) -> T
         metadata=TrackMetadata(filepath=f"/tmp/{track_id}.wav", title=track_id, duration_sec=duration),
         analysis=analysis,
     )
+
+
+def test_quick_pair_uses_contextual_recipe_not_universal_phrase_cut():
+    source = profile("source", bpm=160.0)
+    target = profile("target", bpm=110.0)
+    source_segment, target_segment = extract_performance_segments(source)[0], extract_performance_segments(target)[0]
+    pair = score_segment_pair(source, source_segment, target, target_segment, style="quick_mix")
+    assert pair.transition_type != TransitionType.PHRASE_CUT
+    assert pair.length_bars >= 1
+    assert pair.overlap_duration_sec > 0.55
+
+
+def test_phrase_cut_requires_close_tempo_and_safe_boundaries():
+    source = profile("source", bpm=160.0)
+    target = profile("target", bpm=110.0)
+    source_segment, target_segment = extract_performance_segments(source)[0], extract_performance_segments(target)[0]
+    pair = score_segment_pair(source, source_segment, target, target_segment, style="quick_mix")
+    assert pair.transition_type != TransitionType.PHRASE_CUT
+
+
+def test_pair_transition_carries_local_handoff_evidence():
+    source = profile("source", energy=0.25)
+    target = profile("target", energy=0.75)
+    source_segment, target_segment = extract_performance_segments(source)[0], extract_performance_segments(target)[0]
+    pair = score_segment_pair(source, source_segment, target, target_segment, style="quick_mix")
+    assert 0.0 <= pair.phase_score <= 1.0
+    assert 0.0 <= pair.loudness_score <= 1.0
+    assert 0.0 <= pair.bass_score <= 1.0
+    assert pair.explanation
+
+
+def test_beatmatched_transition_declares_target_source_consumption():
+    source = profile("source", bpm=120.0)
+    target = profile("target", bpm=110.0)
+    source_segment, target_segment = extract_performance_segments(source)[0], extract_performance_segments(target)[0]
+    pair = score_segment_pair(source, source_segment, target, target_segment, style="quick_mix")
+    if pair.transition_type == TransitionType.BEATMATCHED_BLEND and pair.requires_stretch:
+        assert pair.target_consumed_duration_sec >= pair.overlap_duration_sec
 
 
 def test_segments_use_known_bar_boundaries_and_stay_inside_source():

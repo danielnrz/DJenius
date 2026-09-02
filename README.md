@@ -72,11 +72,13 @@ is the source of truth; a preset is used when no request is entered. The plan
 shows the requested meaning, per-track match status, fallbacks, and intent
 coverage so a small library is not silently padded with contradictory songs.
 
-For a short performance, choose `Quick mix (phrase cuts)` or write “quick
-mix” in the request. The plan shows each appearance, source timestamps,
-section role, output time, and intentional reprises. Every source interval is
-checked before rendering. Choose `Classic long-form` for the traditional
-one-pass track flow.
+For a short performance, choose `Quick mix (adaptive handoffs)` or write
+“quick mix” in the request. The plan shows each appearance, source
+timestamps, section role, output time, intentional reprises, and the
+pair-aware transition recipe. Handoffs use musical bar lengths and choose a
+safe crossfade or beatmatched blend when a phrase cut is not justified. Every
+source interval is checked before rendering. Choose `Classic long-form` for
+the traditional one-pass track flow.
 
 The app keeps its local analysis cache, preferences, app state, and optional
 stem cache under `data/`; rendered audio is written under `output/`. These

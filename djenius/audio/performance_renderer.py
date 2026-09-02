@@ -76,6 +76,16 @@ def render_performance_mix(
             source_tail = previous_segment
             target_head = current_stereo
             output_start = len(output) - overlap
+            target_consumed = min(
+                len(current_stereo),
+                max(
+                    overlap,
+                    int(round(
+                        (transition.target_consumed_duration_sec or transition.overlap_duration_sec)
+                        * sample_rate
+                    )),
+                ),
+            )
             transition_audio = apply_transition(
                 source_audio=source_tail,
                 target_audio=target_head,
@@ -86,16 +96,23 @@ def render_performance_mix(
                 target_entry_sample=0,
                 source_bpm=tracks[timeline.appearances[index - 1].segment.track_id].bpm,
                 target_bpm=tracks[segment.track_id].bpm,
-                source_low_energy=tracks[timeline.appearances[index - 1].segment.track_id].analysis.low_energy,
-                source_mid_energy=tracks[timeline.appearances[index - 1].segment.track_id].analysis.mid_energy,
-                target_low_energy=tracks[segment.track_id].analysis.low_energy,
-                target_mid_energy=tracks[segment.track_id].analysis.mid_energy,
-                use_time_stretch=False,
+                # V9.1 passes the selected transition-window evidence rather
+                # than whole-track averages.  The classic renderer still
+                # receives its original track-level contract.
+                source_low_energy=transition.source_bass_activity,
+                source_mid_energy=transition.source_local_energy,
+                target_low_energy=transition.target_bass_activity,
+                target_mid_energy=transition.target_local_energy,
+                use_time_stretch=transition.requires_stretch,
             )
             if len(transition_audio) != overlap:
                 raise ValueError("Performance transition produced an unexpected duration")
-            output = np.concatenate([output[:-overlap], _to_stereo(transition_audio), current_stereo[overlap:]], axis=0)
-            out_start = len(output) - len(current_stereo)
+            # A stretched beatmatched target may consume more source than
+            # the rendered overlap.  Start the solo target body after the
+            # declared consumed interval; using ``overlap`` here would replay
+            # the target's opening source region.
+            output = np.concatenate([output[:-overlap], _to_stereo(transition_audio), current_stereo[target_consumed:]], axis=0)
+            out_start = output_start
             events.append({
                 "type": "performance_transition",
                 "source_appearance_id": timeline.appearances[index - 1].id,
@@ -112,6 +129,28 @@ def render_performance_mix(
                 "mix_end_sample": output_start + overlap,
                 "transition_type": transition.transition_type.value,
                 "confidence": transition.confidence,
+                "transition_bars": transition.length_bars,
+                "phase_error_ms": transition.phase_error_ms,
+                "pair_quality": transition.pair_quality,
+                "technical_score": transition.technical_score,
+                "source_track_title": tracks[timeline.appearances[index - 1].segment.track_id].title,
+                "target_track_title": tracks[segment.track_id].title,
+                "source_segment_id": timeline.appearances[index - 1].segment.id,
+                "target_segment_id": segment.id,
+                "source_section": transition.source_section,
+                "target_section": transition.target_section,
+                "source_local_energy": transition.source_local_energy,
+                "target_local_energy": transition.target_local_energy,
+                "source_local_loudness": transition.source_local_loudness,
+                "target_local_loudness": transition.target_local_loudness,
+                "local_loudness_delta": round(transition.target_local_loudness - transition.source_local_loudness, 4),
+                "source_bass_activity": transition.source_bass_activity,
+                "target_bass_activity": transition.target_bass_activity,
+                "source_vocal_density": transition.source_vocal_density,
+                "target_vocal_density": transition.target_vocal_density,
+                "requires_time_stretch": transition.requires_stretch,
+                "target_consumed_duration_sec": transition.target_consumed_duration_sec,
+                "transition_explanation": transition.explanation,
             })
             transition_count += 1
         out_end = out_start + len(current_stereo)

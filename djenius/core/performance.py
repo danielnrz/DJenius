@@ -12,6 +12,7 @@ import hashlib
 import math
 import random
 from collections import defaultdict
+from dataclasses import dataclass, asdict
 from typing import Iterable
 
 from djenius.core.models import (
@@ -21,10 +22,11 @@ from djenius.core.models import (
     PerformanceTransition,
     TrackProfile,
     TransitionType,
+    EnergyProfile,
 )
 from djenius.core.intent import SetIntent
 from djenius.core.intent_scoring import TrackIntentScore, score_track_intent
-from djenius.core.scorer import score_compatibility
+from djenius.core.transition_quality import score_transition_candidate
 
 
 SECTION_NAMES = {
@@ -197,6 +199,265 @@ def _appearance_count(target: float, style: str, track_count: int) -> int:
     return max(3, min(max(track_count, 3), int(round(target / 55.0))))
 
 
+@dataclass
+class SegmentPairQuality:
+    """Pair-specific transition evidence used by the segment path search."""
+
+    transition_type: TransitionType = TransitionType.CROSSFADE
+    overlap_duration_sec: float = 0.0
+    length_bars: int = 1
+    overall_score: float = 0.0
+    technical_score: float = 0.0
+    phase_score: float = 0.0
+    phrase_score: float = 0.0
+    loudness_score: float = 0.0
+    energy_score: float = 0.0
+    bass_score: float = 0.0
+    vocal_score: float = 0.0
+    source_section: str = "unknown"
+    target_section: str = "unknown"
+    source_loudness: float = 0.0
+    target_loudness: float = 0.0
+    source_energy: float = 0.0
+    target_energy: float = 0.0
+    source_bass: float = 0.0
+    target_bass: float = 0.0
+    source_vocal: float = 0.0
+    target_vocal: float = 0.0
+    phase_error_ms: float = 0.0
+    requires_stretch: bool = False
+    target_consumed_duration_sec: float = 0.0
+    explanation: str = ""
+
+    def to_dict(self) -> dict:
+        result = asdict(self)
+        result["transition_type"] = self.transition_type.value
+        return result
+
+
+def _transition_bar_count(style: str) -> int:
+    """Choose a musical handoff length; quick means short bodies, not hard cuts."""
+    if style in {"quick_mix", "experimental"}:
+        return 2
+    if style in {"club", "smooth"}:
+        return 4
+    return 2
+
+
+def _target_consumed_duration(
+    transition_type: TransitionType,
+    overlap: float,
+    source_bpm: float,
+    target_bpm: float,
+    *,
+    use_time_stretch: bool,
+) -> float:
+    if (
+        transition_type == TransitionType.BEATMATCHED_BLEND
+        and use_time_stretch
+        and source_bpm > 0
+        and target_bpm > 0
+        and abs(source_bpm - target_bpm) > 0.5
+    ):
+        return overlap * source_bpm / target_bpm
+    return overlap
+
+
+def _pair_transition_types(style: str, intent: SetIntent | None) -> list[TransitionType]:
+    """Limit segment recipes to safe, existing DSP paths."""
+    allowed = intent.allowed_transition_types() if intent else []
+    base = [
+        TransitionType.BEATMATCHED_BLEND,
+        TransitionType.CROSSFADE,
+        TransitionType.FILTER_SWEEP,
+        TransitionType.BASS_SWAP,
+        TransitionType.PHRASE_CUT,
+    ]
+    if allowed:
+        base = [item for item in base if item in allowed]
+    # Mashup/echo/loop are deliberately not introduced by the V9.1 segment
+    # handoff selector without explicit stem/timeline support.
+    return base or [TransitionType.CROSSFADE]
+
+
+def score_segment_pair(
+    source: TrackProfile,
+    source_segment: PerformanceSegment,
+    target: TrackProfile,
+    target_segment: PerformanceSegment,
+    *,
+    style: str = "quick_mix",
+    intent: SetIntent | None = None,
+) -> SegmentPairQuality:
+    """Score and recipe-select one concrete A -> B segment handoff.
+
+    This deliberately delegates boundary, local energy, loudness, bass and
+    vocal calculations to the mature full-context transition evaluator.  The
+    segment layer only supplies the actual source/target musical windows.
+    """
+    bars = _transition_bar_count(style)
+    source_bpm = float(source.bpm) if source.bpm > 0 else 120.0
+    target_bpm = float(target.bpm) if target.bpm > 0 else 120.0
+    bar_seconds = 4.0 * 60.0 / source_bpm
+    requested_overlap = bars * bar_seconds
+    overlap = min(
+        requested_overlap,
+        source_segment.duration_sec * 0.30,
+        target_segment.duration_sec * 0.30,
+    )
+    overlap = max(0.5, overlap)
+    overlap = round(overlap, 4)
+
+    best: tuple[float, object, dict, TransitionType, bool, float] | None = None
+    for transition_type in _pair_transition_types(style, intent):
+        # Bass swap has a deliberately short internal bass handoff.  It is
+        # appropriate for close rhythmic pairs, but not for a quick mix with
+        # a large tempo jump where a longer blend is safer.
+        if (
+            transition_type == TransitionType.BASS_SWAP
+            and style in {"quick_mix", "experimental"}
+            and abs(source_bpm - target_bpm) / max(source_bpm, 1.0) > 0.10
+        ):
+            continue
+        use_stretch = (
+            transition_type == TransitionType.BEATMATCHED_BLEND
+            and source.analysis.bpm_confidence >= 0.55
+            and target.analysis.bpm_confidence >= 0.55
+            and abs(source_bpm - target_bpm) <= max(18.0, source_bpm * 0.14)
+        )
+        # A beatmatched recipe without actual beatmatching is misleading and
+        # can create a rhythmic smear.  For wider tempo gaps prefer the
+        # equal-power/filter paths, which are designed to hide the mismatch.
+        if (
+            transition_type == TransitionType.BEATMATCHED_BLEND
+            and not use_stretch
+            and abs(source_bpm - target_bpm) / max(source_bpm, 1.0) > 0.05
+        ):
+            continue
+        target_consumed = _target_consumed_duration(
+            transition_type, overlap, source_bpm, target_bpm,
+            use_time_stretch=use_stretch,
+        )
+        if target_segment.source_start_sec + target_consumed > target_segment.source_end_sec + 0.01:
+            continue
+        quality, _recipe, details = score_transition_candidate(
+            source,
+            target,
+            source_segment.source_end_sec - overlap,
+            target_segment.source_start_sec,
+            overlap,
+            transition_type,
+            intent=intent,
+            energy_profile=intent.effective_energy_profile() if intent else EnergyProfile.STEADY,
+        )
+        phase_score = (quality.bar_alignment_score + quality.phrase_alignment_score) / 2.0
+        # Phrase cuts are an earned exception, never the quick-mode default.
+        phrase_safe = (
+            transition_type != TransitionType.PHRASE_CUT
+            or (
+                quality.overall_score >= 0.78
+                and quality.bar_alignment_score >= 0.82
+                and quality.phrase_alignment_score >= 0.82
+                and quality.vocal_clash_score >= 0.82
+                and quality.loudness_continuity_score >= 0.78
+                and abs(source_bpm - target_bpm) <= max(3.0, source_bpm * 0.025)
+            )
+        )
+        if not phrase_safe:
+            continue
+        # The pair score prioritizes the actual transition context while
+        # retaining the technical compatibility score as the largest single
+        # component.  Intent remains a separate Stage-A concern.
+        pair_score = (
+            0.38 * quality.overall_score
+            + 0.16 * quality.tempo_compatibility_score
+            + 0.12 * quality.harmonic_compatibility_score
+            + 0.10 * phase_score
+            + 0.08 * quality.energy_continuity_score
+            + 0.07 * quality.loudness_continuity_score
+            + 0.05 * quality.bass_handoff_score
+            + 0.04 * quality.vocal_clash_score
+        )
+        if transition_type == TransitionType.PHRASE_CUT:
+            pair_score -= 0.05 if style in {"quick_mix", "experimental"} else 0.0
+        if (
+            transition_type == TransitionType.BEATMATCHED_BLEND
+            and use_stretch
+            and abs(source_bpm - target_bpm) / max(source_bpm, 1.0) <= 0.05
+        ):
+            # When a genuinely close pair can use the mature beatmatched
+            # path, prefer it over a plain overlap of two unsynchronised
+            # rhythmic regions.
+            pair_score += 0.06
+        candidate = (
+            pair_score,
+            quality,
+            details,
+            transition_type,
+            use_stretch,
+            target_consumed,
+        )
+        if best is None or candidate[0] > best[0]:
+            best = candidate
+
+    if best is None:
+        # A bounded crossfade remains a valid safety fallback even for sparse
+        # or incomplete analysis data.
+        transition_type = TransitionType.CROSSFADE
+        target_consumed = overlap
+        quality, _recipe, details = score_transition_candidate(
+            source, target, source_segment.source_end_sec - overlap,
+            target_segment.source_start_sec, overlap, transition_type,
+            intent=intent,
+            energy_profile=intent.effective_energy_profile() if intent else EnergyProfile.STEADY,
+        )
+        best = (0.20, quality, details, transition_type, False, target_consumed)
+
+    pair_score, quality, details, transition_type, use_stretch, target_consumed = best
+    source_loudness = float(details.get("source_context_loudness", 0.0))
+    target_loudness = float(details.get("target_landing_loudness", 0.0))
+    source_energy = float(details.get("source_relative_energy", source_segment.energy))
+    target_energy = float(details.get("target_landing_relative_energy", target_segment.energy))
+    phase_error = max(
+        abs(float(details.get("source_bar_alignment_error_ms", 1000.0))),
+        abs(float(details.get("target_bar_alignment_error_ms", 1000.0))),
+    )
+    explanation = (
+        f"{details.get('source_section', 'unknown')} -> {details.get('target_section', 'unknown')}; "
+        f"{transition_type.value}, {max(1, round(overlap / bar_seconds))} bars; "
+        f"technical {quality.overall_score:.2f}, phase error {phase_error:.0f}ms, "
+        f"loudness {details.get('loudness_delta_db', 0.0):+.1f}dB, "
+        f"vocals {details.get('vocal_collision', 0.0):.2f}."
+    )
+    return SegmentPairQuality(
+        transition_type=transition_type,
+        overlap_duration_sec=overlap,
+        length_bars=max(1, round(overlap / bar_seconds)),
+        overall_score=round(max(0.0, min(1.0, pair_score)), 4),
+        technical_score=round(float(quality.overall_score), 4),
+        phase_score=round((quality.bar_alignment_score + quality.phrase_alignment_score) / 2.0, 4),
+        phrase_score=round(quality.phrase_alignment_score, 4),
+        loudness_score=round(quality.loudness_continuity_score, 4),
+        energy_score=round(quality.energy_continuity_score, 4),
+        bass_score=round(quality.bass_handoff_score, 4),
+        vocal_score=round(quality.vocal_clash_score, 4),
+        source_section=str(details.get("source_section", "unknown")),
+        target_section=str(details.get("target_section", "unknown")),
+        source_loudness=round(source_loudness, 4),
+        target_loudness=round(target_loudness, 4),
+        source_energy=round(source_energy, 4),
+        target_energy=round(target_energy, 4),
+        source_bass=round(float(details.get("source_bass", source_segment.bass_activity)), 4),
+        target_bass=round(float(details.get("target_bass", target_segment.bass_activity)), 4),
+        source_vocal=round(float(details.get("source_vocal_fraction", source_segment.vocal_density)), 4),
+        target_vocal=round(float(details.get("target_vocal_fraction", target_segment.vocal_density)), 4),
+        phase_error_ms=round(phase_error, 2),
+        requires_stretch=use_stretch,
+        target_consumed_duration_sec=round(target_consumed, 4),
+        explanation=explanation,
+    )
+
+
 def plan_performance_timeline(
     tracks: list[TrackProfile],
     target_duration_sec: float,
@@ -228,97 +489,138 @@ def plan_performance_timeline(
         )
         if short_durations:
             median = short_durations[len(short_durations) // 2]
-            count = max(4, min(10, int(round(target_duration_sec / max(median - 0.55, 15.0)))))
-    target_each = target_duration_sec / max(count - 0.045 * (count - 1), 1.0)
+            count = max(5, min(10, int(round(target_duration_sec / max(median - 3.0, 15.0)))))
+    target_each = target_duration_sec / max(count - 0.15 * (count - 1), 1.0)
     used_regions: dict[str, list[tuple[float, float]]] = defaultdict(list)
     seen_counts: dict[str, int] = defaultdict(int)
     appearances: list[PerformanceAppearance] = []
-    last_track_id = ""
+    track_by_id = {track.id: track for track in tracks}
+
+    def usable_for(track: TrackProfile) -> list[PerformanceSegment]:
+        result = []
+        for segment in segments[track.id]:
+            if any(
+                max(segment.source_start_sec, left) < min(segment.source_end_sec, right) - 0.5
+                for left, right in used_regions[track.id]
+            ):
+                continue
+            quick_max = max(60.0, min(90.0, target_each * 1.8))
+            if performance_style == "quick_mix" and not (
+                8.0 <= segment.duration_sec <= quick_max
+                and segment.duration_sec >= target_each * 0.50
+            ):
+                continue
+            result.append(segment)
+        return result
 
     for position in range(count):
         desired_energy = _target_energy(intent, position, count)
-        ranked_tracks = sorted(
-            available,
-            key=lambda track: (
-                scores[track.id].status_rank,
-                scores[track.id].overall_intent_score,
-                -seen_counts[track.id],
-                -abs(track.mean_energy - desired_energy),
-                track.id,
-            ),
-            reverse=True,
-        )
-        # Controlled seed variation changes ties/alternative paths, but never
-        # turns the plan into a random shuffle.
-        if len(ranked_tracks) > 1:
-            offset = rng.randrange(min(2, len(ranked_tracks))) if position else 0
-            ranked_tracks = ranked_tracks[offset:] + ranked_tracks[:offset]
-        selected_track = next((track for track in ranked_tracks if track.id != last_track_id), ranked_tracks[0])
-        candidates = segments[selected_track.id]
-        usable = [
-            segment for segment in candidates
-            if not any(max(segment.source_start_sec, left) < min(segment.source_end_sec, right) - 0.5 for left, right in used_regions[selected_track.id])
-        ]
-        if not usable:
-            # A reprise is allowed only through a source region that is
-            # genuinely disjoint.  A shorter valid performance is safer than
-            # repeating or substantially overlapping an old slice.
-            continue
-        if not usable:
-            continue
-        if performance_style == "quick_mix":
-            bounded = [
-                segment for segment in usable
-                if target_each * 0.35 <= segment.duration_sec <= min(60.0, target_each * 1.6)
-                and not any(max(segment.source_start_sec, left) < min(segment.source_end_sec, right) - 0.5 for left, right in used_regions[selected_track.id])
-            ]
-            if not bounded:
-                bounded = [
-                    segment for segment in usable
-                    if segment.duration_sec <= 60.0
-                    and not any(max(segment.source_start_sec, left) < min(segment.source_end_sec, right) - 0.5 for left, right in used_regions[selected_track.id])
-                ]
-            if bounded:
-                usable = bounded
-            else:
+        options: list[tuple[float, str, PerformanceSegment, SegmentPairQuality | None]] = []
+        for track in available:
+            if appearances and track.id == appearances[-1].segment.track_id:
                 continue
-        segment = max(
-            usable,
-            key=lambda item: (
-                0.48 * scores[selected_track.id].overall_intent_score
-                + 0.22 * item.quality_score
-                + 0.18 * (1.0 - min(1.0, abs(item.duration_sec - target_each) / max(target_each, 1.0)))
-                + 0.12 * (1.0 - min(1.0, abs(item.energy - desired_energy))),
-                item.quality_score,
-            ),
-        )
-        repeated = bool(used_regions[selected_track.id])
+            for segment in usable_for(track):
+                fit_duration = 1.0 - min(1.0, abs(segment.duration_sec - target_each) / max(target_each, 1.0))
+                fit_energy = 1.0 - min(1.0, abs(segment.energy - desired_energy))
+                score = scores[track.id]
+                pair = None
+                pair_score = 0.0
+                if appearances:
+                    previous = appearances[-1].segment
+                    pair = score_segment_pair(
+                        track_by_id[previous.track_id], previous, track, segment,
+                        style=performance_style, intent=intent,
+                    )
+                    pair_score = pair.overall_score
+                total = (
+                    0.42 * score.overall_intent_score
+                    + 0.10 * segment.quality_score
+                    + 0.15 * fit_duration
+                    + 0.08 * fit_energy
+                    + 0.25 * pair_score
+                    - min(0.08, seen_counts[track.id] * 0.025)
+                )
+                options.append((total, track.id, segment, pair))
+        if not options and performance_style == "quick_mix" and target_duration_sec >= 240.0:
+            # A small library may exhaust all short phrase windows before a
+            # five-minute request is filled.  Relax segment length only after
+            # every bounded quick candidate is exhausted, and only for a
+            # longer request where preserving the requested duration is more
+            # useful than silently stopping at three minutes.
+            for track in available:
+                if appearances and track.id == appearances[-1].segment.track_id:
+                    continue
+                for segment in segments[track.id]:
+                    if any(
+                        max(segment.source_start_sec, left) < min(segment.source_end_sec, right) - 0.5
+                        for left, right in used_regions[track.id]
+                    ) or segment.duration_sec > max(120.0, target_each * 4.0):
+                        continue
+                    pair = score_segment_pair(
+                        track_by_id[appearances[-1].segment.track_id], appearances[-1].segment,
+                        track, segment, style=performance_style, intent=intent,
+                    ) if appearances else None
+                    options.append((
+                        0.40 * scores[track.id].overall_intent_score
+                        + 0.12 * segment.quality_score
+                        + 0.08 * (pair.overall_score if pair else 0.0),
+                        track.id, segment, pair,
+                    ))
+        if not options:
+            break
+        options.sort(key=lambda item: (
+            item[0], item[3].overall_score if item[3] else 0.0,
+            item[2].quality_score, item[1], item[2].id,
+        ), reverse=True)
+        # Controlled diversity is limited to the two best pair-aware paths.
+        choice = rng.randrange(min(2, len(options))) if len(options) > 1 else 0
+        _total, selected_id, segment, _pair = options[choice]
+        repeated = bool(used_regions[selected_id])
         appearances.append(PerformanceAppearance(
             id=f"appearance-{position + 1}-{segment.id}",
             segment=segment,
             reprise=repeated,
             reuse_reason="intentional reprise using a different source region" if repeated else "",
-            intent_score=round(scores[selected_track.id].overall_intent_score, 4),
-            intent_status=scores[selected_track.id].status,
+            intent_score=round(scores[selected_id].overall_intent_score, 4),
+            intent_status=scores[selected_id].status,
         ))
-        used_regions[selected_track.id].append((segment.source_start_sec, segment.source_end_sec))
-        seen_counts[selected_track.id] += 1
-        last_track_id = selected_track.id
+        used_regions[selected_id].append((segment.source_start_sec, segment.source_end_sec))
+        seen_counts[selected_id] += 1
+        if len(appearances) >= 2:
+            estimated = sum(item.segment.duration_sec for item in appearances)
+            estimated -= sum(
+                score_segment_pair(
+                    track_by_id[appearances[index - 1].segment.track_id],
+                    appearances[index - 1].segment,
+                    track_by_id[item.segment.track_id], item.segment,
+                    style=performance_style, intent=intent,
+                ).overlap_duration_sec
+                for index, item in enumerate(appearances) if index > 0
+            )
+            if estimated >= target_duration_sec * 0.95:
+                break
 
     # If phrase lengths made the first pass materially short, add one more
     # suitable appearance instead of padding a quick mix with silence or
     # silently stretching a source region.  This keeps target duration a
     # useful target while preserving musical boundaries.
     estimated_duration = sum(item.segment.duration_sec for item in appearances)
-    estimated_duration -= 0.55 * max(0, len(appearances) - 1)
+    estimated_duration -= sum(
+        score_segment_pair(
+            track_by_id[appearances[index - 1].segment.track_id],
+            appearances[index - 1].segment,
+            track_by_id[appearance.segment.track_id],
+            appearance.segment,
+            style=performance_style,
+            intent=intent,
+        ).overlap_duration_sec
+        for index, appearance in enumerate(appearances) if index > 0
+    )
     if performance_style == "quick_mix" and estimated_duration < target_duration_sec * 0.9 and len(appearances) < 10:
         additions = [
             (track, segment) for track in available
-            for segment in segments[track.id]
-            if track.id != last_track_id and not any(
-                max(segment.source_start_sec, left) < min(segment.source_end_sec, right) - 0.5
-                for left, right in used_regions[track.id]
-            )
+            if track.id != (appearances[-1].segment.track_id if appearances else "")
+            for segment in usable_for(track)
         ]
         if additions:
             track, segment = min(
@@ -339,7 +641,6 @@ def plan_performance_timeline(
     if len(appearances) < 2:
         raise ValueError("The library does not contain two distinct safe performance appearances")
 
-    overlap = 0.55 if performance_style in {"quick_mix", "experimental"} else 1.25
     current_output = 0.0
     transitions: list[PerformanceTransition] = []
     for index, appearance in enumerate(appearances):
@@ -347,26 +648,59 @@ def plan_performance_timeline(
             appearance.output_start_sec = 0.0
         else:
             previous = appearances[index - 1]
-            actual_overlap = min(overlap, previous.duration_sec * 0.2, appearance.segment.duration_sec * 0.2)
-            previous_track = next(track for track in tracks if track.id == previous.segment.track_id)
-            current_track = next(track for track in tracks if track.id == appearance.segment.track_id)
-            technical = score_compatibility(previous_track, current_track)
+            previous_track = track_by_id[previous.segment.track_id]
+            current_track = track_by_id[appearance.segment.track_id]
+            pair = score_segment_pair(
+                previous_track, previous.segment, current_track, appearance.segment,
+                style=performance_style, intent=intent,
+            )
+            actual_overlap = round(min(
+                pair.overlap_duration_sec,
+                previous.segment.duration_sec * 0.30,
+                appearance.segment.duration_sec * 0.30,
+            ), 4)
             appearance.output_start_sec = max(0.0, previous.output_end_sec - actual_overlap)
+            target_consumed = _target_consumed_duration(
+                pair.transition_type, actual_overlap, previous_track.bpm,
+                current_track.bpm, use_time_stretch=pair.requires_stretch,
+            )
             transitions.append(PerformanceTransition(
                 position=index,
                 source_appearance_id=previous.id,
                 target_appearance_id=appearance.id,
-                transition_type=(TransitionType.PHRASE_CUT if performance_style in {"quick_mix", "experimental"} else TransitionType.CROSSFADE),
-                overlap_duration_sec=round(actual_overlap, 4),
+                transition_type=pair.transition_type,
+                overlap_duration_sec=actual_overlap,
                 source_start_sec=round(previous.segment.source_end_sec - actual_overlap, 4),
                 source_end_sec=round(previous.segment.source_end_sec, 4),
                 target_start_sec=round(appearance.segment.source_start_sec, 4),
-                target_end_sec=round(appearance.segment.source_start_sec + actual_overlap, 4),
+                target_end_sec=round(appearance.segment.source_start_sec + target_consumed, 4),
                 confidence=round(min(previous.segment.confidence, appearance.segment.confidence), 3),
-                technical_score=round(technical.overall_score, 3),
-                explanation=f"Phrase-aligned handoff; technical compatibility {technical.overall_score:.2f}.",
+                technical_score=pair.technical_score,
+                explanation=pair.explanation,
+                length_bars=pair.length_bars,
+                phase_error_ms=pair.phase_error_ms,
+                pair_quality=pair.overall_score,
+                source_local_energy=pair.source_energy,
+                target_local_energy=pair.target_energy,
+                source_local_loudness=pair.source_loudness,
+                target_local_loudness=pair.target_loudness,
+                source_bass_activity=pair.source_bass,
+                target_bass_activity=pair.target_bass,
+                source_vocal_density=pair.source_vocal,
+                target_vocal_density=pair.target_vocal,
+                source_section=pair.source_section,
+                target_section=pair.target_section,
+                requires_stretch=pair.requires_stretch,
+                target_consumed_duration_sec=target_consumed,
             ))
-        appearance.output_end_sec = round(appearance.output_start_sec + appearance.segment.duration_sec, 4)
+        playback_duration = appearance.segment.duration_sec
+        if index > 0 and transitions:
+            transition = transitions[-1]
+            playback_duration -= max(
+                0.0,
+                transition.target_consumed_duration_sec - transition.overlap_duration_sec,
+            )
+        appearance.output_end_sec = round(appearance.output_start_sec + playback_duration, 4)
         current_output = appearance.output_end_sec
     timeline = PerformanceTimeline(
         appearances=appearances,
@@ -453,7 +787,11 @@ def reorder_performance_timeline(
             appearance.reprise = True
             appearance.reuse_reason = "intentional reprise after user reorder"
         seen_tracks.add(appearance.segment.track_id)
-        overlap = 0.55 if timeline.performance_style in {"quick_mix", "experimental"} else 1.25
+        # An edited order has no source profiles available at this API seam;
+        # use a conservative musical crossfade rather than recreating the V9
+        # universal hard phrase-cut behavior.  A fresh regeneration performs
+        # full pair-aware recipe selection.
+        overlap = 2.0 if timeline.performance_style in {"quick_mix", "experimental"} else 3.0
         if index == 0:
             appearance.output_start_sec = 0.0
         else:
@@ -469,7 +807,7 @@ def reorder_performance_timeline(
             position=index,
             source_appearance_id=previous.id,
             target_appearance_id=current.id,
-            transition_type=TransitionType.PHRASE_CUT if timeline.performance_style in {"quick_mix", "experimental"} else TransitionType.CROSSFADE,
+            transition_type=TransitionType.CROSSFADE,
             overlap_duration_sec=round(overlap, 4),
             source_start_sec=round(previous.segment.source_end_sec - overlap, 4),
             source_end_sec=round(previous.segment.source_end_sec, 4),
@@ -478,6 +816,7 @@ def reorder_performance_timeline(
             confidence=round(min(previous.segment.confidence, current.segment.confidence), 3),
             technical_score=0.0,
             explanation="Revalidated after a user appearance reorder.",
+            length_bars=1,
         ))
     updated = PerformanceTimeline(
         appearances=ordered,

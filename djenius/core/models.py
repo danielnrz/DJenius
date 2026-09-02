@@ -521,6 +521,24 @@ class PerformanceTransition:
     confidence: float = 0.0
     technical_score: float = 0.0
     explanation: str = ""
+    # V9.1: the existing source_start/source_end and target_start/target_end
+    # fields are explicit transition handles.  These additional fields keep
+    # the pair decision inspectable without changing the classic renderer.
+    length_bars: int = 1
+    phase_error_ms: float = 0.0
+    pair_quality: float = 0.0
+    source_local_energy: float = 0.0
+    target_local_energy: float = 0.0
+    source_local_loudness: float = 0.0
+    target_local_loudness: float = 0.0
+    source_bass_activity: float = 0.0
+    target_bass_activity: float = 0.0
+    source_vocal_density: float = 0.0
+    target_vocal_density: float = 0.0
+    source_section: str = "unknown"
+    target_section: str = "unknown"
+    requires_stretch: bool = False
+    target_consumed_duration_sec: float = 0.0
 
     def to_dict(self) -> dict:
         result = asdict(self)
