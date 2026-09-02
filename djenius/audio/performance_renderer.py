@@ -155,6 +155,15 @@ def render_performance_mix(
                 "target_vocal_density": transition.target_vocal_density,
                 "requires_time_stretch": transition.requires_stretch,
                 "target_consumed_duration_sec": transition.target_consumed_duration_sec,
+                "local_context_score": transition.local_context_score,
+                "local_harmonic_score": transition.local_harmonic_score,
+                "local_rhythm_score": transition.local_rhythm_score,
+                "local_energy_score": transition.local_energy_score,
+                "local_energy_slope_score": transition.local_energy_slope_score,
+                "local_timbre_score": transition.local_timbre_score,
+                "local_bass_score": transition.local_bass_score,
+                "local_vocal_score": transition.local_vocal_score,
+                "local_confidence": transition.local_confidence,
                 "transition_explanation": transition.explanation,
             })
             transition_count += 1
@@ -340,7 +349,6 @@ def _apply_layered_event(
         raise ValueError("layer needs two different source tracks")
     source_stems = stem_audio.get(vocal_track, {})
     target_stems = stem_audio.get(instrumental_track, {})
-    required = ("vocals", "drums", "bass", "other")
     if any(name not in source_stems for name in ("vocals",)) or any(name not in target_stems for name in ("drums", "bass", "other")):
         raise ValueError("layer is missing a required cached stem")
     target_appearance_id = event.get("target_appearance_id", "")

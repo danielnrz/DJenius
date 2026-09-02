@@ -7,10 +7,10 @@ the renderer is responsible for applying the already validated audio.
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass, asdict
 from pathlib import Path
 
+from djenius.core.local_context import score_local_context
 from djenius.core.models import LayeredAppearance, PerformanceTimeline, SetPlan, TrackProfile
 from djenius.core.scorer import score_compatibility
 
@@ -32,6 +32,9 @@ class LayerCompatibilityScore:
     energy_score: float = 0.0
     stem_ready: bool = False
     rejection_reason: str = ""
+    local_context_score: float = 0.5
+    local_harmonic_score: float = 0.5
+    local_rhythm_score: float = 0.5
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -81,7 +84,7 @@ def score_layer_candidate(
     vocal_quality = min(1.0, max(0.0, float(vocal_segment.vocal_density) * 1.4))
     instrumental_quality = min(1.0, max(0.0, 1.0 - float(instrumental_segment.vocal_density)))
     energy = max(0.0, 1.0 - abs(float(vocal_segment.energy) - float(instrumental_segment.energy)) * 1.5)
-    score = (
+    base_score = (
         0.24 * tempo
         + 0.24 * key
         + 0.18 * phrase
@@ -89,6 +92,14 @@ def score_layer_candidate(
         + 0.12 * instrumental_quality
         + 0.08 * energy
     )
+    local_score, local_details = score_local_context(
+        vocal_track, vocal_segment, instrumental_track, instrumental_segment,
+        style="experimental",
+    )
+    # Local context is a bounded supporting signal.  The strict stem, vocal,
+    # tempo, and key gates remain authoritative; a locally odd window cannot
+    # turn an otherwise safe layered event into an unsafe one.
+    score = 0.85 * base_score + 0.15 * local_score
     reasons = []
     if not stem_ready:
         reasons.append("complete vocal and backing stem caches are required")
@@ -114,6 +125,9 @@ def score_layer_candidate(
         energy_score=round(energy, 4),
         stem_ready=stem_ready,
         rejection_reason="; ".join(reasons),
+        local_context_score=round(local_score, 4),
+        local_harmonic_score=local_details["local_harmonic_score"],
+        local_rhythm_score=local_details["local_rhythm_score"],
     )
 
 
@@ -122,6 +136,25 @@ def _layer_duration(vocal_segment, instrumental_segment, target_bpm: float) -> t
     bars = 8 if min(vocal_segment.bar_count, instrumental_segment.bar_count) >= 8 else 4
     duration = bars * 4.0 * 60.0 / bpm
     return min(duration, vocal_segment.duration_sec, instrumental_segment.duration_sec), bars
+
+
+def _instrumental_section_options(track: TrackProfile, preferred) -> list:
+    """Return a bounded set of backing sections for a chosen appearance."""
+    options = [preferred]
+    try:
+        from djenius.core.performance import extract_performance_segments
+
+        options.extend(extract_performance_segments(track, max_candidates=24))
+    except Exception:
+        pass
+    result = []
+    seen = set()
+    for item in options:
+        if item.id in seen:
+            continue
+        seen.add(item.id)
+        result.append(item)
+    return result
 
 
 def prepare_layered_events(
@@ -155,22 +188,29 @@ def prepare_layered_events(
         target = tracks.get(target_app.segment.track_id)
         if source is None or target is None:
             continue
-        quality = score_layer_candidate(source, source_app.segment, target, target_app.segment)
-        audits.append({
-            "source_track_id": source.id,
-            "target_track_id": target.id,
-            "source_segment_id": source_app.segment.id,
-            "target_segment_id": target_app.segment.id,
-            "quality": quality.to_dict(),
-        })
-        if not quality.accepted:
+        selected_target_segment = None
+        quality = None
+        for target_segment in _instrumental_section_options(target, target_app.segment):
+            candidate_quality = score_layer_candidate(source, source_app.segment, target, target_segment)
+            audits.append({
+                "source_track_id": source.id,
+                "target_track_id": target.id,
+                "source_segment_id": source_app.segment.id,
+                "target_segment_id": target_segment.id,
+                "quality": candidate_quality.to_dict(),
+            })
+            if candidate_quality.accepted:
+                selected_target_segment = target_segment
+                quality = candidate_quality
+                break
+        if quality is None or selected_target_segment is None:
             continue
-        duration, bars = _layer_duration(source_app.segment, target_app.segment, target.bpm)
+        duration, bars = _layer_duration(source_app.segment, selected_target_segment, target.bpm)
         if duration < 4.0:
             continue
-        target_start = target_app.segment.source_start_sec + (transition.target_consumed_duration_sec or transition.overlap_duration_sec)
+        target_start = selected_target_segment.source_start_sec + (transition.target_consumed_duration_sec or transition.overlap_duration_sec)
         target_end = target_start + duration
-        if target_end > target_app.segment.source_end_sec + 0.01:
+        if target_end > selected_target_segment.source_end_sec + 0.01:
             continue
         source_bpm = source.bpm if source.bpm > 0 else target.bpm
         source_phrase_duration = bars * 4.0 * 60.0 / max(source_bpm, 60.0)
@@ -197,6 +237,9 @@ def prepare_layered_events(
             # target groove.
             time_stretch_ratio=round(source_phrase_duration / max(duration, 0.001), 5),
             confidence=quality.score,
+            local_context_score=quality.local_context_score,
+            local_harmonic_score=quality.local_harmonic_score,
+            local_rhythm_score=quality.local_rhythm_score,
             reason=(
                 "High-confidence vocal phrase over target drums, bass, and other; "
                 f"tempo {quality.tempo_score:.2f}, key {quality.key_score:.2f}, "
@@ -210,7 +253,7 @@ def prepare_layered_events(
     # still belongs to the current target appearance, so its output/source
     # mapping remains local and auditable.
     if not events:
-        candidates: list[tuple[float, object, object, object, object, object]] = []
+        candidates: list[tuple[float, object, object, object, object, object, object]] = []
         for source_index, source_app in enumerate(timeline.appearances[:-1]):
             for target_index in range(source_index + 1, len(timeline.appearances)):
                 target_app = timeline.appearances[target_index]
@@ -218,28 +261,35 @@ def prepare_layered_events(
                 target = tracks.get(target_app.segment.track_id)
                 if source is None or target is None or source.id == target.id:
                     continue
-                quality = score_layer_candidate(source, source_app.segment, target, target_app.segment)
-                audits.append({
-                    "source_track_id": source.id,
-                    "target_track_id": target.id,
-                    "source_segment_id": source_app.segment.id,
-                    "target_segment_id": target_app.segment.id,
-                    "quality": quality.to_dict(),
-                    "callback": True,
-                })
-                if quality.accepted:
-                    candidates.append((quality.score, source_app, target_app, source, target, quality))
+                selected_target_segment = None
+                quality = None
+                for target_segment in _instrumental_section_options(target, target_app.segment):
+                    candidate_quality = score_layer_candidate(source, source_app.segment, target, target_segment)
+                    audits.append({
+                        "source_track_id": source.id,
+                        "target_track_id": target.id,
+                        "source_segment_id": source_app.segment.id,
+                        "target_segment_id": target_segment.id,
+                        "quality": candidate_quality.to_dict(),
+                        "callback": True,
+                    })
+                    if candidate_quality.accepted:
+                        selected_target_segment = target_segment
+                        quality = candidate_quality
+                        break
+                if quality is not None and selected_target_segment is not None:
+                    candidates.append((quality.score, source_app, target_app, source, target, quality, selected_target_segment))
         candidates.sort(key=lambda item: item[0], reverse=True)
-        for _score, source_app, target_app, source, target, quality in candidates[:limit]:
-            duration, bars = _layer_duration(source_app.segment, target_app.segment, target.bpm)
+        for _score, source_app, target_app, source, target, quality, target_segment in candidates[:limit]:
+            duration, bars = _layer_duration(source_app.segment, target_segment, target.bpm)
             source_bpm = source.bpm if source.bpm > 0 else target.bpm
             source_phrase_duration = bars * 4.0 * 60.0 / max(source_bpm, 60.0)
             target_transition = timeline.transitions[timeline.appearances.index(target_app) - 1]
-            target_start = target_app.segment.source_start_sec + (
+            target_start = target_segment.source_start_sec + (
                 target_transition.target_consumed_duration_sec or target_transition.overlap_duration_sec
             )
             target_end = target_start + duration
-            if duration < 4.0 or target_end > target_app.segment.source_end_sec + 0.01:
+            if duration < 4.0 or target_end > target_segment.source_end_sec + 0.01:
                 continue
             vocal_end = source_app.segment.source_end_sec
             vocal_start = vocal_end - source_phrase_duration
@@ -261,6 +311,9 @@ def prepare_layered_events(
                 key_relationship="compatible Camelot/key",
                 time_stretch_ratio=round(source_phrase_duration / max(duration, 0.001), 5),
                 confidence=quality.score,
+                local_context_score=quality.local_context_score,
+                local_harmonic_score=quality.local_harmonic_score,
+                local_rhythm_score=quality.local_rhythm_score,
                 reason=(
                     "Intentional vocal callback over a later target instrumental; "
                     f"tempo {quality.tempo_score:.2f}, key {quality.key_score:.2f}, phrase {quality.phrase_score:.2f}."

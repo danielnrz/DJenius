@@ -83,6 +83,16 @@ class TrackAnalysis:
     spectral_centroid_curve: list[float] = field(default_factory=list)
     mean_energy: float = 0.0
 
+    # Compact, cacheable local context descriptors.  Rows are sampled every
+    # two seconds and retain enough information for exact segment-window
+    # comparisons without storing decoded audio in the analysis database.
+    local_context_times: list[float] = field(default_factory=list)
+    local_chroma_curve: list[list[float]] = field(default_factory=list)
+    local_rhythm_curve: list[list[float]] = field(default_factory=list)
+    local_spectral_curve: list[list[float]] = field(default_factory=list)
+    local_context_version: str = ""
+    local_context_cache: dict[str, dict] = field(default_factory=dict)
+
     # Spectral features
     spectral_centroid_mean: float = 0.0
     low_energy: float = 0.0     # avg energy < 300Hz
@@ -541,6 +551,17 @@ class PerformanceTransition:
     target_section: str = "unknown"
     requires_stretch: bool = False
     target_consumed_duration_sec: float = 0.0
+    local_context_score: float = 0.5
+    local_harmonic_score: float = 0.5
+    local_rhythm_score: float = 0.5
+    local_energy_score: float = 0.5
+    local_energy_slope_score: float = 0.5
+    local_timbre_score: float = 0.5
+    local_bass_score: float = 0.5
+    local_vocal_score: float = 0.5
+    local_confidence: float = 0.0
+    source_context_window: dict | None = None
+    target_context_window: dict | None = None
 
     def to_dict(self) -> dict:
         result = asdict(self)
@@ -587,6 +608,9 @@ class LayeredAppearance:
     instrumental_stems: tuple[str, ...] = ("drums", "bass", "other")
     entry_fade_sec: float = 1.5
     exit_fade_sec: float = 1.5
+    local_context_score: float = 0.5
+    local_harmonic_score: float = 0.5
+    local_rhythm_score: float = 0.5
 
     @property
     def duration_sec(self) -> float:

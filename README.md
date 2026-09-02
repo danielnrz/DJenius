@@ -17,6 +17,7 @@ A fully local personal smart DJ application that analyzes your music library, pl
 - **Human corrections** - The Library view can save local theme, lyrical-mood, and audio-character corrections. Corrections overlay automatic evidence for this library without overwriting the raw model result.
 - **Segment performance** - Short quick/club mixes can compose phrase-aligned musical appearances, return to a track using a different source region, and render an explicit audited performance timeline. Classic long-form planning remains the default for relaxed sets.
 - **Safe layered moments** - Experimental or club plans can optionally attempt a narrow vocal-over-instrumental moment from cached Demucs stems. The source stems and intervals are audited explicitly; incompatible pairs fall back to normal segment transitions.
+- **Local musical context** - Segment handoffs compare cached harmonic, groove, timbre, energy, bass, and vocal evidence from the exact outgoing and incoming windows, with performance-style-aware weighting.
 
 ## Requirements
 

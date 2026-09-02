@@ -27,6 +27,7 @@ from djenius.core.models import (
 from djenius.core.intent import SetIntent
 from djenius.core.intent_scoring import TrackIntentScore, score_track_intent
 from djenius.core.transition_quality import score_transition_candidate
+from djenius.core.local_context import score_local_context
 
 
 SECTION_NAMES = {
@@ -300,6 +301,17 @@ class SegmentPairQuality:
     requires_stretch: bool = False
     target_consumed_duration_sec: float = 0.0
     explanation: str = ""
+    local_context_score: float = 0.5
+    local_harmonic_score: float = 0.5
+    local_rhythm_score: float = 0.5
+    local_energy_score: float = 0.5
+    local_energy_slope_score: float = 0.5
+    local_timbre_score: float = 0.5
+    local_bass_score: float = 0.5
+    local_vocal_score: float = 0.5
+    local_confidence: float = 0.0
+    source_context_window: dict = None
+    target_context_window: dict = None
 
     def to_dict(self) -> dict:
         result = asdict(self)
@@ -379,6 +391,9 @@ def score_segment_pair(
     )
     overlap = max(0.5, overlap)
     overlap = round(overlap, 4)
+    local_score, local_details = score_local_context(
+        source, source_segment, target, target_segment, style=style,
+    )
 
     best: tuple[float, object, dict, TransitionType, bool, float] | None = None
     for transition_type in _pair_transition_types(style, intent):
@@ -441,14 +456,15 @@ def score_segment_pair(
         # retaining the technical compatibility score as the largest single
         # component.  Intent remains a separate Stage-A concern.
         pair_score = (
-            0.38 * quality.overall_score
-            + 0.16 * quality.tempo_compatibility_score
-            + 0.12 * quality.harmonic_compatibility_score
-            + 0.10 * phase_score
-            + 0.08 * quality.energy_continuity_score
-            + 0.07 * quality.loudness_continuity_score
-            + 0.05 * quality.bass_handoff_score
-            + 0.04 * quality.vocal_clash_score
+            0.30 * quality.overall_score
+            + 0.13 * quality.tempo_compatibility_score
+            + 0.10 * quality.harmonic_compatibility_score
+            + 0.08 * phase_score
+            + 0.07 * quality.energy_continuity_score
+            + 0.06 * quality.loudness_continuity_score
+            + 0.04 * quality.bass_handoff_score
+            + 0.03 * quality.vocal_clash_score
+            + 0.19 * local_score
         )
         if transition_type == TransitionType.PHRASE_CUT:
             pair_score -= 0.05 if style in {"quick_mix", "experimental"} else 0.0
@@ -499,7 +515,8 @@ def score_segment_pair(
         f"{transition_type.value}, {max(1, round(overlap / bar_seconds))} bars; "
         f"technical {quality.overall_score:.2f}, phase error {phase_error:.0f}ms, "
         f"loudness {details.get('loudness_delta_db', 0.0):+.1f}dB, "
-        f"vocals {details.get('vocal_collision', 0.0):.2f}."
+        f"vocals {details.get('vocal_collision', 0.0):.2f}; "
+        f"local fit {local_score:.2f}."
     )
     return SegmentPairQuality(
         transition_type=transition_type,
@@ -527,6 +544,17 @@ def score_segment_pair(
         requires_stretch=use_stretch,
         target_consumed_duration_sec=round(target_consumed, 4),
         explanation=explanation,
+        local_context_score=local_score,
+        local_harmonic_score=local_details["local_harmonic_score"],
+        local_rhythm_score=local_details["local_rhythm_score"],
+        local_energy_score=local_details["local_energy_score"],
+        local_energy_slope_score=local_details["local_energy_slope_score"],
+        local_timbre_score=local_details["local_timbre_score"],
+        local_bass_score=local_details["local_bass_score"],
+        local_vocal_score=local_details["local_vocal_score"],
+        local_confidence=local_details["local_confidence"],
+        source_context_window=local_details["source_window"],
+        target_context_window=local_details["target_window"],
     )
 
 
@@ -841,6 +869,17 @@ def plan_performance_timeline(
                 target_section=pair.target_section,
                 requires_stretch=pair.requires_stretch,
                 target_consumed_duration_sec=target_consumed,
+                local_context_score=pair.local_context_score,
+                local_harmonic_score=pair.local_harmonic_score,
+                local_rhythm_score=pair.local_rhythm_score,
+                local_energy_score=pair.local_energy_score,
+                local_energy_slope_score=pair.local_energy_slope_score,
+                local_timbre_score=pair.local_timbre_score,
+                local_bass_score=pair.local_bass_score,
+                local_vocal_score=pair.local_vocal_score,
+                local_confidence=pair.local_confidence,
+                source_context_window=pair.source_context_window,
+                target_context_window=pair.target_context_window,
             ))
         playback_duration = appearance.segment.duration_sec
         if index > 0 and transitions:

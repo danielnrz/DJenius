@@ -239,6 +239,28 @@ def analyze_track(
         analysis.low_energy_curve = [0.33]
         analysis.spectral_centroid_curve = [0.0]
 
+    # --- Compact local musical context ---
+    # These descriptors are deliberately small and windowed.  They let the
+    # V12 segment planner compare the exact outgoing/incoming regions while
+    # keeping decoded audio out of the persistent cache.
+    try:
+        from djenius.core.local_context import compute_local_context_curves
+
+        (
+            analysis.local_context_times,
+            analysis.local_chroma_curve,
+            analysis.local_rhythm_curve,
+            analysis.local_spectral_curve,
+        ) = compute_local_context_curves(y, sr)
+        analysis.local_context_version = "1"
+    except Exception as e:
+        logger.warning("Local context analysis failed for %s: %s", filepath, e)
+        analysis.local_context_times = []
+        analysis.local_chroma_curve = []
+        analysis.local_rhythm_curve = []
+        analysis.local_spectral_curve = []
+        analysis.local_context_version = ""
+
     # --- Spectral Features ---
     try:
         low, mid, high = compute_spectral_energy_bands(y, sr)
