@@ -10,6 +10,8 @@ from __future__ import annotations
 import json
 import logging
 import os
+import subprocess
+import tempfile
 import time
 from pathlib import Path
 
@@ -33,6 +35,7 @@ def render_performance_mix(
     target_lufs: float = -14.0,
     sample_rate: int = 44100,
     progress_callback=None,
+    stem_audio: dict[str, dict[str, np.ndarray]] | None = None,
 ) -> dict:
     """Render explicit source appearances with declared provenance."""
     timeline = plan.performance_timeline
@@ -67,6 +70,7 @@ def render_performance_mix(
         if previous_segment is None:
             output = current_stereo
             out_start = 0
+            body_start = 0
         else:
             transition = timeline.transitions[index - 1]
             overlap = min(
@@ -76,6 +80,7 @@ def render_performance_mix(
             source_tail = previous_segment
             target_head = current_stereo
             output_start = len(output) - overlap
+            body_start = len(output)
             target_consumed = min(
                 len(current_stereo),
                 max(
@@ -168,6 +173,9 @@ def render_performance_mix(
             "semantic_role": segment.semantic_role,
             "intent_score": appearance.intent_score,
             "intent_status": appearance.intent_status,
+            # The body starts after the preceding overlap.  This is the
+            # renderer's authoritative output coordinate for optional layers.
+            "body_start_sample": int(body_start),
         })
         previous_segment = current_stereo
         if progress_callback:
@@ -175,6 +183,32 @@ def render_performance_mix(
 
     if len(output) == 0:
         raise ValueError("Performance timeline produced no audio")
+    layered_count = 0
+    if timeline.layered_events and stem_audio:
+        if progress_callback:
+            progress_callback(87, "Applying safe layered performance moments...")
+        for raw_event in timeline.layered_events:
+            event = raw_event if isinstance(raw_event, dict) else raw_event.to_dict()
+            try:
+                rendered_event = _apply_layered_event(
+                    output,
+                    event,
+                    events,
+                    stem_audio,
+                    sample_rate,
+                )
+                events.append(rendered_event)
+                layered_count += 1
+            except (KeyError, ValueError, IndexError) as exc:
+                # A layer is an optional creative enhancement.  A bad cache,
+                # stale plan, or missing stem must never make a normal V10
+                # performance unsafe or unrenderable.
+                logger.warning("Layered event %s declined; using normal performance: %s", event.get("id", ""), exc)
+                events.append({
+                    "type": "layer_fallback",
+                    "layer_id": event.get("id", ""),
+                    "reason": str(exc),
+                })
     audit = audit_performance_provenance(events, {key: len(value) for key, value in audio.items()})
     if not audit["clean"]:
         raise RuntimeError(f"Performance provenance audit failed: {audit['violations']}")
@@ -231,5 +265,152 @@ def render_performance_mix(
         "performance_mode": "segment",
         "performance_style": timeline.performance_style,
         "appearance_count": len(timeline.appearances),
+        "layered_events": layered_count,
         "file_size_mb": round(os.path.getsize(output_path) / (1024 * 1024), 1),
+    }
+
+
+def _stereo_region(stem: np.ndarray, start_sample: int, end_sample: int) -> np.ndarray:
+    """Extract a stereo stem region without changing channel semantics."""
+    if stem.ndim == 1:
+        stem = np.column_stack([stem, stem])
+    elif stem.ndim != 2:
+        raise ValueError("stem audio must be one- or two-dimensional")
+    if start_sample < 0 or end_sample <= start_sample or end_sample > len(stem):
+        raise ValueError("layer stem source interval is outside the cached stem")
+    region = np.asarray(stem[start_sample:end_sample], dtype=np.float32)
+    if region.shape[1] == 1:
+        region = np.repeat(region, 2, axis=1)
+    if region.shape[1] != 2:
+        raise ValueError("layer stem must be mono or stereo")
+    return region
+
+
+def _fit_stereo_length(audio: np.ndarray, length: int, sample_rate: int, rate: float) -> np.ndarray:
+    """Fit a layer to the backing phrase, preserving pitch when possible."""
+    if len(audio) == length:
+        return audio
+    if not 0.85 <= rate <= 1.18:
+        raise ValueError("layer time-stretch ratio is outside the safe range")
+    stretched = None
+    try:
+        import pyrubberband as pyrb
+
+        channels = [pyrb.time_stretch(audio[:, index], sample_rate, rate) for index in range(audio.shape[1])]
+        stretched = np.column_stack(channels).astype(np.float32)
+    except Exception as exc:
+        logger.warning("Pitch-preserving layer stretch unavailable; declining layer: %s", exc)
+    if stretched is None:
+        # FFmpeg's atempo filter is already the renderer's supported local
+        # fallback and preserves pitch for the small ratios admitted above.
+        try:
+            with tempfile.TemporaryDirectory(prefix="djenius-layer-") as temp_dir:
+                input_path = Path(temp_dir) / "in.wav"
+                output_path = Path(temp_dir) / "out.wav"
+                sf.write(str(input_path), audio, sample_rate)
+                subprocess.run(
+                    ["ffmpeg", "-y", "-loglevel", "error", "-i", str(input_path),
+                     "-filter:a", f"atempo={rate:.6f}", str(output_path)],
+                    check=True,
+                    capture_output=True,
+                    timeout=30,
+                )
+                stretched, _ = sf.read(str(output_path), dtype="float32")
+                stretched = _to_stereo(stretched).astype(np.float32)
+        except Exception as exc:
+            logger.warning("FFmpeg layer stretch unavailable; declining layer: %s", exc)
+    if stretched is None:
+        raise ValueError("pitch-preserving layer time-stretch is unavailable")
+    if len(stretched) < length:
+        stretched = np.pad(stretched, ((0, length - len(stretched)), (0, 0)))
+    return stretched[:length]
+
+
+def _apply_layered_event(
+    output: np.ndarray,
+    event: dict,
+    appearance_events: list[dict],
+    stem_audio: dict[str, dict[str, np.ndarray]],
+    sample_rate: int,
+) -> dict:
+    """Render one explicit vocals-A + drums/bass/other-B region in place."""
+    vocal_track = str(event.get("vocal_track_id", ""))
+    instrumental_track = str(event.get("instrumental_track_id", ""))
+    if not vocal_track or not instrumental_track or vocal_track == instrumental_track:
+        raise ValueError("layer needs two different source tracks")
+    source_stems = stem_audio.get(vocal_track, {})
+    target_stems = stem_audio.get(instrumental_track, {})
+    required = ("vocals", "drums", "bass", "other")
+    if any(name not in source_stems for name in ("vocals",)) or any(name not in target_stems for name in ("drums", "bass", "other")):
+        raise ValueError("layer is missing a required cached stem")
+    target_appearance_id = event.get("target_appearance_id", "")
+    target_event = next((item for item in appearance_events if item.get("appearance_id") == target_appearance_id), None)
+    if target_event is None:
+        raise ValueError("layer target appearance is not in the rendered timeline")
+    start = int(target_event.get("body_start_sample", -1))
+    # The planner's logical appearance start includes the preceding overlap;
+    # the renderer's body_start is the authoritative coordinate for the first
+    # post-handoff layer.  An optional explicit body offset supports future
+    # in-body creative events without guessing from logical coordinates.
+    start += max(0, int(round(float(event.get("body_offset_sec", 0.0)) * sample_rate)))
+    end = start + int(round(float(event.get("output_end_sec", 0.0) - event.get("output_start_sec", 0.0)) * sample_rate))
+    if end <= start or start < 0 or end > len(output):
+        raise ValueError("layer output interval is outside the rendered body")
+    vocal_start = int(round(float(event.get("vocal_source_start_sec", 0.0)) * sample_rate))
+    vocal_end = int(round(float(event.get("vocal_source_end_sec", 0.0)) * sample_rate))
+    inst_start = int(round(float(event.get("instrumental_source_start_sec", 0.0)) * sample_rate))
+    inst_end = int(round(float(event.get("instrumental_source_end_sec", 0.0)) * sample_rate))
+    length = end - start
+    vocal_source = _stereo_region(source_stems["vocals"], vocal_start, vocal_end)
+    vocals = _fit_stereo_length(
+        vocal_source,
+        length,
+        sample_rate,
+        float(event.get("time_stretch_ratio", 1.0)),
+    )
+    instrumental = np.zeros((length, 2), dtype=np.float32)
+    for name in event.get("instrumental_stems", ["drums", "bass", "other"]):
+        backing = _stereo_region(target_stems[name], inst_start, inst_end)
+        if len(backing) < length:
+            backing = np.pad(backing, ((0, length - len(backing)), (0, 0)))
+        instrumental += backing[:length]
+    vocal_gain = db_to_linear(float(event.get("vocal_gain_db", -1.5)))
+    instrumental_gain = db_to_linear(float(event.get("instrumental_gain_db", -5.0)))
+    layer = vocals * vocal_gain + instrumental * instrumental_gain
+    fade_in = min(length // 2, max(1, int(float(event.get("entry_fade_sec", 1.5)) * sample_rate)))
+    fade_out = min(length // 2, max(1, int(float(event.get("exit_fade_sec", 1.5)) * sample_rate)))
+    envelope = np.ones(length, dtype=np.float32)
+    envelope[:fade_in] = np.linspace(0.0, 1.0, fade_in, dtype=np.float32)
+    envelope[-fade_out:] = np.minimum(envelope[-fade_out:], np.linspace(1.0, 0.0, fade_out, dtype=np.float32))
+    base = output[start:end].copy()
+    base_rms = float(np.sqrt(np.mean(np.square(base))) + 1e-9)
+    layer_rms = float(np.sqrt(np.mean(np.square(layer))) + 1e-9)
+    match_db = float(np.clip(20.0 * np.log10(base_rms / layer_rms), -3.0, 6.0))
+    layer *= db_to_linear(match_db)
+    output[start:end] = base * (1.0 - envelope[:, None]) + layer * envelope[:, None]
+    return {
+        "type": "layered",
+        "layer_id": event.get("id", ""),
+        "output_start_sample": start,
+        "output_end_sample": end,
+        "vocal_track_id": vocal_track,
+        "instrumental_track_id": instrumental_track,
+        "vocal_source_start_sample": vocal_start,
+        "vocal_source_end_sample": vocal_end,
+        "instrumental_source_start_sample": inst_start,
+        "instrumental_source_end_sample": inst_end,
+        "instrumental_stems": list(event.get("instrumental_stems", ["drums", "bass", "other"])),
+        "vocal_gain_db": float(event.get("vocal_gain_db", -1.5)),
+        "instrumental_gain_db": float(event.get("instrumental_gain_db", -5.0)),
+        "rms_match_gain_db": round(match_db, 3),
+        "time_stretch_ratio": float(event.get("time_stretch_ratio", 1.0)),
+        "confidence": float(event.get("confidence", 0.0)),
+        "reason": event.get("reason", ""),
+        "sources": [
+            {"track_id": vocal_track, "stem": "vocals", "start_sample": vocal_start, "end_sample": vocal_end},
+            *[
+                {"track_id": instrumental_track, "stem": name, "start_sample": inst_start, "end_sample": inst_end}
+                for name in event.get("instrumental_stems", ["drums", "bass", "other"])
+            ],
+        ],
     }

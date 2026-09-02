@@ -213,4 +213,64 @@ def audit_performance_provenance(events: Iterable[dict], track_lengths: dict[str
             end = int(event.get(f"{key.split('_')[0]}_end_sample", -1))
             if track_id not in track_lengths or start < 0 or end <= start or end > track_lengths[track_id]:
                 violations.append({"kind": "transition_source_out_of_bounds", "event_index": index, "track_id": track_id})
-    return {"clean": not violations, "violations": violations, "appearance_count": len(appearances)}
+    layered = [event for event in events if event.get("type") == "layered"]
+    layered_regions: set[tuple[str, str, int, int]] = set()
+    for index, event in enumerate(layered):
+        output_start = int(event.get("output_start_sample", -1))
+        output_end = int(event.get("output_end_sample", -1))
+        if output_start < 0 or output_end <= output_start:
+            violations.append({"kind": "invalid_layer_output", "event_index": index})
+        sources = event.get("sources", [])
+        if not sources:
+            violations.append({"kind": "layer_has_no_declared_sources", "event_index": index})
+        expected_length = output_end - output_start
+        stretch_ratio = float(event.get("time_stretch_ratio", 1.0) or 1.0)
+        for source_index, source in enumerate(sources):
+            track_id = str(source.get("track_id", ""))
+            stem = str(source.get("stem", ""))
+            start = int(source.get("start_sample", -1))
+            end = int(source.get("end_sample", -1))
+            if track_id not in track_lengths or start < 0 or end <= start or end > track_lengths.get(track_id, 0):
+                violations.append({
+                    "kind": "layer_source_out_of_bounds",
+                    "event_index": index,
+                    "source_index": source_index,
+                    "track_id": track_id,
+                    "stem": stem,
+                })
+            expected_source_length = expected_length
+            if stem == "vocals" and 0.85 <= stretch_ratio <= 1.18:
+                expected_source_length = int(round(expected_length * stretch_ratio))
+            # Audio backends may round a time-stretched interval by a few
+            # samples.  Keep the declared ratio authoritative but allow a
+            # small bounded conversion tolerance.
+            tolerance = max(2, int(round(expected_source_length * 0.005)))
+            if abs((end - start) - expected_source_length) > tolerance:
+                violations.append({
+                    "kind": "layer_source_duration_mismatch",
+                    "event_index": index,
+                    "source_index": source_index,
+                })
+            if stem not in {"vocals", "drums", "bass", "other"}:
+                violations.append({"kind": "unknown_layer_stem", "event_index": index, "stem": stem})
+            region = (track_id, stem, start, end)
+            if region in layered_regions:
+                violations.append({"kind": "duplicate_layer_source_region", "event_index": index, "track_id": track_id, "stem": stem})
+            layered_regions.add(region)
+        vocal_tracks = {str(item.get("track_id", "")) for item in sources if item.get("stem") == "vocals"}
+        backing_tracks = {str(item.get("track_id", "")) for item in sources if item.get("stem") in {"drums", "bass", "other"}}
+        if vocal_tracks & backing_tracks:
+            violations.append({"kind": "same_track_layered_sources", "event_index": index})
+        backing_stems = {
+            str(item.get("stem", ""))
+            for item in sources
+            if item.get("stem") in {"drums", "bass", "other"}
+        }
+        if backing_tracks and backing_stems != {"drums", "bass", "other"}:
+            violations.append({"kind": "incomplete_layer_backing", "event_index": index})
+    return {
+        "clean": not violations,
+        "violations": violations,
+        "appearance_count": len(appearances),
+        "layered_event_count": len(layered),
+    }

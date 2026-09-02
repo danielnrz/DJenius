@@ -359,7 +359,9 @@ def parse_deterministic(text: str) -> SetIntent:
         intent.reprise_preference = "avoid"
     elif re.search(r"\b(?:callback|return to|reprise)\b", text_lower):
         intent.reprise_preference = "callback"
-    if re.search(r"\b(?:mashup|layered|creative mashup)\b", text_lower):
+    if re.search(r"\b(?:do not|don't|no|without|never|avoid)\s+(?:use\s+)?(?:any\s+)?(?:mashups?|layered(?:\s+vocals?)?)\b", text_lower):
+        intent.layering_preference = "off"
+    elif re.search(r"\b(?:mashup|layered|creative mashup)\b", text_lower):
         intent.layering_preference = "prefer"
     if re.search(r"\b(?:experimental|mashup)\b", text_lower):
         intent.performance_style = "experimental"

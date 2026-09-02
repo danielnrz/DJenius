@@ -16,6 +16,7 @@ A fully local personal smart DJ application that analyzes your music library, pl
 - **Recoverable meaning analysis** - Transcript acquisition and meaning interpretation are cached as separate stages. Missing, stale, invalid, or failed meaning can be retried without retranscribing a valid local transcript.
 - **Human corrections** - The Library view can save local theme, lyrical-mood, and audio-character corrections. Corrections overlay automatic evidence for this library without overwriting the raw model result.
 - **Segment performance** - Short quick/club mixes can compose phrase-aligned musical appearances, return to a track using a different source region, and render an explicit audited performance timeline. Classic long-form planning remains the default for relaxed sets.
+- **Safe layered moments** - Experimental or club plans can optionally attempt a narrow vocal-over-instrumental moment from cached Demucs stems. The source stems and intervals are audited explicitly; incompatible pairs fall back to normal segment transitions.
 
 ## Requirements
 

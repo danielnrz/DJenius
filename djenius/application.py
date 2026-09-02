@@ -648,7 +648,9 @@ class LocalAppService:
                 intent.reprise_preference = "avoid"
             if re.search(r"\b(?:callback|return to|reprise)\b", lowered):
                 intent.reprise_preference = "callback"
-            if re.search(r"\b(?:mashup|layered|creative mashup)\b", lowered):
+            if re.search(r"\b(?:do not|don't|no|without|never|avoid)\s+(?:use\s+)?(?:any\s+)?(?:mashups?|layered(?:\s+vocals?)?)\b", lowered):
+                intent.layering_preference = "off"
+            elif re.search(r"\b(?:mashup|layered|creative mashup)\b", lowered):
                 intent.layering_preference = "prefer"
         errors = intent.validate()
         if errors:
@@ -908,12 +910,12 @@ class LocalAppService:
             return [
                 {
                     "time_sec": event.get("mix_start_sec", 0.0),
-                    "source_title": event.get("source_track_title", event.get("track_title", "")),
-                    "target_title": event.get("target_track_title", event.get("track_title", "")),
+                    "source_title": event.get("source_track_title", event.get("track_title", event.get("vocal_track_id", ""))),
+                    "target_title": event.get("target_track_title", event.get("track_title", event.get("instrumental_track_id", ""))),
                     "type": event.get("section_type", event.get("transition_type", "")),
                 }
                 for event in diagnostics.get("events", [])
-                if event.get("type") in {"transition", "performance_transition", "appearance"}
+                if event.get("type") in {"transition", "performance_transition", "appearance", "layered"}
             ]
         except Exception:
             return []
@@ -937,6 +939,10 @@ class LocalAppService:
                     for track in plan.tracks
                     if track.id in {transition.source_track_id, transition.target_track_id}
                 }
+                if plan.performance_timeline and plan.intent_used and plan.intent_used.layering_preference != "off":
+                    from djenius.core.layering import layer_candidate_track_ids
+
+                    candidates.update(layer_candidate_track_ids(plan))
                 for index, track in enumerate(plan.tracks):
                     if track.id not in candidates:
                         continue
@@ -945,12 +951,42 @@ class LocalAppService:
 
             if plan.performance_timeline:
                 from djenius.audio.performance_renderer import render_performance_mix
+                stem_audio = None
+                if use_stems and plan.intent_used and plan.intent_used.layering_preference != "off":
+                    from djenius.audio.stems import load_stems
+                    from djenius.core.layering import prepare_layered_events
+
+                    # The stem selector is intentionally run after preparation:
+                    # a cached transcript/analysis is not enough evidence for
+                    # a layered event until all required stem files exist.
+                    prepare_layered_events(plan)
+                    layer_ids = {
+                        item.get("vocal_track_id")
+                        for item in plan.performance_timeline.layered_events
+                    } | {
+                        item.get("instrumental_track_id")
+                        for item in plan.performance_timeline.layered_events
+                    }
+                    stem_audio = {}
+                    for track_id in layer_ids:
+                        if not track_id:
+                            continue
+                        try:
+                            stem_audio[track_id] = load_stems(
+                                next(track.filepath for track in plan.tracks if track.id == track_id),
+                                stem_dir=self.paths.data_dir / "stems",
+                            )
+                        except (FileNotFoundError, OSError) as exc:
+                            logger.warning("Could not load stems for optional layer %s: %s", track_id, exc)
+                    if not stem_audio:
+                        plan.performance_timeline.layered_events = []
 
                 result = render_performance_mix(
                     plan=plan,
                     output_path=str(output_path),
                     target_lufs=target_lufs,
                     progress_callback=progress,
+                    stem_audio=stem_audio,
                 )
             else:
                 from djenius.audio.renderer import render_mix
@@ -1080,11 +1116,15 @@ class LocalAppService:
             prefs.close()
         except Exception:
             preference_db = False
+        stem_cache_dir = self.paths.data_dir / "stems"
+        stem_cache_count = len(list(stem_cache_dir.glob("*_vocals.wav"))) if stem_cache_dir.is_dir() else 0
         return {
             "core": "ready",
             "ffmpeg": shutil.which("ffmpeg") is not None,
             "ffprobe": shutil.which("ffprobe") is not None,
             "demucs": stems_available(),
+            "layered_performance": stems_available(),
+            "stem_cache_count": stem_cache_count,
             "gpu": gpu_available(),
             "ollama": ollama,
             "ollama_model": self._state.get("ollama_last_request", {}).get("model") or ollama_model_name(),

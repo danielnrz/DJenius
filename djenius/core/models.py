@@ -558,6 +558,57 @@ class PerformanceTransition:
 
 
 @dataclass
+class LayeredAppearance:
+    """A narrow, explicit vocal-over-instrumental performance event.
+
+    This is deliberately separate from a normal appearance and transition.
+    Every stem contribution has one source track and one source interval so
+    provenance can audit the creative layer without changing classic DSP.
+    """
+
+    id: str = ""
+    vocal_track_id: str = ""
+    instrumental_track_id: str = ""
+    vocal_source_start_sec: float = 0.0
+    vocal_source_end_sec: float = 0.0
+    instrumental_source_start_sec: float = 0.0
+    instrumental_source_end_sec: float = 0.0
+    output_start_sec: float = 0.0
+    output_end_sec: float = 0.0
+    target_appearance_id: str = ""
+    bar_count: int = 4
+    bpm: float = 0.0
+    key_relationship: str = ""
+    time_stretch_ratio: float = 1.0
+    vocal_gain_db: float = -1.5
+    instrumental_gain_db: float = -5.0
+    confidence: float = 0.0
+    reason: str = ""
+    instrumental_stems: tuple[str, ...] = ("drums", "bass", "other")
+    entry_fade_sec: float = 1.5
+    exit_fade_sec: float = 1.5
+
+    @property
+    def duration_sec(self) -> float:
+        return max(0.0, self.output_end_sec - self.output_start_sec)
+
+    def to_dict(self) -> dict:
+        result = asdict(self)
+        result["instrumental_stems"] = list(self.instrumental_stems)
+        result["duration_sec"] = round(self.duration_sec, 3)
+        return result
+
+    @classmethod
+    def from_dict(cls, data: dict | None) -> "LayeredAppearance":
+        values = dict(data or {})
+        values.pop("duration_sec", None)
+        if "instrumental_stems" in values:
+            values["instrumental_stems"] = tuple(values["instrumental_stems"])
+        known = {f.name for f in cls.__dataclass_fields__.values()}
+        return cls(**{key: value for key, value in values.items() if key in known})
+
+
+@dataclass
 class PerformanceTimeline:
     """A validated output timeline made of explicit segment appearances."""
 
@@ -587,7 +638,10 @@ class PerformanceTimeline:
             "section_role_diversity": self.section_role_diversity,
             "performance_arc": self.performance_arc,
             "diversity_level": self.diversity_level,
-            "layered_events": list(self.layered_events),
+            "layered_events": [
+                item.to_dict() if isinstance(item, LayeredAppearance) else dict(item)
+                for item in self.layered_events
+            ],
         }
 
     @classmethod
