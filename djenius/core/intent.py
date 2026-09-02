@@ -167,6 +167,12 @@ class SetIntent:
     # existing long-form plans retain their accepted track-level behavior.
     performance_mode: str = "classic"  # "classic", "segment", or "auto"
     performance_style: str = "classic"  # smooth, quick_mix, club, story, experimental
+    # V10 performance preferences.  These are soft controls; intent and
+    # transition safety remain higher priority than novelty.
+    desired_variety: float = 0.35
+    reprise_preference: str = "balanced"  # avoid, balanced, callback
+    layering_preference: str = "off"  # off, prefer, required
+    segment_density: Optional[float] = None
 
     # -- Stems --
     prefer_stems: Optional[bool] = None  # None = no preference
@@ -184,6 +190,14 @@ class SetIntent:
             "classic", "smooth", "club", "quick_mix", "mashup", "story", "radio", "experimental",
         }:
             errors.append("unknown performance_style")
+        if not 0.0 <= self.desired_variety <= 1.0:
+            errors.append("desired_variety must be between 0.0 and 1.0")
+        if self.reprise_preference not in {"avoid", "balanced", "callback"}:
+            errors.append("unknown reprise_preference")
+        if self.layering_preference not in {"off", "prefer", "required"}:
+            errors.append("unknown layering_preference")
+        if self.segment_density is not None and not 0.0 <= self.segment_density <= 1.0:
+            errors.append("segment_density must be between 0.0 and 1.0")
 
         if self.preset and self.preset not in PRESETS:
             valid = ", ".join(sorted(PRESETS.keys()))

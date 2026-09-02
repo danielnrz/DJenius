@@ -488,6 +488,31 @@ def select_intent_candidate_pool(
                 relaxation_steps.append("Relaxed to unknown meaning evidence to approach the requested duration.")
                 break
 
+    # A user who explicitly asks for variety is asking for more than a
+    # duration-sufficient two-track pool.  Add unknown tracks only up to a
+    # small soft diversity target, and only after all strong/partial evidence
+    # has been admitted.  This keeps intent relevance ahead of novelty.
+    if (
+        intent.performance_mode == "segment"
+        and intent.desired_variety >= 0.65
+        and unknown
+    ):
+        desired_unique = min(
+            len(tracks),
+            max(3, min(8, int(round(target_duration_sec / 75.0)))),
+        )
+        if len(chosen) < desired_unique:
+            for track in unknown:
+                if track in chosen:
+                    continue
+                chosen.append(track)
+                fallback_ids.append(track.id)
+                if len(chosen) >= desired_unique:
+                    relaxation_steps.append(
+                        "Added unknown-evidence tracks to support the requested variety while keeping known matches first."
+                    )
+                    break
+
     if len(chosen) < 2 and contradictions:
         for track in contradictions:
             if track in chosen:

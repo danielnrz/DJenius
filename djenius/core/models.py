@@ -485,6 +485,8 @@ class PerformanceAppearance:
     reuse_reason: str = ""
     intent_score: float = 0.0
     intent_status: str = "unknown"
+    performance_reason: str = ""
+    layered: bool = False
 
     @property
     def duration_sec(self) -> float:
@@ -565,6 +567,12 @@ class PerformanceTimeline:
     target_duration_sec: float = 0.0
     performance_style: str = "quick_mix"
     validation_notes: list[str] = field(default_factory=list)
+    reuse_counts: dict[str, int] = field(default_factory=dict)
+    repeated_pair_count: int = 0
+    section_role_diversity: int = 0
+    performance_arc: str = "steady"
+    diversity_level: str = "moderate"
+    layered_events: list[dict] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return {
@@ -574,6 +582,12 @@ class PerformanceTimeline:
             "target_duration_sec": round(self.target_duration_sec, 3),
             "performance_style": self.performance_style,
             "validation_notes": list(self.validation_notes),
+            "reuse_counts": dict(self.reuse_counts),
+            "repeated_pair_count": self.repeated_pair_count,
+            "section_role_diversity": self.section_role_diversity,
+            "performance_arc": self.performance_arc,
+            "diversity_level": self.diversity_level,
+            "layered_events": list(self.layered_events),
         }
 
     @classmethod
@@ -587,6 +601,12 @@ class PerformanceTimeline:
             target_duration_sec=float(data.get("target_duration_sec", 0.0)),
             performance_style=data.get("performance_style", "quick_mix"),
             validation_notes=list(data.get("validation_notes", [])),
+            reuse_counts=dict(data.get("reuse_counts", {})),
+            repeated_pair_count=int(data.get("repeated_pair_count", 0)),
+            section_role_diversity=int(data.get("section_role_diversity", 0)),
+            performance_arc=data.get("performance_arc", "steady"),
+            diversity_level=data.get("diversity_level", "moderate"),
+            layered_events=list(data.get("layered_events", [])),
         )
 
 

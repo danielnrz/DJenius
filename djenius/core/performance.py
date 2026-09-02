@@ -191,12 +191,84 @@ def _target_energy(intent: SetIntent | None, position: int, count: int) -> float
 
 def _appearance_count(target: float, style: str, track_count: int) -> int:
     if style == "quick_mix":
-        return max(4, min(10, int(round(target / 30.0))))
+        # With only one or two viable tracks, longer appearances are more
+        # musical than forcing an A/B/A/B showcase at ten cuts.  Larger
+        # candidate pools retain the higher-turnover quick-mix behavior.
+        cap = 4 if track_count <= 2 else 10
+        return max(4, min(cap, int(round(target / 30.0))))
     if style == "club":
         return max(3, min(8, int(round(target / 48.0))))
     if style == "experimental":
         return max(4, min(10, int(round(target / 28.0))))
     return max(3, min(max(track_count, 3), int(round(target / 55.0))))
+
+
+_ROLE_FLOW = {
+    "intro": {"verse", "hook", "chorus"},
+    "verse": {"pre_chorus", "chorus", "hook", "instrumental", "bridge"},
+    "pre_chorus": {"chorus", "drop", "hook"},
+    "chorus": {"instrumental", "hook", "breakdown", "verse", "outro"},
+    "hook": {"hook", "chorus", "instrumental", "drop", "outro"},
+    "instrumental": {"hook", "chorus", "build", "drop", "breakdown"},
+    "breakdown": {"build", "drop", "chorus", "verse"},
+    "build": {"drop", "chorus", "hook"},
+    "drop": {"breakdown", "hook", "outro", "chorus"},
+    "bridge": {"chorus", "verse", "outro", "instrumental"},
+    "outro": {"intro", "verse", "hook", "chorus"},
+}
+
+
+def _role_progression_score(previous: str, current: str) -> float:
+    previous = _clean_section(previous)
+    current = _clean_section(current)
+    if previous == "unknown" or current == "unknown":
+        return 0.5
+    if current in _ROLE_FLOW.get(previous, set()):
+        return 1.0
+    if previous == current:
+        return 0.35
+    return 0.65
+
+
+def _style_diversity_target(style: str, target_duration_sec: float, track_count: int) -> int:
+    if track_count <= 0:
+        return 0
+    if style == "quick_mix":
+        return min(track_count, max(3, min(8, int(round(target_duration_sec / 75.0)))))
+    if style == "club":
+        return min(track_count, max(3, min(7, int(round(target_duration_sec / 120.0)))))
+    if style == "experimental":
+        return min(track_count, max(4, min(9, int(round(target_duration_sec / 60.0)))))
+    if style == "story":
+        return min(track_count, max(2, min(5, int(round(target_duration_sec / 150.0)))))
+    return min(track_count, max(2, min(6, int(round(target_duration_sec / 120.0)))))
+
+
+def _performance_arc(appearances: list[PerformanceAppearance]) -> str:
+    if len(appearances) < 2:
+        return "steady"
+    energies = [item.segment.energy for item in appearances]
+    first = sum(energies[:max(1, len(energies) // 3)]) / max(1, len(energies[:max(1, len(energies) // 3)]))
+    last = sum(energies[-max(1, len(energies) // 3):]) / max(1, len(energies[-max(1, len(energies) // 3):]))
+    peak = max(energies)
+    if last - first > 0.12:
+        return "build"
+    if first - last > 0.12:
+        return "release"
+    if peak - min(energies) > 0.25:
+        return "wave"
+    return "steady"
+
+
+def _diversity_level(unique_count: int, appearance_count: int, requested: float) -> str:
+    if appearance_count <= 0:
+        return "limited"
+    ratio = unique_count / appearance_count
+    if requested >= 0.65 and ratio >= 0.6:
+        return "high"
+    if ratio < 0.4:
+        return "limited"
+    return "moderate"
 
 
 @dataclass
@@ -487,12 +559,17 @@ def plan_performance_timeline(
             for segment in segments[track.id]
             if 12.0 <= segment.duration_sec <= 60.0
         )
-        if short_durations:
+        if short_durations and len(available) > 2:
             median = short_durations[len(short_durations) // 2]
             count = max(5, min(10, int(round(target_duration_sec / max(median - 3.0, 15.0)))))
     target_each = target_duration_sec / max(count - 0.15 * (count - 1), 1.0)
     used_regions: dict[str, list[tuple[float, float]]] = defaultdict(list)
     seen_counts: dict[str, int] = defaultdict(int)
+    recent_track_ids: list[str] = []
+    edge_counts: dict[tuple[str, str], int] = defaultdict(int)
+    role_counts: dict[str, int] = defaultdict(int)
+    unique_target = _style_diversity_target(performance_style, target_duration_sec, len(available))
+    desired_variety = float(intent.desired_variety) if intent else 0.35
     appearances: list[PerformanceAppearance] = []
     track_by_id = {track.id: track for track in tracks}
 
@@ -532,13 +609,64 @@ def plan_performance_timeline(
                         style=performance_style, intent=intent,
                     )
                     pair_score = pair.overall_score
+                is_new_track = track.id not in seen_counts
+                recent_count = sum(item == track.id for item in recent_track_ids[-3:])
+                repeated_edge = (
+                    edge_counts[(appearances[-1].segment.track_id, track.id)]
+                    if appearances else 0
+                )
+                role = _clean_section(segment.section_type)
+                role_score = (
+                    _role_progression_score(appearances[-1].segment.section_type, role)
+                    if appearances else 0.5
+                )
+                future_role_score = 0.5
+                # Small lookahead: prefer a section that leaves at least one
+                # plausible role progression for the following appearance.
+                if position < count - 1:
+                    future_roles = {
+                        _clean_section(candidate.section_type)
+                        for future_track in available
+                        for candidate in segments[future_track.id][:4]
+                        if future_track.id != track.id
+                    }
+                    if future_roles:
+                        future_role_score = max(
+                            _role_progression_score(role, future_role)
+                            for future_role in future_roles
+                        )
+                novelty_bonus = 0.0
+                if is_new_track:
+                    coverage_gap = max(0, unique_target - len(seen_counts))
+                    novelty_bonus = 0.10 * (0.7 + 0.3 * min(1.0, coverage_gap / max(unique_target, 1)))
+                recent_penalty = min(0.16, 0.055 * recent_count)
+                edge_penalty = min(0.14, 0.07 * repeated_edge)
+                role_penalty = min(0.08, 0.025 * role_counts[role])
+                vocal_penalty = 0.0
+                if appearances and previous.vocal_density >= 0.78 and segment.vocal_density >= 0.78:
+                    vocal_penalty = 0.045
+                reprise_penalty = 0.0
+                reprise_bonus = 0.0
+                if not is_new_track:
+                    if intent and intent.reprise_preference == "avoid":
+                        reprise_penalty = 0.08
+                    elif intent and intent.reprise_preference == "callback" and role in {"hook", "chorus", "drop"}:
+                        reprise_bonus = 0.035
                 total = (
                     0.42 * score.overall_intent_score
                     + 0.10 * segment.quality_score
                     + 0.15 * fit_duration
                     + 0.08 * fit_energy
                     + 0.25 * pair_score
-                    - min(0.08, seen_counts[track.id] * 0.025)
+                    + desired_variety * novelty_bonus
+                    + 0.035 * role_score
+                    + 0.02 * future_role_score
+                    - recent_penalty * (0.6 + desired_variety)
+                    - edge_penalty * (0.6 + desired_variety)
+                    - role_penalty * desired_variety
+                    - vocal_penalty
+                    - reprise_penalty
+                    + reprise_bonus
                 )
                 options.append((total, track.id, segment, pair))
         if not options and performance_style == "quick_mix" and target_duration_sec >= 240.0:
@@ -576,6 +704,14 @@ def plan_performance_timeline(
         choice = rng.randrange(min(2, len(options))) if len(options) > 1 else 0
         _total, selected_id, segment, _pair = options[choice]
         repeated = bool(used_regions[selected_id])
+        if not repeated:
+            performance_reason = "New track for variety and set development."
+        elif segment.section_type in {"hook", "chorus", "drop"}:
+            performance_reason = "Section callback/reprise chosen for an energy or thematic return."
+        else:
+            performance_reason = "Reprise chosen from a different source region while preserving the best available handoff."
+        if appearances and appearances[-1].segment.vocal_density >= 0.78 and segment.vocal_density < 0.78:
+            performance_reason = "Instrumental/low-vocal section chosen to give the vocal arc room to breathe."
         appearances.append(PerformanceAppearance(
             id=f"appearance-{position + 1}-{segment.id}",
             segment=segment,
@@ -583,9 +719,16 @@ def plan_performance_timeline(
             reuse_reason="intentional reprise using a different source region" if repeated else "",
             intent_score=round(scores[selected_id].overall_intent_score, 4),
             intent_status=scores[selected_id].status,
+            performance_reason=performance_reason,
         ))
         used_regions[selected_id].append((segment.source_start_sec, segment.source_end_sec))
         seen_counts[selected_id] += 1
+        if appearances[-1].reprise and appearances[-1].reuse_reason == "":
+            appearances[-1].reuse_reason = performance_reason
+        recent_track_ids.append(selected_id)
+        role_counts[_clean_section(segment.section_type)] += 1
+        if len(appearances) >= 2:
+            edge_counts[(appearances[-2].segment.track_id, selected_id)] += 1
         if len(appearances) >= 2:
             estimated = sum(item.segment.duration_sec for item in appearances)
             estimated -= sum(
@@ -635,8 +778,14 @@ def plan_performance_timeline(
                 reuse_reason="intentional reprise using a different source region" if repeated else "",
                 intent_score=round(scores[track.id].overall_intent_score, 4),
                 intent_status=scores[track.id].status,
+                performance_reason="Additional compatible appearance added to approach the requested duration.",
             ))
             used_regions[track.id].append((segment.source_start_sec, segment.source_end_sec))
+            seen_counts[track.id] += 1
+            recent_track_ids.append(track.id)
+            role_counts[_clean_section(segment.section_type)] += 1
+            if len(appearances) >= 2:
+                edge_counts[(appearances[-2].segment.track_id, track.id)] += 1
 
     if len(appearances) < 2:
         raise ValueError("The library does not contain two distinct safe performance appearances")
@@ -702,12 +851,23 @@ def plan_performance_timeline(
             )
         appearance.output_end_sec = round(appearance.output_start_sec + playback_duration, 4)
         current_output = appearance.output_end_sec
+    reuse_counts = dict(sorted(seen_counts.items()))
+    repeated_pairs = sum(max(0, count - 1) for count in edge_counts.values())
+    role_diversity = len({_clean_section(item.segment.section_type) for item in appearances})
     timeline = PerformanceTimeline(
         appearances=appearances,
         transitions=transitions,
         total_duration_sec=round(current_output, 3),
         target_duration_sec=round(target_duration_sec, 3),
         performance_style=performance_style,
+        reuse_counts=reuse_counts,
+        repeated_pair_count=repeated_pairs,
+        section_role_diversity=role_diversity,
+        performance_arc=_performance_arc(appearances),
+        diversity_level=_diversity_level(
+            len(reuse_counts), len(appearances), desired_variety,
+        ),
+        layered_events=[],
     )
     validate_performance_timeline(timeline, {track.id: track.duration_sec for track in tracks})
     return timeline, scores

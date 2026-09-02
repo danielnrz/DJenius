@@ -111,6 +111,15 @@ Optional local tools:
 Audio feeling and lyrical meaning remain separate evidence in the cache and
 planner. Missing lyrics never prevent standard analysis, planning, or rendering.
 
+V10 segment performances add controlled creative variety. Quick mixes avoid
+pathological two-track cycling when the library has more usable candidates;
+they track recent songs, repeated pairs, section roles, vocal density, and a
+small forward lookahead. Intent relevance and safe V9.1 transitions always
+outrank novelty. Performance summaries expose unique tracks, reprises, pair
+repetition, section-role diversity, and the energy arc. Experimental requests
+may ask for layered moments, but unsupported or unsafe stem mashups fall back
+to the normal validated segment transition.
+
 Song meaning status is reported separately from job completion: meaning-ready,
 low-confidence, interpretation-failed, transcript-missing, unavailable, and
 stale results remain distinguishable. The `Retry unresolved meaning` action

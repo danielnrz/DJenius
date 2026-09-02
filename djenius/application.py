@@ -626,18 +626,30 @@ class LocalAppService:
         elif request and re.search(r"\b(?:quick|short|rapid|showcase)\b", request.lower()) and "mix" in request.lower():
             intent.performance_style = "quick_mix"
             intent.performance_mode = "segment"
-        elif request and re.search(r"\bclub\s+performance\b", request.lower()):
+        elif request and re.search(r"\bclub(?:[- ]style)?(?:\s+performance)?\b", request.lower()):
             intent.performance_style = "club"
             intent.performance_mode = "segment"
-        elif request and re.search(r"\b(?:experimental|mashup)\s+performance\b", request.lower()):
+        elif request and re.search(r"\b(?:experimental|mashup)\b", request.lower()):
             intent.performance_style = "experimental" if "experimental" in request.lower() else "mashup"
             intent.performance_mode = "segment"
-        elif request and re.search(r"\bstory\s+(?:set|performance)\b", request.lower()):
+        elif request and re.search(r"\bstory(?:[- ]like)?\s+(?:set|performance|mix)\b", request.lower()):
             intent.performance_style = "story"
             intent.performance_mode = "classic"
         else:
             intent.performance_style = "classic"
             intent.performance_mode = "classic"
+        # Apply V10 performance modifiers after parsing so an explicit
+        # request remains visible even when Ollama omits optional fields.
+        if request:
+            lowered = request.lower()
+            if re.search(r"\b(?:lots? of different|many different|more variety|diverse|varied|showcase)\b", lowered):
+                intent.desired_variety = 0.85
+            if re.search(r"\b(?:avoid|fewer|no)\s+(?:repeats?|reprises?)\b", lowered):
+                intent.reprise_preference = "avoid"
+            if re.search(r"\b(?:callback|return to|reprise)\b", lowered):
+                intent.reprise_preference = "callback"
+            if re.search(r"\b(?:mashup|layered|creative mashup)\b", lowered):
+                intent.layering_preference = "prefer"
         errors = intent.validate()
         if errors:
             raise ValueError("; ".join(errors))

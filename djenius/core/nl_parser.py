@@ -349,6 +349,28 @@ def parse_deterministic(text: str) -> SetIntent:
             intent.meaning_trajectory = trajectory
             break
 
+    # V10 performance language is deliberately small and deterministic.  It
+    # complements (rather than controls) the audio planner.
+    if re.search(r"\b(?:lots? of different|many different|more variety|diverse|varied|showcase)\b", text_lower):
+        intent.desired_variety = 0.85
+    elif re.search(r"\b(?:smooth|story|long-form|long form)\b", text_lower):
+        intent.desired_variety = 0.15
+    if re.search(r"\b(?:avoid|fewer|no)\s+(?:repeats?|reprises?)\b", text_lower):
+        intent.reprise_preference = "avoid"
+    elif re.search(r"\b(?:callback|return to|reprise)\b", text_lower):
+        intent.reprise_preference = "callback"
+    if re.search(r"\b(?:mashup|layered|creative mashup)\b", text_lower):
+        intent.layering_preference = "prefer"
+    if re.search(r"\b(?:experimental|mashup)\b", text_lower):
+        intent.performance_style = "experimental"
+        intent.performance_mode = "segment"
+    elif re.search(r"\bclub(?:[- ]style)?\b", text_lower):
+        intent.performance_style = "club"
+        intent.performance_mode = "segment"
+    elif re.search(r"\bstory(?:[- ]like)?\b", text_lower):
+        intent.performance_style = "story"
+        intent.performance_mode = "classic"
+
     return intent
 
 
@@ -387,6 +409,10 @@ Valid fields:
 - avoid_lyrical_moods: lyric moods to avoid
 - meaning_trajectory: ordered lyrical moods, for example ["sad", "hopeful"]
 - lyrics_strength: number from 0.0 to 1.0
+- performance_style: one of "classic", "smooth", "club", "story", "quick_mix", "experimental"
+- desired_variety: number from 0.0 to 1.0
+- reprise_preference: one of "avoid", "balanced", "callback"
+- layering_preference: one of "off", "prefer", "required"
 
 Return ONLY the JSON object, no explanation. If a field is not mentioned, omit it.
 Example: {"preset": "chill", "energy_profile": "steady", "transition_style": "smooth"}
@@ -490,6 +516,12 @@ def parse_with_ollama(
             avoid_lyrical_moods=[value for value in data.get("avoid_lyrical_moods", []) if value in LYRICAL_MOODS],
             meaning_trajectory=[value for value in data.get("meaning_trajectory", []) if value in LYRICAL_MOODS],
             lyrics_strength=float(data.get("lyrics_strength", 0.7)),
+            desired_variety=float(data.get("desired_variety", 0.35)),
+            reprise_preference=data.get("reprise_preference", "balanced"),
+            layering_preference=data.get("layering_preference", "off"),
+            segment_density=data.get("segment_density"),
+            performance_style=data.get("performance_style", "classic"),
+            performance_mode=data.get("performance_mode", "classic"),
         )
 
         # Set enum fields
@@ -562,6 +594,7 @@ def _merge_intents(primary: SetIntent, supplement: SetIntent) -> SetIntent:
         "preset", "energy_profile", "transition_style", "vocal_preference",
         "bpm_min", "bpm_max", "energy_min", "energy_max", "transition_length",
         "prefer_stems", "target_duration_sec",
+        "desired_variety", "reprise_preference", "layering_preference", "segment_density",
     ):
         if getattr(primary, name) in (None, 1800.0) and getattr(supplement, name) not in (None, 1800.0):
             setattr(primary, name, getattr(supplement, name))
