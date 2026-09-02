@@ -440,6 +440,139 @@ class TransitionPlan:
 
 
 @dataclass
+class PerformanceSegment:
+    """A phrase-aligned source region used by the V9 performance planner."""
+
+    id: str = ""
+    track_id: str = ""
+    source_start_sec: float = 0.0
+    source_end_sec: float = 0.0
+    section_type: str = "unknown"
+    phrase_start: float = 0.0
+    phrase_end: float = 0.0
+    bar_count: int = 0
+    energy: float = 0.0
+    vocal_density: float = 0.0
+    bass_activity: float = 0.0
+    semantic_role: str = "unknown"
+    confidence: float = 0.0
+    quality_score: float = 0.0
+
+    @property
+    def duration_sec(self) -> float:
+        return max(0.0, self.source_end_sec - self.source_start_sec)
+
+    def to_dict(self) -> dict:
+        result = asdict(self)
+        result["duration_sec"] = round(self.duration_sec, 3)
+        return result
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "PerformanceSegment":
+        known = {f.name for f in cls.__dataclass_fields__.values()}
+        return cls(**{key: value for key, value in data.items() if key in known})
+
+
+@dataclass
+class PerformanceAppearance:
+    """One planned appearance of a segment in the output timeline."""
+
+    id: str = ""
+    segment: PerformanceSegment = field(default_factory=PerformanceSegment)
+    output_start_sec: float = 0.0
+    output_end_sec: float = 0.0
+    reprise: bool = False
+    reuse_reason: str = ""
+    intent_score: float = 0.0
+    intent_status: str = "unknown"
+
+    @property
+    def duration_sec(self) -> float:
+        return max(0.0, self.output_end_sec - self.output_start_sec)
+
+    def to_dict(self) -> dict:
+        result = asdict(self)
+        result["segment"] = self.segment.to_dict()
+        result["duration_sec"] = round(self.duration_sec, 3)
+        return result
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "PerformanceAppearance":
+        values = dict(data)
+        values["segment"] = PerformanceSegment.from_dict(values.get("segment", {}))
+        values.pop("duration_sec", None)
+        known = {f.name for f in cls.__dataclass_fields__.values()}
+        return cls(**{key: value for key, value in values.items() if key in known})
+
+
+@dataclass
+class PerformanceTransition:
+    """Explicit source mapping for a transition between appearances."""
+
+    position: int = 0
+    source_appearance_id: str = ""
+    target_appearance_id: str = ""
+    transition_type: TransitionType = TransitionType.CROSSFADE
+    overlap_duration_sec: float = 0.0
+    source_start_sec: float = 0.0
+    source_end_sec: float = 0.0
+    target_start_sec: float = 0.0
+    target_end_sec: float = 0.0
+    confidence: float = 0.0
+    technical_score: float = 0.0
+    explanation: str = ""
+
+    def to_dict(self) -> dict:
+        result = asdict(self)
+        result["transition_type"] = self.transition_type.value
+        return result
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "PerformanceTransition":
+        values = dict(data)
+        try:
+            values["transition_type"] = TransitionType(values.get("transition_type", "crossfade"))
+        except ValueError:
+            values["transition_type"] = TransitionType.CROSSFADE
+        return cls(**{key: value for key, value in values.items() if key in cls.__dataclass_fields__})
+
+
+@dataclass
+class PerformanceTimeline:
+    """A validated output timeline made of explicit segment appearances."""
+
+    appearances: list[PerformanceAppearance] = field(default_factory=list)
+    transitions: list[PerformanceTransition] = field(default_factory=list)
+    total_duration_sec: float = 0.0
+    target_duration_sec: float = 0.0
+    performance_style: str = "quick_mix"
+    validation_notes: list[str] = field(default_factory=list)
+
+    def to_dict(self) -> dict:
+        return {
+            "appearances": [item.to_dict() for item in self.appearances],
+            "transitions": [item.to_dict() for item in self.transitions],
+            "total_duration_sec": round(self.total_duration_sec, 3),
+            "target_duration_sec": round(self.target_duration_sec, 3),
+            "performance_style": self.performance_style,
+            "validation_notes": list(self.validation_notes),
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict | None) -> "PerformanceTimeline | None":
+        if not data:
+            return None
+        return cls(
+            appearances=[PerformanceAppearance.from_dict(item) for item in data.get("appearances", [])],
+            transitions=[PerformanceTransition.from_dict(item) for item in data.get("transitions", [])],
+            total_duration_sec=float(data.get("total_duration_sec", 0.0)),
+            target_duration_sec=float(data.get("target_duration_sec", 0.0)),
+            performance_style=data.get("performance_style", "quick_mix"),
+            validation_notes=list(data.get("validation_notes", [])),
+        )
+
+
+@dataclass
 class SetPlan:
     """A complete set plan - ordered tracks with transitions."""
     tracks: list[TrackProfile] = field(default_factory=list)
@@ -465,6 +598,12 @@ class SetPlan:
     intent_candidate_pool_ids: list[str] = field(default_factory=list)
     intent_excluded_track_ids: list[str] = field(default_factory=list)
     intent_relaxation_steps: list[str] = field(default_factory=list)
+
+    # V9: optional segment-performance timeline.  A missing value means the
+    # accepted classic full-track renderer contract is used unchanged.
+    performance_mode: str = "classic"
+    performance_style: str = "classic"
+    performance_timeline: Optional[PerformanceTimeline] = None
 
     def get_track_by_id(self, track_id: str) -> Optional[TrackProfile]:
         for t in self.tracks:
@@ -507,6 +646,9 @@ class SetPlan:
             "intent_candidate_pool_ids": self.intent_candidate_pool_ids,
             "intent_excluded_track_ids": self.intent_excluded_track_ids,
             "intent_relaxation_steps": self.intent_relaxation_steps,
+            "performance_mode": self.performance_mode,
+            "performance_style": self.performance_style,
+            "performance_timeline": self.performance_timeline.to_dict() if self.performance_timeline else None,
         }
 
     @classmethod
@@ -536,6 +678,9 @@ class SetPlan:
             intent_candidate_pool_ids=d.get("intent_candidate_pool_ids", []),
             intent_excluded_track_ids=d.get("intent_excluded_track_ids", []),
             intent_relaxation_steps=d.get("intent_relaxation_steps", []),
+            performance_mode=d.get("performance_mode", "classic"),
+            performance_style=d.get("performance_style", "classic"),
+            performance_timeline=PerformanceTimeline.from_dict(d.get("performance_timeline")),
         )
 
     @staticmethod

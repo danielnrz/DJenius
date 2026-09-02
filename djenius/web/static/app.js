@@ -49,3 +49,72 @@ async function loadPreferences() { try { const pref = await api("/api/preference
 document.querySelector('[data-panel="preferences-panel"]').addEventListener("click", loadPreferences);
 loadInitial();
 new MutationObserver(() => { $("lyrics-button").disabled = !state.library || !state.library.track_count; }).observe($("library-rows"), {childList:true});
+
+// V9 uses the same shell but presents appearances rather than pretending a
+// segment performance is a conventional one-track-per-row set.
+const legacyRenderPlan = renderPlan;
+renderPlan = function(plan) {
+  if (!plan.timeline) return legacyRenderPlan(plan);
+  state.plan = plan;
+  const timeline = plan.timeline;
+  const appearances = timeline.appearances || [];
+  $("plan-empty").classList.toggle("hidden", !!plan);
+  $("plan-content").classList.toggle("hidden", !plan);
+  $("render-button").disabled = appearances.length < 2;
+  $("regenerate-button").disabled = appearances.length < 2;
+  $("plan-subtitle").textContent = appearances.length + " appearances · " + fmt(plan.total_duration_sec) + " · " + String(plan.performance_style || "").replaceAll("_", " ");
+  const intent = plan.intent;
+  $("intent-preview").innerHTML = intent ? "<div class='intent-card'><div><small>DJENIUS UNDERSTOOD</small><strong>" + esc(intent.source) + " · " + esc(plan.performance_style) + "</strong></div><div class='intent-tags'>" + (intent.themes || []).map((tag) => "<span class='semantic-tag'>meaning: " + esc(tag.replaceAll("_", " ")) + "</span>").join("") + (intent.moods || []).map((tag) => "<span class='semantic-tag'>" + esc(tag) + "</span>").join("") + "</div></div>" : "";
+  const coverage = plan.intent_coverage || {};
+  $("plan-reasons").innerHTML = "<div class='plan-summary'><div class='summary-tile'><small>Duration</small><strong>" + fmt(plan.total_duration_sec) + "</strong></div><div class='summary-tile'><small>Appearances</small><strong>" + appearances.length + "</strong></div><div class='summary-tile'><small>Intent match</small><strong>" + esc(coverage.label || "Limited") + "</strong><span>" + (coverage.strong_match_count || 0) + " strong · " + (coverage.unknown_count || 0) + " fallback</span></div></div>" + (plan.reasons || []).map((reason) => "<span class='reason'>" + esc(reason) + "</span>").join("");
+  $("plan-tracks").innerHTML = appearances.map((appearance, index) => {
+    const segment = appearance.segment;
+    const track = plan.tracks.find((item) => item.id === segment.track_id) || {};
+    const transition = (timeline.transitions || [])[index - 1];
+    return "<div class='plan-track'><div class='track-row'><div class='track-number'>" + (index + 1) + "</div><div class='track-name'><strong>" + esc(track.title || segment.track_id) + "</strong><small>" + esc(segment.section_type || "unknown") + " · source " + fmt(segment.source_start_sec) + "-" + fmt(segment.source_end_sec) + " · play " + fmt(appearance.duration_sec) + "</small><div class='intent-fit " + esc(appearance.intent_status) + "'><strong>" + esc(appearance.intent_status) + "</strong> · intent " + Math.round(Number(appearance.intent_score || 0) * 100) + "%" + (appearance.reprise ? " · intentional reprise" : "") + "</div></div><div class='metric'><small>Energy</small>" + Number(segment.energy || 0).toFixed(2) + "</div><div class='metric'><small>Bars</small>" + (segment.bar_count || "—") + "</div><div class='metric'><small>Output</small>" + fmt(appearance.output_start_sec) + "</div></div>" + (transition ? "<div class='transition-row'><strong>" + esc(String(transition.transition_type).replaceAll("_", " ")) + "</strong> · " + fmt(transition.overlap_duration_sec) + " handoff · " + esc(transition.explanation || "validated segment transition") + "</div>" : "") + "</div>";
+  }).join("");
+};
+
+// Forward the explicit style to the existing compact submit handler without
+// changing the request parser contract.  The server still validates the mode.
+$("plan-button").addEventListener("click", () => {
+  const style = $("performance-style").value;
+  if (style === "auto" || style === "classic") return;
+  const marker = style === "quick_mix" ? "quick mix" : style + " performance";
+  if (!$("request").value.toLowerCase().includes(marker)) {
+    $("request").value = ($("request").value.trim() + " " + marker).trim();
+  }
+}, true);
+
+function addPerformanceActions() {
+  if (!state.plan || !state.plan.timeline) return;
+  document.querySelectorAll("#plan-tracks .plan-track").forEach((row, index) => {
+    const actions = document.createElement("div");
+    actions.className = "track-actions";
+    actions.innerHTML = "<button class='icon-button' title='Move appearance up' onclick='moveAppearance(" + index + ", -1)' " + (index === 0 ? "disabled" : "") + ">↑</button><button class='icon-button' title='Move appearance down' onclick='moveAppearance(" + index + ", 1)' " + (index === state.plan.timeline.appearances.length - 1 ? "disabled" : "") + ">↓</button><button class='icon-button' title='Remove appearance' onclick='removeAppearance(" + index + ")'>×</button>";
+    row.querySelector(".track-row").appendChild(actions);
+  });
+}
+const oldPerformanceRender = renderPerformancePlan;
+renderPerformancePlan = function(plan) {
+  oldPerformanceRender(plan);
+  addPerformanceActions();
+};
+async function editAppearances(order) {
+  try {
+    renderPlan(await api("/api/plans/" + state.plan.id + "/edit", {method:"POST", body:JSON.stringify({order})}));
+    toast("Appearance timeline revalidated");
+  } catch (error) { toast("Performance edit rejected: " + error.message, true); }
+}
+window.moveAppearance = (index, direction) => {
+  const order = state.plan.timeline.appearances.map((item) => item.id);
+  const other = index + direction;
+  if (other < 0 || other >= order.length) return;
+  [order[index], order[other]] = [order[other], order[index]];
+  editAppearances(order);
+};
+window.removeAppearance = (index) => {
+  const order = state.plan.timeline.appearances.map((item) => item.id).filter((_, item) => item !== index);
+  if (order.length < 2) return toast("A performance needs at least two appearances", true);
+  editAppearances(order);
+};

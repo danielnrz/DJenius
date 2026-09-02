@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import copy
 import logging
+import re
 import shutil
 import threading
 import time
@@ -27,6 +28,7 @@ from djenius.core.nl_parser import ollama_model_name, parse_request
 from djenius.core.meaning import MEANING_ANALYSIS_VERSION, MEANING_MODEL_VERSION, THEMES, LYRICAL_MOODS, meaning_model_name, meaning_state
 from djenius.core.semantic import ACTIVITIES, INTENSITIES, MOODS, SEMANTIC_LABELS, STYLES
 from djenius.core.planner import plan_ordered_set, plan_set
+from djenius.core.performance import reorder_performance_timeline
 from djenius.db.cache import AnalysisCache, compute_file_hash
 from djenius.db.preferences import PreferenceProfile
 
@@ -601,6 +603,7 @@ class LocalAppService:
         preset: str | None,
         duration_minutes: float | None,
         use_llm: bool,
+        performance_style: str | None = None,
     ) -> tuple[SetIntent, float]:
         if request and request.strip():
             intent = parse_request(request.strip(), use_llm=use_llm)
@@ -608,12 +611,33 @@ class LocalAppService:
             # convenient preset-like interpretation, but that is not a user
             # selected preset and must not be presented as one in the UI.
             intent.preset = None
-        elif preset:
+        elif preset and preset != "auto":
             intent = make_intent(preset)
         else:
             intent = SetIntent(target_duration_sec=(duration_minutes or 30.0) * 60.0)
         if duration_minutes is not None and duration_minutes > 0:
             intent.target_duration_sec = duration_minutes * 60.0
+        requested_style = (performance_style or "auto").strip().lower()
+        if requested_style not in {"auto", "classic", "smooth", "club", "quick_mix", "mashup", "story", "radio", "experimental"}:
+            raise ValueError("Unknown performance style")
+        if requested_style != "auto":
+            intent.performance_style = requested_style
+            intent.performance_mode = "segment" if requested_style in {"quick_mix", "club", "mashup", "experimental"} else "classic"
+        elif request and re.search(r"\b(?:quick|short|rapid|showcase)\b", request.lower()) and "mix" in request.lower():
+            intent.performance_style = "quick_mix"
+            intent.performance_mode = "segment"
+        elif request and re.search(r"\bclub\s+performance\b", request.lower()):
+            intent.performance_style = "club"
+            intent.performance_mode = "segment"
+        elif request and re.search(r"\b(?:experimental|mashup)\s+performance\b", request.lower()):
+            intent.performance_style = "experimental" if "experimental" in request.lower() else "mashup"
+            intent.performance_mode = "segment"
+        elif request and re.search(r"\bstory\s+(?:set|performance)\b", request.lower()):
+            intent.performance_style = "story"
+            intent.performance_mode = "classic"
+        else:
+            intent.performance_style = "classic"
+            intent.performance_mode = "classic"
         errors = intent.validate()
         if errors:
             raise ValueError("; ".join(errors))
@@ -686,6 +710,9 @@ class LocalAppService:
             "intent_excluded_track_ids": list(plan.intent_excluded_track_ids),
             "intent_relaxation_steps": list(plan.intent_relaxation_steps),
             "intent": LocalAppService._intent_view(plan.intent_used),
+            "performance_mode": plan.performance_mode,
+            "performance_style": plan.performance_style,
+            "timeline": plan.performance_timeline.to_dict() if plan.performance_timeline else None,
             "markers": [],
         }
 
@@ -719,6 +746,8 @@ class LocalAppService:
             "transition_style": intent.effective_transition_style(),
             "vocal_preference": intent.effective_vocal_preference(),
             "duration_sec": round(intent.target_duration_sec, 1),
+            "performance_mode": intent.performance_mode,
+            "performance_style": intent.performance_style,
         }
 
     def start_plan(
@@ -729,6 +758,7 @@ class LocalAppService:
         duration_minutes: float | None = None,
         use_llm: bool = False,
         seed: int | None = None,
+        performance_style: str | None = None,
     ) -> str:
         path = self.resolve_library(library_path)
         self._remember_state(
@@ -736,13 +766,14 @@ class LocalAppService:
             preset=preset or self._state.get("preset", "balanced"),
             duration_minutes=duration_minutes,
             use_llm=use_llm,
+            performance_style=performance_style,
         )
 
         def action(progress: Callable[[float, str], None]) -> dict[str, Any]:
             progress(5, "Loading analyzed tracks")
             profiles = self._profiles_for_library(path)
             progress(30, "Parsing set request")
-            intent, duration = self._intent(request, preset, duration_minutes, use_llm)
+            intent, duration = self._intent(request, preset, duration_minutes, use_llm, performance_style)
             self._remember_state(
                 ollama_last_request={
                     "source": intent.source,
@@ -752,7 +783,7 @@ class LocalAppService:
                     "at": time.time(),
                 }
             )
-            progress(45, "Planning musical order and transitions")
+            progress(45, "Planning musical order and performance timeline")
             prefs = PreferenceProfile(str(self.paths.preferences_path))
             try:
                 preference_bonuses = prefs.get_scoring_bonuses()
@@ -788,6 +819,28 @@ class LocalAppService:
         current = self.get_plan(plan_id)
         if not ordered_ids:
             raise ValueError("An edited plan must contain tracks")
+        if current.performance_timeline and set(ordered_ids).issubset({
+            appearance.id for appearance in current.performance_timeline.appearances
+        }):
+            updated_timeline = reorder_performance_timeline(
+                copy.deepcopy(current.performance_timeline),
+                ordered_ids,
+                {track.id: track.duration_sec for track in current.tracks},
+            )
+            updated = copy.deepcopy(current)
+            updated.performance_timeline = updated_timeline
+            updated.total_duration_sec = updated_timeline.total_duration_sec
+            updated.tracks = []
+            for appearance in updated_timeline.appearances:
+                track = next(track for track in current.tracks if track.id == appearance.segment.track_id)
+                if track not in updated.tracks:
+                    updated.tracks.append(track)
+            updated.human_readable_reasons = list(current.human_readable_reasons) + [
+                "Performance appearances reordered and revalidated."
+            ]
+            with self._lock:
+                self._plans[plan_id] = updated
+            return self.plan_view(plan_id, updated)
         updated = plan_ordered_set(
             tracks=current.tracks,
             ordered_ids=ordered_ids,
@@ -843,12 +896,12 @@ class LocalAppService:
             return [
                 {
                     "time_sec": event.get("mix_start_sec", 0.0),
-                    "source_title": event.get("source_track_title", ""),
-                    "target_title": event.get("target_track_title", ""),
-                    "type": event.get("transition_type", ""),
+                    "source_title": event.get("source_track_title", event.get("track_title", "")),
+                    "target_title": event.get("target_track_title", event.get("track_title", "")),
+                    "type": event.get("section_type", event.get("transition_type", "")),
                 }
                 for event in diagnostics.get("events", [])
-                if event.get("type") == "transition"
+                if event.get("type") in {"transition", "performance_transition", "appearance"}
             ]
         except Exception:
             return []
@@ -878,15 +931,25 @@ class LocalAppService:
                     progress(2 + index / max(len(plan.tracks), 1) * 18, f"Preparing stems: {track.title}")
                     track.analysis.stems = separate_stems(track.filepath, stem_dir=stem_dir)
 
-            from djenius.audio.renderer import render_mix
+            if plan.performance_timeline:
+                from djenius.audio.performance_renderer import render_performance_mix
 
-            result = render_mix(
-                plan=plan,
-                output_path=str(output_path),
-                output_format="wav",
-                target_lufs=target_lufs,
-                progress_callback=progress,
-            )
+                result = render_performance_mix(
+                    plan=plan,
+                    output_path=str(output_path),
+                    target_lufs=target_lufs,
+                    progress_callback=progress,
+                )
+            else:
+                from djenius.audio.renderer import render_mix
+
+                result = render_mix(
+                    plan=plan,
+                    output_path=str(output_path),
+                    output_format="wav",
+                    target_lufs=target_lufs,
+                    progress_callback=progress,
+                )
             record = {
                 "filename": output_name,
                 "created_at": time.time(),
@@ -894,6 +957,8 @@ class LocalAppService:
                 "plan_id": plan_id,
                 "preset": plan.intent_used.preset if plan.intent_used else None,
                 "request": plan.intent_used.raw_text if plan.intent_used else None,
+                "performance_mode": plan.performance_mode,
+                "performance_style": plan.performance_style,
                 "markers": self._render_markers(result.get("timeline_diagnostics_path")),
             }
             with self._lock:

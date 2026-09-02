@@ -173,3 +173,44 @@ def _check_interval(
         "output_start": output_start,
         "output_end": output_end,
     })
+
+
+def audit_performance_provenance(events: Iterable[dict], track_lengths: dict[str, int]) -> dict:
+    """Audit V9 appearance/transition mappings without track-cursor assumptions.
+
+    A transition is allowed to overlap the tail/head it explicitly declares;
+    ordinary appearances of a repeated track still must use disjoint source
+    regions.  This is deliberately additive so V5.3's strict audit remains
+    unchanged.
+    """
+    violations: list[dict] = []
+    appearances = [event for event in events if event.get("type") == "appearance"]
+    for index, event in enumerate(appearances):
+        track_id = event.get("track_id", "")
+        start = int(event.get("source_start_sample", -1))
+        end = int(event.get("source_end_sample", -1))
+        output_start = int(event.get("output_start_sample", -1))
+        output_end = int(event.get("output_end_sample", -1))
+        if track_id not in track_lengths or start < 0 or end <= start or end > track_lengths.get(track_id, 0):
+            violations.append({"kind": "appearance_out_of_bounds", "event_index": index, "track_id": track_id})
+        if output_start < 0 or output_end <= output_start:
+            violations.append({"kind": "invalid_appearance_output", "event_index": index})
+    by_track: dict[str, list[dict]] = defaultdict(list)
+    for event in appearances:
+        by_track[event.get("track_id", "")].append(event)
+    for track_id, items in by_track.items():
+        for index, left in enumerate(items):
+            for right in items[index + 1:]:
+                overlap = min(left["source_end_sample"], right["source_end_sample"]) - max(left["source_start_sample"], right["source_start_sample"])
+                exact = left["source_start_sample"] == right["source_start_sample"] and left["source_end_sample"] == right["source_end_sample"]
+                if exact or overlap > max(1, int(track_lengths.get(track_id, 1) * 0.01)):
+                    if not left.get("reprise") or not right.get("reprise") or exact:
+                        violations.append({"kind": "unplanned_duplicate_source_region", "track_id": track_id})
+    for index, event in enumerate(event for event in events if event.get("type") == "performance_transition"):
+        for key in ("source_track_id", "target_track_id"):
+            track_id = event.get(key, "")
+            start = int(event.get(f"{key.split('_')[0]}_start_sample", -1))
+            end = int(event.get(f"{key.split('_')[0]}_end_sample", -1))
+            if track_id not in track_lengths or start < 0 or end <= start or end > track_lengths[track_id]:
+                violations.append({"kind": "transition_source_out_of_bounds", "event_index": index, "track_id": track_id})
+    return {"clean": not violations, "violations": violations, "appearance_count": len(appearances)}

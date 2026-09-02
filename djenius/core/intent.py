@@ -163,6 +163,11 @@ class SetIntent:
     meaning_trajectory: list[str] = field(default_factory=list)
     lyrics_strength: float = 0.5
 
+    # V9 performance selection.  Classic is deliberately the default so
+    # existing long-form plans retain their accepted track-level behavior.
+    performance_mode: str = "classic"  # "classic", "segment", or "auto"
+    performance_style: str = "classic"  # smooth, quick_mix, club, story, experimental
+
     # -- Stems --
     prefer_stems: Optional[bool] = None  # None = no preference
 
@@ -172,6 +177,13 @@ class SetIntent:
         Returns empty list if valid.
         """
         errors = []
+
+        if self.performance_mode not in {"classic", "segment", "auto"}:
+            errors.append("performance_mode must be classic, segment, or auto")
+        if self.performance_style not in {
+            "classic", "smooth", "club", "quick_mix", "mashup", "story", "radio", "experimental",
+        }:
+            errors.append("unknown performance_style")
 
         if self.preset and self.preset not in PRESETS:
             valid = ", ".join(sorted(PRESETS.keys()))

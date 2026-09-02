@@ -33,6 +33,10 @@ from djenius.core.intent_scoring import (
     summarize_intent_coverage,
     trajectory_label_score,
 )
+from djenius.core.performance import (
+    performance_intent_coverage,
+    plan_performance_timeline,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -81,6 +85,7 @@ def plan_set(
     effective_max_tracks = max_tracks
     allowed_transition_types = None
     effective_max_transition_bars = max_transition_length_bars
+    candidate_pool = IntentCandidatePool(tracks=tracks, scores={})
 
     relaxed_note = None
     if intent:
@@ -126,6 +131,43 @@ def plan_set(
                 f"Only {len(tracks)} non-contradictory track{'s' if len(tracks) != 1 else ''} remained; no safe two-track set can be rendered."
             )
             return plan
+
+    # V9 is an explicit alternate planning unit.  It receives the same
+    # relevance-first pool, then composes phrase-sized appearances.  The
+    # classic track beam search below remains unchanged for all other plans.
+    if intent and intent.performance_mode == "segment":
+        timeline, segment_scores = plan_performance_timeline(
+            tracks,
+            target_duration_sec,
+            intent,
+            seed=seed,
+            intent_scores=candidate_pool.scores,
+            performance_style=intent.performance_style,
+        )
+        ordered_tracks: list[TrackProfile] = []
+        for appearance in timeline.appearances:
+            track = next(track for track in tracks if track.id == appearance.segment.track_id)
+            if track not in ordered_tracks:
+                ordered_tracks.append(track)
+        plan = SetPlan(
+            tracks=ordered_tracks,
+            target_duration_sec=target_duration_sec,
+            total_duration_sec=timeline.total_duration_sec,
+            energy_profile=effective_energy_profile,
+            score=round(float(sum(item.segment.quality_score for item in timeline.appearances) / max(len(timeline.appearances), 1)), 3),
+            intent_used=intent,
+            performance_mode="segment",
+            performance_style=intent.performance_style,
+            performance_timeline=timeline,
+        )
+        _attach_intent_diagnostics(plan, candidate_pool)
+        plan.intent_coverage = performance_intent_coverage(timeline.appearances, segment_scores)
+        if relaxed_note:
+            plan.human_readable_reasons.append(relaxed_note)
+        plan.human_readable_reasons.append(
+            f"Segment performance composed {len(timeline.appearances)} musical appearances from {len(ordered_tracks)} tracks."
+        )
+        return plan
 
     # Merge preference bonuses
     prefs = preference_bonuses or {}

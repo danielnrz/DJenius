@@ -15,6 +15,7 @@ A fully local personal smart DJ application that analyzes your music library, pl
 - **Intent-first selection** - Requests rank tracks for lyrical meaning and audio feeling before the safe technical planner orders transitions. Unknown evidence is labeled as fallback, reliable contradictions are excluded only when the request makes that explicit, and shorter coherent sets are preferred to unrelated padding.
 - **Recoverable meaning analysis** - Transcript acquisition and meaning interpretation are cached as separate stages. Missing, stale, invalid, or failed meaning can be retried without retranscribing a valid local transcript.
 - **Human corrections** - The Library view can save local theme, lyrical-mood, and audio-character corrections. Corrections overlay automatic evidence for this library without overwriting the raw model result.
+- **Segment performance** - Short quick/club mixes can compose phrase-aligned musical appearances, return to a track using a different source region, and render an explicit audited performance timeline. Classic long-form planning remains the default for relaxed sets.
 
 ## Requirements
 
@@ -71,6 +72,12 @@ is the source of truth; a preset is used when no request is entered. The plan
 shows the requested meaning, per-track match status, fallbacks, and intent
 coverage so a small library is not silently padded with contradictory songs.
 
+For a short performance, choose `Quick mix (phrase cuts)` or write “quick
+mix” in the request. The plan shows each appearance, source timestamps,
+section role, output time, and intentional reprises. Every source interval is
+checked before rendering. Choose `Classic long-form` for the traditional
+one-pass track flow.
+
 The app keeps its local analysis cache, preferences, app state, and optional
 stem cache under `data/`; rendered audio is written under `output/`. These
 paths are ignored by Git and are never uploaded anywhere.
@@ -110,9 +117,9 @@ stay in the local ignored `data/` directory.
 
 ## Future direction
 
-V9 is reserved for segment-based DJ performance and short-form multi-track
-mixing: playing selected sections, returning to a track, and composing a
-validated timeline rather than assuming one forward pass through each track.
+The V9 performance layer is intentionally the first segment-based stage. A
+future release can add richer mashup layering and live-style timeline editing
+without changing deterministic source provenance or transition safety.
 
 ```bash
 # Scan your music library

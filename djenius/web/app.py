@@ -39,6 +39,7 @@ class PlanRequest(BaseModel):
     preset: Optional[str] = None
     duration_minutes: Optional[float] = Field(default=None, gt=0, le=24 * 60)
     use_llm: bool = False
+    performance_style: str = "auto"
 
 
 class EditPlanRequest(BaseModel):
@@ -146,6 +147,7 @@ def create_app(service: LocalAppService | None = None) -> FastAPI:
                     preset=request.preset,
                     duration_minutes=request.duration_minutes,
                     use_llm=request.use_llm,
+                    performance_style=request.performance_style,
                 )
             }
         except (FileNotFoundError, ValueError) as exc:
