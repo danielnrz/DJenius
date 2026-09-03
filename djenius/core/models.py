@@ -578,6 +578,15 @@ class PerformanceTransition:
     preparation_bars: int = 0
     landing_bars: int = 0
     technique_tier: str = "subtle"
+    # V13.2: explicit rendered phase coordinates and data-only operations.
+    # These remain optional so V13/V13.1 plans can still be loaded.
+    preparation_start_sec: float = 0.0
+    boundary_sec: float = 0.0
+    landing_end_sec: float = 0.0
+    preparation_operations: list[dict] = field(default_factory=list)
+    landing_operations: list[dict] = field(default_factory=list)
+    rendered_preparation: bool = False
+    rendered_landing: bool = False
 
     def to_dict(self) -> dict:
         result = asdict(self)

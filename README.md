@@ -142,6 +142,13 @@ and outro. Each handoff receives a role, preparation/landing space, and a
 small style-aware strong-effect budget. This keeps creative moments deliberate
 and spaced while preserving the validated V13 operations and classic mode.
 
+V13.2 makes that preparation physical in segment renders. Selected handoffs
+can automate the outgoing bass or filter over bar-sized source windows before
+the overlap, while the target body is reserved as a clean landing. Stem-enabled
+renders may preview target drums before the boundary and advance the declared
+source interval to prevent replay. Every phase operation is recorded in the
+performance diagnostics; unavailable stems fall back to the normal safe path.
+
 ## Future direction
 
 The V9 performance layer is intentionally the first segment-based stage. A

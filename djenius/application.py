@@ -941,6 +941,16 @@ class LocalAppService:
                     for track in plan.tracks
                     if track.id in {transition.source_track_id, transition.target_track_id}
                 }
+                if plan.performance_timeline:
+                    appearance_by_id = {
+                        item.id: item for item in plan.performance_timeline.appearances
+                    }
+                    for transition in plan.performance_timeline.transitions:
+                        if any(item.get("type") == "target_percussion_tease" for item in transition.preparation_operations):
+                            for appearance_id in (transition.source_appearance_id, transition.target_appearance_id):
+                                appearance = appearance_by_id.get(appearance_id)
+                                if appearance:
+                                    candidates.add(appearance.segment.track_id)
                 if plan.performance_timeline and plan.intent_used and plan.intent_used.layering_preference != "off":
                     from djenius.core.layering import layer_candidate_track_ids
 
@@ -954,21 +964,37 @@ class LocalAppService:
             if plan.performance_timeline:
                 from djenius.audio.performance_renderer import render_performance_mix
                 stem_audio = None
-                if use_stems and plan.intent_used and plan.intent_used.layering_preference != "off":
+                if use_stems:
                     from djenius.audio.stems import load_stems
-                    from djenius.core.layering import prepare_layered_events
+                    layer_ids: set[str] = set()
+                    if plan.intent_used and plan.intent_used.layering_preference != "off":
+                        from djenius.core.layering import prepare_layered_events
 
-                    # The stem selector is intentionally run after preparation:
-                    # a cached transcript/analysis is not enough evidence for
-                    # a layered event until all required stem files exist.
-                    prepare_layered_events(plan)
-                    layer_ids = {
-                        item.get("vocal_track_id")
-                        for item in plan.performance_timeline.layered_events
-                    } | {
-                        item.get("instrumental_track_id")
-                        for item in plan.performance_timeline.layered_events
+                        # The stem selector is intentionally run after preparation:
+                        # a cached transcript/analysis is not enough evidence for
+                        # a layered event until all required stem files exist.
+                        prepare_layered_events(plan)
+                        layer_ids = {
+                            item.get("vocal_track_id")
+                            for item in plan.performance_timeline.layered_events
+                        } | {
+                            item.get("instrumental_track_id")
+                            for item in plan.performance_timeline.layered_events
+                        }
+                    # V13.2 preparation may preview target drums before the
+                    # boundary.  Those stems are independent of the V11
+                    # vocal-layer preference and are loaded only on request.
+                    appearance_by_id = {
+                        item.id: item for item in plan.performance_timeline.appearances
                     }
+                    for transition in plan.performance_timeline.transitions:
+                        if any(item.get("type") == "target_percussion_tease" for item in transition.preparation_operations):
+                            source_appearance = appearance_by_id.get(transition.source_appearance_id)
+                            target_appearance = appearance_by_id.get(transition.target_appearance_id)
+                            if source_appearance:
+                                layer_ids.add(source_appearance.segment.track_id)
+                            if target_appearance:
+                                layer_ids.add(target_appearance.segment.track_id)
                     stem_audio = {}
                     for track_id in layer_ids:
                         if not track_id:

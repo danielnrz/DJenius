@@ -21,6 +21,7 @@ import soundfile as sf
 from djenius.audio.provenance import audit_performance_provenance
 from djenius.audio.renderer import _compute_track_gain_db, _load_audio, _to_stereo
 from djenius.audio.transitions import apply_transition
+from djenius.audio.transition_preparation import render_preparation
 from djenius.core.models import SetPlan
 from djenius.core.performance import require_valid_performance_timeline
 from djenius.utils.audio_math import db_to_linear, normalize_lufs, soft_clip
@@ -73,16 +74,70 @@ def render_performance_mix(
             body_start = 0
         else:
             transition = timeline.transitions[index - 1]
+            previous_appearance = timeline.appearances[index - 1]
             overlap = min(
                 len(previous_segment), len(current_stereo),
                 max(1, int(round(transition.overlap_duration_sec * sample_rate))),
             )
-            source_tail = previous_segment
-            target_head = current_stereo
             output_start = len(output) - overlap
+            source_tail = previous_segment
+            preparation_samples = min(
+                max(0, int(round(transition.preparation_duration_sec * sample_rate))),
+                max(0, output_start),
+            )
+            preparation_start = output_start - preparation_samples
+            preparation_audit: list[dict] = []
+            if preparation_samples and transition.preparation_operations:
+                prepared, preparation_audit = render_preparation(
+                    output[preparation_start:output_start],
+                    sample_rate,
+                    transition.preparation_operations,
+                )
+                output[preparation_start:output_start] = prepared
+
+            # A percussion tease is optional and only runs when the caller
+            # supplied cached stems.  It consumes the target's opening source
+            # interval and advances the transition target accordingly, so the
+            # same samples cannot be replayed after the boundary.
+            target_preparation_samples = 0
+            target_preparation_audit: dict | None = None
+            target_base_offset = max(
+                0,
+                int(round(transition.target_start_sec * sample_rate)) - left,
+            )
+            if (
+                preparation_samples
+                and stem_audio
+                and any(item.get("type") == "target_percussion_tease"
+                        for item in transition.preparation_operations)
+            ):
+                target_stems = stem_audio.get(segment.track_id, {})
+                drums = target_stems.get("drums")
+                target_left = left + target_base_offset
+                target_right = target_left + preparation_samples
+                if drums is not None and target_right <= len(drums):
+                    tease = _stereo_region(drums, target_left, target_right)
+                    tease_gain = np.linspace(
+                        db_to_linear(-22.0), db_to_linear(-10.0), preparation_samples,
+                        dtype=np.float32,
+                    )[:, None]
+                    output[preparation_start:output_start] += tease * tease_gain
+                    target_preparation_samples = preparation_samples
+                    target_preparation_audit = {
+                        "track_id": segment.track_id,
+                        "stem": "drums",
+                        "source_start_sample": target_left,
+                        "source_end_sample": target_right,
+                        "output_start_sample": preparation_start,
+                        "output_end_sample": output_start,
+                    }
+                else:
+                    logger.info("Target percussion tease declined: cached drums do not cover the preparation window")
+
+            target_head = current_stereo[target_base_offset + target_preparation_samples:]
             body_start = len(output)
             target_consumed = min(
-                len(current_stereo),
+                len(target_head),
                 max(
                     overlap,
                     int(round(
@@ -113,6 +168,10 @@ def render_performance_mix(
             )
             if len(transition_audio) != overlap:
                 raise ValueError("Performance transition produced an unexpected duration")
+            source_preparation_rendered = any(
+                item.get("type") in {"bass_automation", "filter_automation", "generated_fx"}
+                for item in transition.preparation_operations
+            )
             generated_fx = [
                 {
                     "source_type": "generated_fx",
@@ -128,7 +187,8 @@ def render_performance_mix(
             # the rendered overlap.  Start the solo target body after the
             # declared consumed interval; using ``overlap`` here would replay
             # the target's opening source region.
-            output = np.concatenate([output[:-overlap], _to_stereo(transition_audio), current_stereo[target_consumed:]], axis=0)
+            target_consumed_total = target_base_offset + target_preparation_samples + target_consumed
+            output = np.concatenate([output[:-overlap], _to_stereo(transition_audio), current_stereo[target_consumed_total:]], axis=0)
             out_start = output_start
             events.append({
                 "type": "performance_transition",
@@ -138,8 +198,8 @@ def render_performance_mix(
                 "target_track_id": segment.track_id,
                 "source_start_sample": int(round(transition.source_start_sec * sample_rate)),
                 "source_end_sample": int(round(transition.source_end_sec * sample_rate)),
-                "target_start_sample": int(round(transition.target_start_sec * sample_rate)),
-                "target_end_sample": int(round(transition.target_end_sec * sample_rate)),
+                "target_start_sample": int(round(transition.target_start_sec * sample_rate)) + target_preparation_samples,
+                "target_end_sample": int(round(transition.target_start_sec * sample_rate)) + target_preparation_samples + target_consumed,
                 "output_start_sample": output_start,
                 "output_end_sample": output_start + overlap,
                 "mix_start_sample": output_start,
@@ -167,6 +227,34 @@ def render_performance_mix(
                 "target_vocal_density": transition.target_vocal_density,
                 "requires_time_stretch": transition.requires_stretch,
                 "target_consumed_duration_sec": transition.target_consumed_duration_sec,
+                "target_preparation_consumed_duration_sec": round(target_preparation_samples / sample_rate, 4),
+                "preparation_start_sample": preparation_start,
+                "preparation_end_sample": output_start,
+                "boundary_sample": output_start,
+                "landing_start_sample": body_start,
+                "landing_end_sample": min(len(output), body_start + int(round(transition.landing_duration_sec * sample_rate))),
+                "preparation_operations": transition.preparation_operations,
+                "landing_operations": transition.landing_operations,
+                "preparation_source_start_sample": max(
+                    int(round(previous_appearance.segment.source_start_sec * sample_rate)),
+                    int(round((previous_appearance.segment.source_end_sec - preparation_samples / sample_rate) * sample_rate)),
+                ),
+                "preparation_source_end_sample": int(round(previous_appearance.segment.source_end_sec * sample_rate)),
+                "preparation_rendered": bool(
+                    preparation_samples
+                    and (source_preparation_rendered or target_preparation_audit)
+                ),
+                "landing_rendered": bool(transition.landing_duration_sec > 0 and body_start < len(output)),
+                "preparation_generated_fx_provenance": [
+                    {
+                        **item,
+                        "output_start_sample": preparation_start,
+                        "output_end_sample": output_start,
+                    }
+                    for item in preparation_audit
+                    if item.get("source_type") == "generated_fx"
+                ],
+                "preparation_target_provenance": target_preparation_audit,
                 "local_context_score": transition.local_context_score,
                 "local_harmonic_score": transition.local_harmonic_score,
                 "local_rhythm_score": transition.local_rhythm_score,

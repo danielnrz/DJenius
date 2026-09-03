@@ -37,6 +37,7 @@ from djenius.core.performance_direction import (
     technique_tier,
     transition_direction,
 )
+from djenius.core.transition_phases import build_preparation_operations, landing_operations
 
 
 SECTION_NAMES = {
@@ -360,6 +361,29 @@ def _target_consumed_duration(
     ):
         return overlap * source_bpm / target_bpm
     return overlap
+
+
+def _phase_durations(
+    source_segment: PerformanceSegment,
+    target_segment: PerformanceSegment,
+    source_bpm: float,
+    target_bpm: float,
+    preparation_bars: int,
+    landing_bars: int,
+    overlap: float,
+) -> tuple[float, float]:
+    """Fit real phase lengths inside the selected source/target sections."""
+    source_bar = 4.0 * 60.0 / max(source_bpm, 60.0)
+    target_bar = 4.0 * 60.0 / max(target_bpm, 60.0)
+    preparation = min(
+        max(0.0, preparation_bars * source_bar),
+        max(0.0, source_segment.duration_sec - overlap - 0.05),
+    )
+    landing = min(
+        max(0.0, landing_bars * target_bar),
+        max(0.0, target_segment.duration_sec - overlap - 0.05),
+    )
+    return round(preparation, 4), round(landing, 4)
 
 
 def _pair_transition_types(style: str, intent: SetIntent | None) -> list[TransitionType]:
@@ -960,6 +984,23 @@ def plan_performance_timeline(
                 pair.transition_type, actual_overlap, previous_track.bpm,
                 current_track.bpm, use_time_stretch=pair.requires_stretch,
             )
+            prep_bars = direction[index - 1].preparation_bars if index - 1 < len(direction) else 1
+            land_bars = direction[index - 1].landing_bars if index - 1 < len(direction) else 2
+            preparation_duration, landing_duration = _phase_durations(
+                previous.segment,
+                appearance.segment,
+                previous_track.bpm,
+                current_track.bpm,
+                prep_bars,
+                land_bars,
+                actual_overlap,
+            )
+            preparation_ops = build_preparation_operations(
+                pair.technique_name,
+                direction[index - 1].transition_role if index - 1 < len(direction) else "CONTINUE",
+                performance_style,
+                stems_available=bool(getattr(previous_track.analysis, "stems", {}) and getattr(current_track.analysis, "stems", {})),
+            )
             transitions.append(PerformanceTransition(
                 position=index,
                 source_appearance_id=previous.id,
@@ -1007,11 +1048,13 @@ def plan_performance_timeline(
                 performance_state=(direction[index - 1].state if index - 1 < len(direction) else "DEVELOP"),
                 next_performance_state=(direction[index - 1].next_state if index - 1 < len(direction) else "OUTRO"),
                 transition_role=(direction[index - 1].transition_role if index - 1 < len(direction) else "CONTINUE"),
-                preparation_bars=(direction[index - 1].preparation_bars if index - 1 < len(direction) else 1),
-                landing_bars=(direction[index - 1].landing_bars if index - 1 < len(direction) else 2),
-                preparation_duration_sec=round((direction[index - 1].preparation_bars if index - 1 < len(direction) else 1) * 4.0 * 60.0 / max(previous_track.bpm, 60.0), 3),
-                landing_duration_sec=round((direction[index - 1].landing_bars if index - 1 < len(direction) else 2) * 4.0 * 60.0 / max(current_track.bpm, 60.0), 3),
+                preparation_bars=prep_bars,
+                landing_bars=land_bars,
+                preparation_duration_sec=preparation_duration,
+                landing_duration_sec=landing_duration,
                 technique_tier=pair.technique_tier,
+                preparation_operations=preparation_ops,
+                landing_operations=landing_operations(),
             ))
             recent_techniques.append(pair.technique_name)
             del recent_techniques[:-6]
@@ -1028,6 +1071,17 @@ def plan_performance_timeline(
                 transition.target_consumed_duration_sec - transition.overlap_duration_sec,
             )
         appearance.output_end_sec = round(appearance.output_start_sec + playback_duration, 4)
+        if index > 0 and transitions:
+            transition = transitions[-1]
+            transition.boundary_sec = round(appearance.output_start_sec, 4)
+            transition.preparation_start_sec = round(
+                max(0.0, transition.boundary_sec - transition.preparation_duration_sec), 4,
+            )
+            transition.landing_end_sec = round(
+                min(appearance.output_end_sec, appearance.output_start_sec
+                    + transition.overlap_duration_sec + transition.landing_duration_sec),
+                4,
+            )
         current_output = appearance.output_end_sec
     reuse_counts = dict(sorted(seen_counts.items()))
     repeated_pairs = sum(max(0, count - 1) for count in edge_counts.values())

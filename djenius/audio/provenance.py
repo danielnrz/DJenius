@@ -240,6 +240,30 @@ def audit_performance_provenance(events: Iterable[dict], track_lengths: dict[str
                     "event_index": index,
                     "fx_index": fx_index,
                 })
+        preparation_start = int(event.get("preparation_start_sample", -1))
+        preparation_end = int(event.get("preparation_end_sample", -1))
+        if event.get("preparation_rendered"):
+            if preparation_start < 0 or preparation_end <= preparation_start:
+                violations.append({"kind": "invalid_preparation_output", "event_index": index})
+            prep_source_start = int(event.get("preparation_source_start_sample", -1))
+            prep_source_end = int(event.get("preparation_source_end_sample", -1))
+            source_track = str(event.get("source_track_id", ""))
+            if source_track not in track_lengths or prep_source_start < 0 or prep_source_end <= prep_source_start or prep_source_end > track_lengths.get(source_track, 0):
+                violations.append({"kind": "preparation_source_out_of_bounds", "event_index": index, "track_id": source_track})
+            for fx_index, fx in enumerate(event.get("preparation_generated_fx_provenance", []) or []):
+                fx_start = int(fx.get("output_start_sample", -1))
+                fx_end = int(fx.get("output_end_sample", -1))
+                if fx.get("source_type") != "generated_fx" or fx_start < preparation_start or fx_end > preparation_end or fx_end <= fx_start:
+                    violations.append({"kind": "preparation_fx_provenance_invalid", "event_index": index, "fx_index": fx_index})
+        target_prep = event.get("preparation_target_provenance")
+        if target_prep:
+            track_id = str(target_prep.get("track_id", ""))
+            start = int(target_prep.get("source_start_sample", -1))
+            end = int(target_prep.get("source_end_sample", -1))
+            if track_id not in track_lengths or start < 0 or end <= start or end > track_lengths.get(track_id, 0):
+                violations.append({"kind": "preparation_target_out_of_bounds", "event_index": index, "track_id": track_id})
+            if int(target_prep.get("output_start_sample", -1)) < preparation_start or int(target_prep.get("output_end_sample", -1)) > preparation_end:
+                violations.append({"kind": "preparation_target_output_out_of_bounds", "event_index": index})
     layered = [event for event in events if event.get("type") == "layered"]
     layered_regions: set[tuple[str, str, int, int]] = set()
     for index, event in enumerate(layered):
