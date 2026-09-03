@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 
 from djenius.core.models import TransitionType
+from djenius.core.performance_direction import role_fit, technique_tier
 
 
 @dataclass
@@ -34,6 +35,8 @@ class MusicalSituation:
     semantic_relationship: str = "unknown"
     desired_style: str = "quick_mix"
     local_context_score: float = 0.5
+    transition_role: str = "CONTINUE"
+    performance_state: str = "DEVELOP"
 
 
 @dataclass
@@ -45,6 +48,7 @@ class TechniqueCandidate:
     score: float = 0.0
     confidence: float = 0.0
     reason: str = ""
+    tier: str = "subtle"
 
     def to_dict(self) -> dict:
         result = asdict(self)
@@ -84,7 +88,7 @@ def build_musical_situation(source, target, pair, *, style: str) -> MusicalSitua
     )
 
 
-def _candidate(name, intent, transition_type, score, confidence, reason, operations=None):
+def _candidate(name, intent, transition_type, score, confidence, reason, operations=None, tier=None):
     return TechniqueCandidate(
         name=name,
         transition_intent=intent,
@@ -93,6 +97,7 @@ def _candidate(name, intent, transition_type, score, confidence, reason, operati
         score=max(0.0, min(1.0, score)),
         confidence=max(0.0, min(1.0, confidence)),
         reason=reason,
+        tier=tier or technique_tier(name),
     )
 
 
@@ -105,6 +110,10 @@ def rank_techniques(
     intensity: str = "moderate",
     stems_available: bool = False,
     recent_techniques: tuple[str, ...] = (),
+    transition_role: str = "CONTINUE",
+    performance_state: str = "DEVELOP",
+    recent_strong_distance: int | None = None,
+    strong_effects_remaining: int | None = None,
 ) -> list[TechniqueCandidate]:
     """Rank a small technique vocabulary for one concrete handoff."""
     if not allow_creative_fx:
@@ -193,6 +202,18 @@ def rank_techniques(
     for item in candidates:
         item.score -= min(0.12, 0.045 * recent_techniques[-3:].count(item.name))
     candidates.sort(key=lambda item: (item.score, item.confidence, item.name), reverse=True)
+    # Direction is a set-level prior, never a safety bypass.  Strong effects
+    # need room to land and a small budget so the performance has contrast.
+    for item in candidates:
+        item.score += role_fit(item.name, transition_role, style)
+        if item.tier == "strong":
+            if strong_effects_remaining is not None and strong_effects_remaining <= 0:
+                item.score -= 0.60
+            if recent_strong_distance is not None and recent_strong_distance < 2:
+                item.score -= 0.34
+            if style in {"smooth", "story"} and transition_role not in {"RESET", "REVEAL"}:
+                item.score -= 0.20
+    candidates.sort(key=lambda item: (item.score, item.confidence, item.name), reverse=True)
     return candidates
 
 
@@ -205,6 +226,10 @@ def choose_technique(
     intensity: str = "moderate",
     stems_available: bool = False,
     recent_techniques: tuple[str, ...] = (),
+    transition_role: str = "CONTINUE",
+    performance_state: str = "DEVELOP",
+    recent_strong_distance: int | None = None,
+    strong_effects_remaining: int | None = None,
 ) -> TechniqueCandidate:
     """Choose the highest-ranked safe technique for one concrete handoff."""
     return rank_techniques(
@@ -215,6 +240,10 @@ def choose_technique(
         intensity=intensity,
         stems_available=stems_available,
         recent_techniques=recent_techniques,
+        transition_role=transition_role,
+        performance_state=performance_state,
+        recent_strong_distance=recent_strong_distance,
+        strong_effects_remaining=strong_effects_remaining,
     )[0]
 
 

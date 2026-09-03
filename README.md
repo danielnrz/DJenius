@@ -136,6 +136,12 @@ take different safe paths. Requests such as "no special effects" keep creative
 operations off. Creative operations are bounded to declared transition audio
 and remain auditable; the classic renderer is unchanged.
 
+V13.1 adds full-set direction around that technique vocabulary. Segment plans
+now expose an arc of states such as establish, build, peak, release, callback,
+and outro. Each handoff receives a role, preparation/landing space, and a
+small style-aware strong-effect budget. This keeps creative moments deliberate
+and spaced while preserving the validated V13 operations and classic mode.
+
 ## Future direction
 
 The V9 performance layer is intentionally the first segment-based stage. A

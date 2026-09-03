@@ -497,6 +497,7 @@ class PerformanceAppearance:
     intent_status: str = "unknown"
     performance_reason: str = ""
     layered: bool = False
+    performance_state: str = "DEVELOP"
 
     @property
     def duration_sec(self) -> float:
@@ -567,6 +568,16 @@ class PerformanceTransition:
     technique_confidence: float = 0.0
     technique_reason: str = ""
     technique_operations: list[dict] = field(default_factory=list)
+    # V13.1: set-level direction metadata.  These fields describe why this
+    # handoff exists; the existing transition DSP remains the executor.
+    performance_state: str = "DEVELOP"
+    next_performance_state: str = "DEVELOP"
+    transition_role: str = "CONTINUE"
+    preparation_duration_sec: float = 0.0
+    landing_duration_sec: float = 0.0
+    preparation_bars: int = 0
+    landing_bars: int = 0
+    technique_tier: str = "subtle"
 
     def to_dict(self) -> dict:
         result = asdict(self)
@@ -653,6 +664,12 @@ class PerformanceTimeline:
     performance_arc: str = "steady"
     diversity_level: str = "moderate"
     layered_events: list[dict] = field(default_factory=list)
+    performance_states: list[str] = field(default_factory=list)
+    transition_roles: list[str] = field(default_factory=list)
+    creative_budget: dict = field(default_factory=dict)
+    technique_counts: dict[str, int] = field(default_factory=dict)
+    strong_effect_count: int = 0
+    average_landing_duration_sec: float = 0.0
 
     def to_dict(self) -> dict:
         return {
@@ -667,6 +684,12 @@ class PerformanceTimeline:
             "section_role_diversity": self.section_role_diversity,
             "performance_arc": self.performance_arc,
             "diversity_level": self.diversity_level,
+            "performance_states": list(self.performance_states),
+            "transition_roles": list(self.transition_roles),
+            "creative_budget": dict(self.creative_budget),
+            "technique_counts": dict(self.technique_counts),
+            "strong_effect_count": self.strong_effect_count,
+            "average_landing_duration_sec": round(self.average_landing_duration_sec, 3),
             "layered_events": [
                 item.to_dict() if isinstance(item, LayeredAppearance) else dict(item)
                 for item in self.layered_events
@@ -690,6 +713,12 @@ class PerformanceTimeline:
             performance_arc=data.get("performance_arc", "steady"),
             diversity_level=data.get("diversity_level", "moderate"),
             layered_events=list(data.get("layered_events", [])),
+            performance_states=list(data.get("performance_states", [])),
+            transition_roles=list(data.get("transition_roles", [])),
+            creative_budget=dict(data.get("creative_budget", {})),
+            technique_counts=dict(data.get("technique_counts", {})),
+            strong_effect_count=int(data.get("strong_effect_count", 0)),
+            average_landing_duration_sec=float(data.get("average_landing_duration_sec", 0.0)),
         )
 
 

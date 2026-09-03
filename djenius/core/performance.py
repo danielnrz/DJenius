@@ -30,6 +30,13 @@ from djenius.core.intent_scoring import TrackIntentScore, score_track_intent
 from djenius.core.transition_quality import score_transition_candidate
 from djenius.core.local_context import score_local_context
 from djenius.core.techniques import build_musical_situation, choose_technique
+from djenius.core.performance_direction import (
+    build_performance_arc,
+    creative_budget,
+    state_energy_target,
+    technique_tier,
+    transition_direction,
+)
 
 
 SECTION_NAMES = {
@@ -319,6 +326,7 @@ class SegmentPairQuality:
     technique_confidence: float = 0.0
     technique_reason: str = ""
     technique_operations: list[dict] = None
+    technique_tier: str = "subtle"
 
     def to_dict(self) -> dict:
         result = asdict(self)
@@ -388,6 +396,10 @@ def score_segment_pair(
     style: str = "quick_mix",
     intent: SetIntent | None = None,
     recent_techniques: tuple[str, ...] = (),
+    transition_role: str = "CONTINUE",
+    performance_state: str = "DEVELOP",
+    recent_strong_distance: int | None = None,
+    strong_effects_remaining: int | None = None,
 ) -> SegmentPairQuality:
     """Score and recipe-select one concrete A -> B segment handoff.
 
@@ -541,6 +553,8 @@ def score_segment_pair(
         local_rhythm_score=local_details["local_rhythm_score"],
         local_timbre_score=local_details["local_timbre_score"],
         local_context_score=local_score,
+        transition_role=transition_role,
+        performance_state=performance_state,
     ), style=style)
     technique = choose_technique(
         situation,
@@ -550,6 +564,10 @@ def score_segment_pair(
         intensity=getattr(intent, "technique_intensity", "moderate"),
         stems_available=bool(getattr(source.analysis, "stems", {}) and getattr(target.analysis, "stems", {})),
         recent_techniques=recent_techniques,
+        transition_role=transition_role,
+        performance_state=performance_state,
+        recent_strong_distance=recent_strong_distance,
+        strong_effects_remaining=strong_effects_remaining,
     )
     allowed = set(_pair_transition_types(style, intent))
     if technique.transition_type not in allowed and technique.transition_type != transition_type:
@@ -613,6 +631,7 @@ def score_segment_pair(
         technique_confidence=technique.confidence,
         technique_reason=technique.reason,
         technique_operations=technique.operations,
+        technique_tier=technique_tier(technique.name),
     )
 
 
@@ -649,12 +668,17 @@ def plan_performance_timeline(
             median = short_durations[len(short_durations) // 2]
             count = max(5, min(10, int(round(target_duration_sec / max(median - 3.0, 15.0)))))
     target_each = target_duration_sec / max(count - 0.15 * (count - 1), 1.0)
+    performance_states = build_performance_arc(count, performance_style)
+    direction = [transition_direction(performance_states, index) for index in range(max(0, count - 1))]
+    budget = creative_budget(target_duration_sec, performance_style)
     used_regions: dict[str, list[tuple[float, float]]] = defaultdict(list)
     seen_counts: dict[str, int] = defaultdict(int)
     recent_track_ids: list[str] = []
     edge_counts: dict[tuple[str, str], int] = defaultdict(int)
     role_counts: dict[str, int] = defaultdict(int)
     recent_techniques: list[str] = []
+    recent_strong_distance = 99
+    strong_remaining = int(budget["strong_max"])
     unique_target = _style_diversity_target(performance_style, target_duration_sec, len(available))
     desired_variety = float(intent.desired_variety) if intent else 0.35
     appearances: list[PerformanceAppearance] = []
@@ -678,7 +702,8 @@ def plan_performance_timeline(
         return result
 
     for position in range(count):
-        desired_energy = _target_energy(intent, position, count)
+        state = performance_states[position] if position < len(performance_states) else "DEVELOP"
+        desired_energy = 0.55 * _target_energy(intent, position, count) + 0.45 * state_energy_target(state)
         options: list[tuple[float, str, PerformanceSegment, SegmentPairQuality | None]] = []
         for track in available:
             if appearances and track.id == appearances[-1].segment.track_id:
@@ -691,10 +716,15 @@ def plan_performance_timeline(
                 pair_score = 0.0
                 if appearances:
                     previous = appearances[-1].segment
+                    boundary = direction[position - 1] if position - 1 < len(direction) else transition_direction(performance_states, position - 1)
                     pair = score_segment_pair(
                         track_by_id[previous.track_id], previous, track, segment,
                         style=performance_style, intent=intent,
                         recent_techniques=tuple(recent_techniques),
+                        transition_role=boundary.transition_role,
+                        performance_state=boundary.state,
+                        recent_strong_distance=recent_strong_distance,
+                        strong_effects_remaining=strong_remaining,
                     )
                     pair_score = pair.overall_score
                 is_new_track = track.id not in seen_counts
@@ -749,6 +779,7 @@ def plan_performance_timeline(
                     + desired_variety * novelty_bonus
                     + 0.035 * role_score
                     + 0.02 * future_role_score
+                    + 0.035 * (1.0 - min(1.0, abs(segment.energy - desired_energy)))
                     - recent_penalty * (0.6 + desired_variety)
                     - edge_penalty * (0.6 + desired_variety)
                     - role_penalty * desired_variety
@@ -808,6 +839,7 @@ def plan_performance_timeline(
             intent_score=round(scores[selected_id].overall_intent_score, 4),
             intent_status=scores[selected_id].status,
             performance_reason=performance_reason,
+            performance_state=state,
         ))
         used_regions[selected_id].append((segment.source_start_sec, segment.source_end_sec))
         seen_counts[selected_id] += 1
@@ -820,6 +852,11 @@ def plan_performance_timeline(
         if _pair is not None:
             recent_techniques.append(_pair.technique_name)
             del recent_techniques[:-6]
+            if technique_tier(_pair.technique_name) == "strong":
+                strong_remaining = max(0, strong_remaining - 1)
+                recent_strong_distance = 0
+            else:
+                recent_strong_distance += 1
         if len(appearances) >= 2:
             estimated = sum(item.segment.duration_sec for item in appearances)
             estimated -= sum(
@@ -829,6 +866,10 @@ def plan_performance_timeline(
                     track_by_id[item.segment.track_id], item.segment,
                     style=performance_style, intent=intent,
                     recent_techniques=tuple(recent_techniques),
+                    transition_role=(direction[index - 1].transition_role if index - 1 < len(direction) else "CONTINUE"),
+                    performance_state=(direction[index - 1].state if index - 1 < len(direction) else "DEVELOP"),
+                    recent_strong_distance=recent_strong_distance,
+                    strong_effects_remaining=strong_remaining,
                 ).overlap_duration_sec
                 for index, item in enumerate(appearances) if index > 0
             )
@@ -849,6 +890,10 @@ def plan_performance_timeline(
             style=performance_style,
             intent=intent,
             recent_techniques=tuple(recent_techniques),
+            transition_role=(direction[index - 1].transition_role if index - 1 < len(direction) else "CONTINUE"),
+            performance_state=(direction[index - 1].state if index - 1 < len(direction) else "DEVELOP"),
+            recent_strong_distance=recent_strong_distance,
+            strong_effects_remaining=strong_remaining,
         ).overlap_duration_sec
         for index, appearance in enumerate(appearances) if index > 0
     )
@@ -872,6 +917,7 @@ def plan_performance_timeline(
                 intent_score=round(scores[track.id].overall_intent_score, 4),
                 intent_status=scores[track.id].status,
                 performance_reason="Additional compatible appearance added to approach the requested duration.",
+                performance_state=(performance_states[len(appearances)] if len(appearances) < len(performance_states) else "OUTRO"),
             ))
             used_regions[track.id].append((segment.source_start_sec, segment.source_end_sec))
             seen_counts[track.id] += 1
@@ -886,6 +932,8 @@ def plan_performance_timeline(
     current_output = 0.0
     transitions: list[PerformanceTransition] = []
     recent_techniques = []
+    recent_strong_distance = 99
+    strong_remaining = int(budget["strong_max"])
     for index, appearance in enumerate(appearances):
         if index == 0:
             appearance.output_start_sec = 0.0
@@ -897,6 +945,10 @@ def plan_performance_timeline(
                 previous_track, previous.segment, current_track, appearance.segment,
                 style=performance_style, intent=intent,
                 recent_techniques=tuple(recent_techniques),
+                transition_role=(direction[index - 1].transition_role if index - 1 < len(direction) else "CONTINUE"),
+                performance_state=(direction[index - 1].state if index - 1 < len(direction) else "DEVELOP"),
+                recent_strong_distance=recent_strong_distance,
+                strong_effects_remaining=strong_remaining,
             )
             actual_overlap = round(min(
                 pair.overlap_duration_sec,
@@ -952,9 +1004,22 @@ def plan_performance_timeline(
                 technique_confidence=pair.technique_confidence,
                 technique_reason=pair.technique_reason,
                 technique_operations=pair.technique_operations or [],
+                performance_state=(direction[index - 1].state if index - 1 < len(direction) else "DEVELOP"),
+                next_performance_state=(direction[index - 1].next_state if index - 1 < len(direction) else "OUTRO"),
+                transition_role=(direction[index - 1].transition_role if index - 1 < len(direction) else "CONTINUE"),
+                preparation_bars=(direction[index - 1].preparation_bars if index - 1 < len(direction) else 1),
+                landing_bars=(direction[index - 1].landing_bars if index - 1 < len(direction) else 2),
+                preparation_duration_sec=round((direction[index - 1].preparation_bars if index - 1 < len(direction) else 1) * 4.0 * 60.0 / max(previous_track.bpm, 60.0), 3),
+                landing_duration_sec=round((direction[index - 1].landing_bars if index - 1 < len(direction) else 2) * 4.0 * 60.0 / max(current_track.bpm, 60.0), 3),
+                technique_tier=pair.technique_tier,
             ))
             recent_techniques.append(pair.technique_name)
             del recent_techniques[:-6]
+            if pair.technique_tier == "strong":
+                strong_remaining = max(0, strong_remaining - 1)
+                recent_strong_distance = 0
+            else:
+                recent_strong_distance += 1
         playback_duration = appearance.segment.duration_sec
         if index > 0 and transitions:
             transition = transitions[-1]
@@ -981,6 +1046,12 @@ def plan_performance_timeline(
             len(reuse_counts), len(appearances), desired_variety,
         ),
         layered_events=[],
+        performance_states=performance_states[:len(appearances)],
+        transition_roles=[item.transition_role for item in direction[:max(0, len(appearances) - 1)]],
+        creative_budget=budget,
+        technique_counts=dict(sorted({name: sum(1 for item in transitions if item.technique_name == name) for name in {item.technique_name for item in transitions}}.items())),
+        strong_effect_count=sum(1 for item in transitions if item.technique_tier == "strong"),
+        average_landing_duration_sec=round(sum(item.landing_duration_sec for item in transitions) / max(len(transitions), 1), 3),
     )
     validate_performance_timeline(timeline, {track.id: track.duration_sec for track in tracks})
     return timeline, scores
