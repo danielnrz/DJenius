@@ -951,7 +951,15 @@ def plan_performance_timeline(
                 for index, item in enumerate(appearances) if index > 0
             )
             if estimated >= target_duration_sec * 0.95:
-                break
+                # A V14 blueprint may reserve a callback or payoff near the
+                # end.  Do not truncate the executable performance merely
+                # because earlier long sections met the duration target.
+                remaining_roles = {
+                    str(item.get("role", ""))
+                    for item in blueprint_acts[position + 1:]
+                }
+                if not (blueprint_acts and remaining_roles & {"CALLBACK", "PEAK", "RELEASE"}):
+                    break
 
     # If phrase lengths made the first pass materially short, add one more
     # suitable appearance instead of padding a quick mix with silence or

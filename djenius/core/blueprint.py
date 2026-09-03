@@ -161,7 +161,10 @@ def _role_template(style: str, duration: float, request: str) -> list[tuple[str,
     lower = request.lower()
     wants_callback = style in {"experimental", "story"} or any(token in lower for token in ("callback", "return", "opening vocal", "bring the", "recognizable"))
     meaning_first = any(token in lower for token in ("meaning", "lyrics", "heartbreak", "romantic", "emotional"))
-    if style == "club":
+    narrative_arc = any(token in lower for token in ("build", "peak", "release", "gradually", "slowly become")) and wants_callback
+    if narrative_arc:
+        roles = ["INTRO", "VOCAL_IDENTITY", "BREATHING_ROOM", "BUILD", "PEAK", "RELEASE", "CALLBACK", "OUTRO"]
+    elif style == "club":
         roles = ["INTRO", "GROOVE", "BUILD", "PEAK", "GROOVE", "RELEASE", "PEAK", "OUTRO"]
     elif style in {"story", "smooth"} or meaning_first and "remix" not in lower:
         roles = ["INTRO", "VOCAL_IDENTITY", "BREATHING_ROOM", "BUILD", "CALLBACK", "OUTRO"]
@@ -170,10 +173,7 @@ def _role_template(style: str, duration: float, request: str) -> list[tuple[str,
     # Longer requests need more room for stable musical ideas, but the count
     # is derived from duration and style rather than being a fixed showcase
     # size.  Extra acts are deliberately ordinary groove/release roles.
-    if duration >= 240 and style == "experimental":
-        roles.insert(-1, "GROOVE")
-        roles.insert(-1, "BREATHING_ROOM")
-    elif duration >= 360 and style == "club":
+    if duration >= 360 and style == "club":
         roles.insert(-1, "GROOVE")
         roles.insert(-1, "RELEASE")
     if not wants_callback:
@@ -230,13 +230,14 @@ def build_remix_blueprint(
             overlap = any(max(segment.source_start_sec, left) < min(segment.source_end_sec, right) - 0.5 for left, right in used[track.id])
             if overlap:
                 continue
-            # A transition consumes part of adjacent appearances.  Aim the
-            # source assignment slightly longer than a naive equal split so
-            # the executable timeline can still meet the requested duration
-            # without stretching arbitrary source audio.
+            # A transition consumes part of adjacent appearances.  Long club
+            # performances also need enough source material for sustained
+            # grooves; other styles should not be inflated just to chase the
+            # duration target.
+            duration_factor = 1.25 if performance_style == "club" and target_duration_sec >= 360.0 else 1.0
             target_act_duration = (target_duration_sec / max(
                 len(template) - 0.18 * (len(template) - 1), 1.0,
-            )) * 1.25
+            )) * duration_factor
             role_score, meaning_score, sound_score, reason = _role_score(
                 role, track, segment, intent, target_act_duration,
             )
