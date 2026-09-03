@@ -635,6 +635,11 @@ class LocalAppService:
         elif request and re.search(r"\bstory(?:[- ]like)?\s+(?:set|performance|mix)\b", request.lower()):
             intent.performance_style = "story"
             intent.performance_mode = "classic"
+        elif request and re.search(r"\b(?:build|peak|release|callback|bring .* back|performance arc)\b", request.lower()):
+            # V14 narrative language is an explicit request for a composed
+            # segment performance even when the user did not say "remix".
+            intent.performance_style = "experimental"
+            intent.performance_mode = "segment"
         else:
             intent.performance_style = "classic"
             intent.performance_mode = "classic"
@@ -726,6 +731,7 @@ class LocalAppService:
             "intent": LocalAppService._intent_view(plan.intent_used),
             "performance_mode": plan.performance_mode,
             "performance_style": plan.performance_style,
+            "remix_blueprint": _json_safe(plan.remix_blueprint or (plan.performance_timeline.remix_blueprint if plan.performance_timeline else {})),
             "timeline": plan.performance_timeline.to_dict() if plan.performance_timeline else None,
             "markers": [],
         }

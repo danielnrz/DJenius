@@ -498,6 +498,14 @@ class PerformanceAppearance:
     performance_reason: str = ""
     layered: bool = False
     performance_state: str = "DEVELOP"
+    # V14: high-level creative assignment.  These fields are descriptive
+    # hints from the RemixBlueprint; the executable source interval remains
+    # the PerformanceSegment above.
+    musical_role: str = ""
+    blueprint_act_id: str = ""
+    callback_to: str = ""
+    callback_reason: str = ""
+    stay_on_track: bool = False
 
     @property
     def duration_sec(self) -> float:
@@ -679,6 +687,9 @@ class PerformanceTimeline:
     technique_counts: dict[str, int] = field(default_factory=dict)
     strong_effect_count: int = 0
     average_landing_duration_sec: float = 0.0
+    # V14: serialized creative plan kept separate from the executable
+    # appearance/transition timeline.
+    remix_blueprint: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         return {
@@ -699,6 +710,7 @@ class PerformanceTimeline:
             "technique_counts": dict(self.technique_counts),
             "strong_effect_count": self.strong_effect_count,
             "average_landing_duration_sec": round(self.average_landing_duration_sec, 3),
+            "remix_blueprint": dict(self.remix_blueprint),
             "layered_events": [
                 item.to_dict() if isinstance(item, LayeredAppearance) else dict(item)
                 for item in self.layered_events
@@ -728,6 +740,7 @@ class PerformanceTimeline:
             technique_counts=dict(data.get("technique_counts", {})),
             strong_effect_count=int(data.get("strong_effect_count", 0)),
             average_landing_duration_sec=float(data.get("average_landing_duration_sec", 0.0)),
+            remix_blueprint=dict(data.get("remix_blueprint", {})),
         )
 
 
@@ -763,6 +776,9 @@ class SetPlan:
     performance_mode: str = "classic"
     performance_style: str = "classic"
     performance_timeline: Optional[PerformanceTimeline] = None
+    # V14: creative intent remains inspectable without conflating it with
+    # renderer-facing timeline details.
+    remix_blueprint: dict = field(default_factory=dict)
 
     def get_track_by_id(self, track_id: str) -> Optional[TrackProfile]:
         for t in self.tracks:
@@ -808,6 +824,7 @@ class SetPlan:
             "performance_mode": self.performance_mode,
             "performance_style": self.performance_style,
             "performance_timeline": self.performance_timeline.to_dict() if self.performance_timeline else None,
+            "remix_blueprint": dict(self.remix_blueprint),
         }
 
     @classmethod
@@ -840,6 +857,7 @@ class SetPlan:
             performance_mode=d.get("performance_mode", "classic"),
             performance_style=d.get("performance_style", "classic"),
             performance_timeline=PerformanceTimeline.from_dict(d.get("performance_timeline")),
+            remix_blueprint=dict(d.get("remix_blueprint", {})),
         )
 
     @staticmethod

@@ -667,6 +667,7 @@ def plan_performance_timeline(
     seed: int | None = None,
     intent_scores: dict[str, TrackIntentScore] | None = None,
     performance_style: str = "quick_mix",
+    blueprint: dict | None = None,
 ) -> tuple[PerformanceTimeline, dict[str, TrackIntentScore]]:
     """Create an intent-aware, deterministic segment performance timeline."""
     if not tracks:
@@ -680,7 +681,10 @@ def plan_performance_timeline(
     available = [track for track in tracks if segments.get(track.id)]
     if not available:
         raise ValueError("No phrase-aligned performance segments were found")
-    count = _appearance_count(target_duration_sec, performance_style, len(available))
+    # V14 supplies a whole-performance role plan before this existing segment
+    # search.  Without a blueprint this remains the accepted V9-V13 path.
+    blueprint_acts = list((blueprint or {}).get("acts", []))
+    count = len(blueprint_acts) if blueprint_acts else _appearance_count(target_duration_sec, performance_style, len(available))
     if performance_style == "quick_mix":
         short_durations = sorted(
             segment.duration_sec
@@ -692,7 +696,11 @@ def plan_performance_timeline(
             median = short_durations[len(short_durations) // 2]
             count = max(5, min(10, int(round(target_duration_sec / max(median - 3.0, 15.0)))))
     target_each = target_duration_sec / max(count - 0.15 * (count - 1), 1.0)
-    performance_states = build_performance_arc(count, performance_style)
+    performance_states = [
+        str(item.get("state", "DEVELOP")) for item in blueprint_acts
+    ] if blueprint_acts else build_performance_arc(count, performance_style)
+    if len(performance_states) < count:
+        performance_states.extend(build_performance_arc(count, performance_style)[len(performance_states):])
     direction = [transition_direction(performance_states, index) for index in range(max(0, count - 1))]
     budget = creative_budget(target_duration_sec, performance_style)
     used_regions: dict[str, list[tuple[float, float]]] = defaultdict(list)
@@ -727,10 +735,25 @@ def plan_performance_timeline(
 
     for position in range(count):
         state = performance_states[position] if position < len(performance_states) else "DEVELOP"
+        blueprint_act = blueprint_acts[position] if position < len(blueprint_acts) else {}
+        blueprint_role = str(blueprint_act.get("role", ""))
+        blueprint_track_id = str(blueprint_act.get("selected_track_id", ""))
+        blueprint_segment_id = str(blueprint_act.get("selected_segment_id", ""))
+        blueprint_energy = float(blueprint_act.get("energy_target", 0.5) or 0.5)
         desired_energy = 0.55 * _target_energy(intent, position, count) + 0.45 * state_energy_target(state)
+        if blueprint_act:
+            desired_energy = 0.40 * desired_energy + 0.60 * blueprint_energy
         options: list[tuple[float, str, PerformanceSegment, SegmentPairQuality | None]] = []
         for track in available:
-            if appearances and track.id == appearances[-1].segment.track_id:
+            allow_same_track = bool(
+                blueprint_act
+                and (
+                    blueprint_track_id == track.id
+                    or blueprint_act.get("stay_on_track")
+                    or blueprint_role == "CALLBACK"
+                )
+            )
+            if appearances and track.id == appearances[-1].segment.track_id and not allow_same_track:
                 continue
             for segment in usable_for(track):
                 fit_duration = 1.0 - min(1.0, abs(segment.duration_sec - target_each) / max(target_each, 1.0))
@@ -794,6 +817,27 @@ def plan_performance_timeline(
                         reprise_penalty = 0.08
                     elif intent and intent.reprise_preference == "callback" and role in {"hook", "chorus", "drop"}:
                         reprise_bonus = 0.035
+                blueprint_bonus = 0.0
+                if blueprint_act:
+                    if track.id == blueprint_track_id:
+                        blueprint_bonus += 0.16
+                    if segment.id == blueprint_segment_id:
+                        blueprint_bonus += 0.34
+                    if blueprint_role:
+                        role_name = _clean_section(segment.section_type)
+                        role_targets = {
+                            "VOCAL_IDENTITY": {"chorus", "hook", "verse"},
+                            "GROOVE": {"instrumental", "intro", "outro", "breakdown"},
+                            "BUILD": {"build", "pre_chorus", "instrumental"},
+                            "PEAK": {"drop", "chorus", "hook"},
+                            "BREATHING_ROOM": {"instrumental", "breakdown", "outro"},
+                            "RELEASE": {"instrumental", "breakdown", "outro"},
+                            "CALLBACK": {"chorus", "hook", "drop"},
+                            "INTRO": {"intro", "verse", "instrumental"},
+                            "OUTRO": {"outro", "instrumental", "breakdown"},
+                        }
+                        if role_name in role_targets.get(blueprint_role, set()):
+                            blueprint_bonus += 0.12
                 total = (
                     0.42 * score.overall_intent_score
                     + 0.10 * segment.quality_score
@@ -810,6 +854,7 @@ def plan_performance_timeline(
                     - vocal_penalty
                     - reprise_penalty
                     + reprise_bonus
+                    + blueprint_bonus
                 )
                 options.append((total, track.id, segment, pair))
         if not options and performance_style == "quick_mix" and target_duration_sec >= 240.0:
@@ -844,7 +889,10 @@ def plan_performance_timeline(
             item[2].quality_score, item[1], item[2].id,
         ), reverse=True)
         # Controlled diversity is limited to the two best pair-aware paths.
-        choice = rng.randrange(min(2, len(options))) if len(options) > 1 else 0
+        # A blueprint is a creative decision, not a suggestion to randomize
+        # between two locally similar choices.  Keep the prior seeded choice
+        # behavior when no V14 blueprint is active.
+        choice = 0 if blueprint_acts else (rng.randrange(min(2, len(options))) if len(options) > 1 else 0)
         _total, selected_id, segment, _pair = options[choice]
         repeated = bool(used_regions[selected_id])
         if not repeated:
@@ -864,6 +912,11 @@ def plan_performance_timeline(
             intent_status=scores[selected_id].status,
             performance_reason=performance_reason,
             performance_state=state,
+            musical_role=blueprint_role,
+            blueprint_act_id=str(blueprint_act.get("id", "")),
+            callback_to=str(blueprint_act.get("callback_to", "")),
+            callback_reason=str(blueprint_act.get("callback_reason", "")),
+            stay_on_track=bool(blueprint_act.get("stay_on_track", False)),
         ))
         used_regions[selected_id].append((segment.source_start_sec, segment.source_end_sec))
         seen_counts[selected_id] += 1
@@ -942,6 +995,8 @@ def plan_performance_timeline(
                 intent_status=scores[track.id].status,
                 performance_reason="Additional compatible appearance added to approach the requested duration.",
                 performance_state=(performance_states[len(appearances)] if len(appearances) < len(performance_states) else "OUTRO"),
+                musical_role=(str(blueprint_acts[len(appearances)].get("role", "")) if len(appearances) < len(blueprint_acts) else ""),
+                blueprint_act_id=(str(blueprint_acts[len(appearances)].get("id", "")) if len(appearances) < len(blueprint_acts) else ""),
             ))
             used_regions[track.id].append((segment.source_start_sec, segment.source_end_sec))
             seen_counts[track.id] += 1
@@ -1106,6 +1161,7 @@ def plan_performance_timeline(
         technique_counts=dict(sorted({name: sum(1 for item in transitions if item.technique_name == name) for name in {item.technique_name for item in transitions}}.items())),
         strong_effect_count=sum(1 for item in transitions if item.technique_tier == "strong"),
         average_landing_duration_sec=round(sum(item.landing_duration_sec for item in transitions) / max(len(transitions), 1), 3),
+        remix_blueprint=dict(blueprint or {}),
     )
     validate_performance_timeline(timeline, {track.id: track.duration_sec for track in tracks})
     return timeline, scores

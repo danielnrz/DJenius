@@ -149,6 +149,14 @@ renders may preview target drums before the boundary and advance the declared
 source interval to prevent replay. Every phase operation is recorded in the
 performance diagnostics; unavailable stems fall back to the normal safe path.
 
+V14 adds a data-only RemixBlueprint above the executable performance timeline.
+It assigns roles such as vocal identity, groove, build, peak, breathing room,
+release, and callback before exact source sections and transitions are chosen.
+Meaning and sound evidence stay separate, and the existing V9-V13 timeline
+compiler remains responsible for source bounds, preparation, layering, and
+renderer safety. A blueprint may deliberately stay with a groove, use fewer
+tracks, or return to a recognizable hook rather than switching for novelty.
+
 ## Future direction
 
 The V9 performance layer is intentionally the first segment-based stage. A

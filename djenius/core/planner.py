@@ -136,6 +136,17 @@ def plan_set(
     # relevance-first pool, then composes phrase-sized appearances.  The
     # classic track beam search below remains unchanged for all other plans.
     if intent and intent.performance_mode == "segment":
+        # V14: create the whole-performance creative direction before the
+        # existing segment/path executor chooses detailed transitions.
+        from djenius.core.blueprint import build_remix_blueprint, compile_blueprint
+
+        remix_blueprint = build_remix_blueprint(
+            tracks,
+            target_duration_sec,
+            intent,
+            performance_style=intent.performance_style,
+        )
+        compile_blueprint(remix_blueprint, tracks)
         timeline, segment_scores = plan_performance_timeline(
             tracks,
             target_duration_sec,
@@ -143,6 +154,7 @@ def plan_set(
             seed=seed,
             intent_scores=candidate_pool.scores,
             performance_style=intent.performance_style,
+            blueprint=remix_blueprint.to_dict(),
         )
         ordered_tracks: list[TrackProfile] = []
         for appearance in timeline.appearances:
@@ -159,6 +171,7 @@ def plan_set(
             performance_mode="segment",
             performance_style=intent.performance_style,
             performance_timeline=timeline,
+            remix_blueprint=remix_blueprint.to_dict(),
         )
         _attach_intent_diagnostics(plan, candidate_pool)
         plan.intent_coverage = performance_intent_coverage(timeline.appearances, segment_scores)
