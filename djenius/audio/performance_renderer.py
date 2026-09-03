@@ -109,9 +109,21 @@ def render_performance_mix(
                 target_low_energy=transition.target_bass_activity,
                 target_mid_energy=transition.target_local_energy,
                 use_time_stretch=transition.requires_stretch,
+                technique_operations=transition.technique_operations,
             )
             if len(transition_audio) != overlap:
                 raise ValueError("Performance transition produced an unexpected duration")
+            generated_fx = [
+                {
+                    "source_type": "generated_fx",
+                    "effect_type": operation.get("effect", "riser"),
+                    "seed": operation.get("seed", 0),
+                    "output_start_sample": output_start,
+                    "output_end_sample": output_start + overlap,
+                }
+                for operation in (transition.technique_operations or [])
+                if operation.get("type") == "generated_fx"
+            ]
             # A stretched beatmatched target may consume more source than
             # the rendered overlap.  Start the solo target body after the
             # declared consumed interval; using ``overlap`` here would replay
@@ -165,6 +177,12 @@ def render_performance_mix(
                 "local_vocal_score": transition.local_vocal_score,
                 "local_confidence": transition.local_confidence,
                 "transition_explanation": transition.explanation,
+                "technique_intent": transition.technique_intent,
+                "technique_name": transition.technique_name,
+                "technique_confidence": transition.technique_confidence,
+                "technique_reason": transition.technique_reason,
+                "technique_operations": transition.technique_operations,
+                "generated_fx_provenance": generated_fx,
             })
             transition_count += 1
         out_end = out_start + len(current_stereo)

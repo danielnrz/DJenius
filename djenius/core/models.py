@@ -562,6 +562,11 @@ class PerformanceTransition:
     local_confidence: float = 0.0
     source_context_window: dict | None = None
     target_context_window: dict | None = None
+    technique_intent: str = "SMOOTH_CONTINUATION"
+    technique_name: str = "clean continuation"
+    technique_confidence: float = 0.0
+    technique_reason: str = ""
+    technique_operations: list[dict] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         result = asdict(self)

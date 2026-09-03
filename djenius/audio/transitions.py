@@ -65,6 +65,7 @@ def apply_transition(
     target_gain_db: float = 0.0,
     transition_floor_db: float = 4.5,
     max_transition_boost_db: float = 6.0,
+    technique_operations: Optional[list[dict]] = None,
 ) -> np.ndarray:
     """Apply a transition between source and target audio.
 
@@ -119,6 +120,7 @@ def apply_transition(
                 target_gain_db=target_gain_db,
                 transition_floor_db=transition_floor_db,
                 max_transition_boost_db=max_transition_boost_db,
+                technique_operations=technique_operations,
             )
             channel_results.append(ch_result)
         return np.column_stack(channel_results).astype(np.float32)
@@ -138,6 +140,7 @@ def apply_transition(
             target_gain_db=target_gain_db,
             transition_floor_db=transition_floor_db,
             max_transition_boost_db=max_transition_boost_db,
+            technique_operations=technique_operations,
         ).astype(np.float32)
 
 
@@ -197,6 +200,7 @@ def _apply_transition_mono(
     target_gain_db: float = 0.0,
     transition_floor_db: float = 4.5,
     max_transition_boost_db: float = 6.0,
+    technique_operations: Optional[list[dict]] = None,
 ) -> np.ndarray:
     """Apply a transition on a single channel."""
     # Extract the relevant regions
@@ -225,6 +229,21 @@ def _apply_transition_mono(
         min_len = min(len(source_region), len(target_region))
         source_region = source_region[:min_len]
         target_region = target_region[:min_len]
+
+    # Creative operations transform only the declared transition source
+    # interval. They remain shape-preserving so the existing V5.3 timing and
+    # provenance contract stays authoritative.
+    generated_fx: list[dict] = []
+    if technique_operations:
+        from djenius.audio.creative_fx import apply_creative_operations
+
+        source_region, generated_fx = apply_creative_operations(
+            source_region,
+            np.zeros_like(source_region),
+            sample_rate=sr,
+            source_bpm=source_bpm,
+            operations=technique_operations,
+        )
 
     # Apply bass/EQ management for transitions that mix both tracks
     # Beatmatched target windows can have a different source length until
@@ -319,6 +338,15 @@ def _apply_transition_mono(
         transition_floor_db,
         max_transition_boost_db,
     )
+    if generated_fx:
+        from djenius.audio.creative_fx import procedural_fx
+
+        for item in generated_fx:
+            result = result + procedural_fx(
+                len(result), sr, item["effect_type"],
+                level=item["level"], seed=item["seed"],
+                channels=1,
+            ).reshape(-1)
     return result.astype(np.float32)
 
 

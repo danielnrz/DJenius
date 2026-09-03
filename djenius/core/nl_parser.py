@@ -373,6 +373,15 @@ def parse_deterministic(text: str) -> SetIntent:
         intent.performance_style = "story"
         intent.performance_mode = "classic"
 
+    if re.search(r"\b(?:no|without|avoid)\s+(?:special\s+)?(?:effects?|fx|flashy\s+effects?)\b", text_lower):
+        intent.allow_creative_fx = False
+        intent.technique_intensity = "subtle"
+    elif re.search(r"\b(?:strong|dramatic|big)\s+(?:effects?|fx)\b", text_lower):
+        intent.technique_intensity = "strong"
+    if re.search(r"\b(?:remix[- ]style|remixer|creative\s+transitions?)\b", text_lower):
+        intent.performance_style = "experimental"
+        intent.performance_mode = "segment"
+
     return intent
 
 
@@ -415,6 +424,8 @@ Valid fields:
 - desired_variety: number from 0.0 to 1.0
 - reprise_preference: one of "avoid", "balanced", "callback"
 - layering_preference: one of "off", "prefer", "required"
+- allow_creative_fx: boolean
+- technique_intensity: one of "subtle", "moderate", "strong"
 
 Return ONLY the JSON object, no explanation. If a field is not mentioned, omit it.
 Example: {"preset": "chill", "energy_profile": "steady", "transition_style": "smooth"}
@@ -522,6 +533,8 @@ def parse_with_ollama(
             reprise_preference=data.get("reprise_preference", "balanced"),
             layering_preference=data.get("layering_preference", "off"),
             segment_density=data.get("segment_density"),
+            allow_creative_fx=bool(data.get("allow_creative_fx", True)),
+            technique_intensity=data.get("technique_intensity", "moderate"),
             performance_style=data.get("performance_style", "classic"),
             performance_mode=data.get("performance_mode", "classic"),
         )
@@ -597,6 +610,7 @@ def _merge_intents(primary: SetIntent, supplement: SetIntent) -> SetIntent:
         "bpm_min", "bpm_max", "energy_min", "energy_max", "transition_length",
         "prefer_stems", "target_duration_sec",
         "desired_variety", "reprise_preference", "layering_preference", "segment_density",
+        "allow_creative_fx", "technique_intensity",
     ):
         if getattr(primary, name) in (None, 1800.0) and getattr(supplement, name) not in (None, 1800.0):
             setattr(primary, name, getattr(supplement, name))

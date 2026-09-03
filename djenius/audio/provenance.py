@@ -91,6 +91,19 @@ def audit_source_provenance(
                 "output_start_sample": output_start,
                 "output_end_sample": output_end,
             })
+        for operation in event.get("technique_operations", []):
+            if operation.get("type") == "loop_roll":
+                intentional_loops.append({
+                    "kind": "intentional_loop_roll",
+                    "event_index": event_index,
+                    "track_id": event["source_track_id"],
+                    "source_start_sample": event["source_start_sample"],
+                    "source_end_sample": event["source_end_sample"],
+                    "output_start_sample": output_start,
+                    "output_end_sample": output_end,
+                    "beats": operation.get("beats", 1),
+                    "repeats": operation.get("repeats", 1),
+                })
 
     kinds = {violation["kind"] for violation in violations}
     return {
@@ -213,6 +226,20 @@ def audit_performance_provenance(events: Iterable[dict], track_lengths: dict[str
             end = int(event.get(f"{key.split('_')[0]}_end_sample", -1))
             if track_id not in track_lengths or start < 0 or end <= start or end > track_lengths[track_id]:
                 violations.append({"kind": "transition_source_out_of_bounds", "event_index": index, "track_id": track_id})
+        output_start = int(event.get("output_start_sample", -1))
+        output_end = int(event.get("output_end_sample", -1))
+        operations = event.get("technique_operations", []) or []
+        if len(operations) > 3:
+            violations.append({"kind": "too_many_transition_operations", "event_index": index})
+        for fx_index, fx in enumerate(event.get("generated_fx_provenance", []) or []):
+            fx_start = int(fx.get("output_start_sample", -1))
+            fx_end = int(fx.get("output_end_sample", -1))
+            if fx.get("source_type") != "generated_fx" or fx_start < output_start or fx_end > output_end or fx_end <= fx_start:
+                violations.append({
+                    "kind": "generated_fx_provenance_invalid",
+                    "event_index": index,
+                    "fx_index": fx_index,
+                })
     layered = [event for event in events if event.get("type") == "layered"]
     layered_regions: set[tuple[str, str, int, int]] = set()
     for index, event in enumerate(layered):

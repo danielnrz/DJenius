@@ -13,6 +13,7 @@ import math
 import random
 from collections import defaultdict
 from dataclasses import dataclass, asdict
+from types import SimpleNamespace
 from typing import Iterable
 
 from djenius.core.models import (
@@ -28,6 +29,7 @@ from djenius.core.intent import SetIntent
 from djenius.core.intent_scoring import TrackIntentScore, score_track_intent
 from djenius.core.transition_quality import score_transition_candidate
 from djenius.core.local_context import score_local_context
+from djenius.core.techniques import build_musical_situation, choose_technique
 
 
 SECTION_NAMES = {
@@ -312,6 +314,11 @@ class SegmentPairQuality:
     local_confidence: float = 0.0
     source_context_window: dict = None
     target_context_window: dict = None
+    technique_intent: str = "SMOOTH_CONTINUATION"
+    technique_name: str = "clean continuation"
+    technique_confidence: float = 0.0
+    technique_reason: str = ""
+    technique_operations: list[dict] = None
 
     def to_dict(self) -> dict:
         result = asdict(self)
@@ -349,7 +356,11 @@ def _target_consumed_duration(
 
 def _pair_transition_types(style: str, intent: SetIntent | None) -> list[TransitionType]:
     """Limit segment recipes to safe, existing DSP paths."""
-    allowed = intent.allowed_transition_types() if intent else []
+    # A missing transition_style means "let the selected performance style
+    # decide".  Only an explicitly supplied style is a hard allow-list; this
+    # lets experimental/club requests consider the already-tested echo path
+    # without changing the classic safe default.
+    allowed = intent.allowed_transition_types() if intent and intent.transition_style else []
     base = [
         TransitionType.BEATMATCHED_BLEND,
         TransitionType.CROSSFADE,
@@ -357,10 +368,14 @@ def _pair_transition_types(style: str, intent: SetIntent | None) -> list[Transit
         TransitionType.BASS_SWAP,
         TransitionType.PHRASE_CUT,
     ]
+    if style in {"club", "experimental"}:
+        base.append(TransitionType.ECHO_OUT)
+    if intent is not None and not getattr(intent, "allow_creative_fx", True):
+        base = [item for item in base if item != TransitionType.ECHO_OUT]
     if allowed:
         base = [item for item in base if item in allowed]
-    # Mashup/echo/loop are deliberately not introduced by the V9.1 segment
-    # handoff selector without explicit stem/timeline support.
+    # Mashups remain on the dedicated V11 layered-event path; ordinary
+    # segment handoffs may use the existing echo renderer in creative styles.
     return base or [TransitionType.CROSSFADE]
 
 
@@ -372,6 +387,7 @@ def score_segment_pair(
     *,
     style: str = "quick_mix",
     intent: SetIntent | None = None,
+    recent_techniques: tuple[str, ...] = (),
 ) -> SegmentPairQuality:
     """Score and recipe-select one concrete A -> B segment handoff.
 
@@ -510,6 +526,43 @@ def score_segment_pair(
         abs(float(details.get("source_bar_alignment_error_ms", 1000.0))),
         abs(float(details.get("target_bar_alignment_error_ms", 1000.0))),
     )
+    situation = build_musical_situation(source, target, SimpleNamespace(
+        source_section=details.get("source_section", "unknown"),
+        target_section=details.get("target_section", "unknown"),
+        source_energy=source_energy,
+        target_energy=target_energy,
+        source_vocal=float(details.get("source_vocal_fraction", source_segment.vocal_density)),
+        target_vocal=float(details.get("target_vocal_fraction", target_segment.vocal_density)),
+        source_bass=float(details.get("source_bass", source_segment.bass_activity)),
+        target_bass=float(details.get("target_bass", target_segment.bass_activity)),
+        phrase_score=quality.phrase_alignment_score,
+        phase_error_ms=phase_error,
+        local_harmonic_score=local_details["local_harmonic_score"],
+        local_rhythm_score=local_details["local_rhythm_score"],
+        local_timbre_score=local_details["local_timbre_score"],
+        local_context_score=local_score,
+    ), style=style)
+    technique = choose_technique(
+        situation,
+        transition_type,
+        style=style,
+        allow_creative_fx=getattr(intent, "allow_creative_fx", True),
+        intensity=getattr(intent, "technique_intensity", "moderate"),
+        stems_available=bool(getattr(source.analysis, "stems", {}) and getattr(target.analysis, "stems", {})),
+        recent_techniques=recent_techniques,
+    )
+    allowed = set(_pair_transition_types(style, intent))
+    if technique.transition_type not in allowed and technique.transition_type != transition_type:
+        technique = choose_technique(
+            situation, transition_type, style=style, allow_creative_fx=False,
+        )
+    if technique.transition_type != transition_type:
+        use_stretch = technique.transition_type == TransitionType.BEATMATCHED_BLEND and use_stretch
+        target_consumed = _target_consumed_duration(
+            technique.transition_type, overlap, source_bpm, target_bpm,
+            use_time_stretch=use_stretch,
+        )
+    transition_type = technique.transition_type
     explanation = (
         f"{details.get('source_section', 'unknown')} -> {details.get('target_section', 'unknown')}; "
         f"{transition_type.value}, {max(1, round(overlap / bar_seconds))} bars; "
@@ -555,6 +608,11 @@ def score_segment_pair(
         local_confidence=local_details["local_confidence"],
         source_context_window=local_details["source_window"],
         target_context_window=local_details["target_window"],
+        technique_intent=technique.transition_intent,
+        technique_name=technique.name,
+        technique_confidence=technique.confidence,
+        technique_reason=technique.reason,
+        technique_operations=technique.operations,
     )
 
 
@@ -596,6 +654,7 @@ def plan_performance_timeline(
     recent_track_ids: list[str] = []
     edge_counts: dict[tuple[str, str], int] = defaultdict(int)
     role_counts: dict[str, int] = defaultdict(int)
+    recent_techniques: list[str] = []
     unique_target = _style_diversity_target(performance_style, target_duration_sec, len(available))
     desired_variety = float(intent.desired_variety) if intent else 0.35
     appearances: list[PerformanceAppearance] = []
@@ -635,6 +694,7 @@ def plan_performance_timeline(
                     pair = score_segment_pair(
                         track_by_id[previous.track_id], previous, track, segment,
                         style=performance_style, intent=intent,
+                        recent_techniques=tuple(recent_techniques),
                     )
                     pair_score = pair.overall_score
                 is_new_track = track.id not in seen_counts
@@ -757,6 +817,9 @@ def plan_performance_timeline(
         role_counts[_clean_section(segment.section_type)] += 1
         if len(appearances) >= 2:
             edge_counts[(appearances[-2].segment.track_id, selected_id)] += 1
+        if _pair is not None:
+            recent_techniques.append(_pair.technique_name)
+            del recent_techniques[:-6]
         if len(appearances) >= 2:
             estimated = sum(item.segment.duration_sec for item in appearances)
             estimated -= sum(
@@ -765,6 +828,7 @@ def plan_performance_timeline(
                     appearances[index - 1].segment,
                     track_by_id[item.segment.track_id], item.segment,
                     style=performance_style, intent=intent,
+                    recent_techniques=tuple(recent_techniques),
                 ).overlap_duration_sec
                 for index, item in enumerate(appearances) if index > 0
             )
@@ -784,6 +848,7 @@ def plan_performance_timeline(
             appearance.segment,
             style=performance_style,
             intent=intent,
+            recent_techniques=tuple(recent_techniques),
         ).overlap_duration_sec
         for index, appearance in enumerate(appearances) if index > 0
     )
@@ -820,6 +885,7 @@ def plan_performance_timeline(
 
     current_output = 0.0
     transitions: list[PerformanceTransition] = []
+    recent_techniques = []
     for index, appearance in enumerate(appearances):
         if index == 0:
             appearance.output_start_sec = 0.0
@@ -830,6 +896,7 @@ def plan_performance_timeline(
             pair = score_segment_pair(
                 previous_track, previous.segment, current_track, appearance.segment,
                 style=performance_style, intent=intent,
+                recent_techniques=tuple(recent_techniques),
             )
             actual_overlap = round(min(
                 pair.overlap_duration_sec,
@@ -880,7 +947,14 @@ def plan_performance_timeline(
                 local_confidence=pair.local_confidence,
                 source_context_window=pair.source_context_window,
                 target_context_window=pair.target_context_window,
+                technique_intent=pair.technique_intent,
+                technique_name=pair.technique_name,
+                technique_confidence=pair.technique_confidence,
+                technique_reason=pair.technique_reason,
+                technique_operations=pair.technique_operations or [],
             ))
+            recent_techniques.append(pair.technique_name)
+            del recent_techniques[:-6]
         playback_duration = appearance.segment.duration_sec
         if index > 0 and transitions:
             transition = transitions[-1]

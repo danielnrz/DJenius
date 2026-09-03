@@ -629,8 +629,8 @@ class LocalAppService:
         elif request and re.search(r"\bclub(?:[- ]style)?(?:\s+performance)?\b", request.lower()):
             intent.performance_style = "club"
             intent.performance_mode = "segment"
-        elif request and re.search(r"\b(?:experimental|mashup)\b", request.lower()):
-            intent.performance_style = "experimental" if "experimental" in request.lower() else "mashup"
+        elif request and re.search(r"\b(?:experimental|mashup|remix(?:-style|er)?)\b", request.lower()):
+            intent.performance_style = "experimental" if "experimental" in request.lower() or "remix" in request.lower() else "mashup"
             intent.performance_mode = "segment"
         elif request and re.search(r"\bstory(?:[- ]like)?\s+(?:set|performance|mix)\b", request.lower()):
             intent.performance_style = "story"
@@ -762,6 +762,8 @@ class LocalAppService:
             "duration_sec": round(intent.target_duration_sec, 1),
             "performance_mode": intent.performance_mode,
             "performance_style": intent.performance_style,
+            "allow_creative_fx": intent.allow_creative_fx,
+            "technique_intensity": intent.technique_intensity,
         }
 
     def start_plan(

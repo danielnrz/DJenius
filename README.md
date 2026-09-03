@@ -18,6 +18,7 @@ A fully local personal smart DJ application that analyzes your music library, pl
 - **Segment performance** - Short quick/club mixes can compose phrase-aligned musical appearances, return to a track using a different source region, and render an explicit audited performance timeline. Classic long-form planning remains the default for relaxed sets.
 - **Safe layered moments** - Experimental or club plans can optionally attempt a narrow vocal-over-instrumental moment from cached Demucs stems. The source stems and intervals are audited explicitly; incompatible pairs fall back to normal segment transitions.
 - **Local musical context** - Segment handoffs compare cached harmonic, groove, timbre, energy, bass, and vocal evidence from the exact outgoing and incoming windows, with performance-style-aware weighting.
+- **Adaptive DJ techniques** - Segment performances can choose a bounded, auditable technique such as a bass transfer, tempo-locked blend, earned drop switch, loop roll, tape-stop reset, vocal echo tail, or subtle procedural transition FX. Creative operations remain optional and classic/simple requests retain restrained paths.
 
 ## Requirements
 
@@ -127,6 +128,13 @@ low-confidence, interpretation-failed, transcript-missing, unavailable, and
 stale results remain distinguishable. The `Retry unresolved meaning` action
 reuses valid transcripts whenever possible. All meaning data and corrections
 stay in the local ignored `data/` directory.
+
+V13 adds a small adaptive technique director for segment performances. The
+planner evaluates the musical situation before choosing a technique, so a
+large tempo reset, a completed vocal phrase, and a close rhythmic pairing can
+take different safe paths. Requests such as "no special effects" keep creative
+operations off. Creative operations are bounded to declared transition audio
+and remain auditable; the classic renderer is unchanged.
 
 ## Future direction
 

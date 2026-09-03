@@ -173,6 +173,8 @@ class SetIntent:
     reprise_preference: str = "balanced"  # avoid, balanced, callback
     layering_preference: str = "off"  # off, prefer, required
     segment_density: Optional[float] = None
+    allow_creative_fx: bool = True
+    technique_intensity: str = "moderate"  # subtle, moderate, strong
 
     # -- Stems --
     prefer_stems: Optional[bool] = None  # None = no preference
@@ -198,6 +200,8 @@ class SetIntent:
             errors.append("unknown layering_preference")
         if self.segment_density is not None and not 0.0 <= self.segment_density <= 1.0:
             errors.append("segment_density must be between 0.0 and 1.0")
+        if self.technique_intensity not in {"subtle", "moderate", "strong"}:
+            errors.append("unknown technique_intensity")
 
         if self.preset and self.preset not in PRESETS:
             valid = ", ".join(sorted(PRESETS.keys()))
