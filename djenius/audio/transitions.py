@@ -164,6 +164,19 @@ def target_consumed_samples(
     return overlap_samples
 
 
+def phrase_cut_seam_samples(sample_rate: int, overlap_samples: int) -> int:
+    """Return the target samples physically mixed by a phrase-cut seam.
+
+    Phrase cuts use the last bounded portion of the overlap as a click-safe
+    micro-crossfade.  Keep this calculation shared with the renderer: the
+    target samples mixed here are exactly the samples that must be skipped
+    before the target body is appended.
+    """
+    if sample_rate <= 0 or overlap_samples <= 0:
+        return 0
+    return min(overlap_samples, max(2, min(256, overlap_samples // 4)))
+
+
 def source_consumed_samples(
     transition_type: str,
     overlap_samples: int,
@@ -272,7 +285,11 @@ def _apply_transition_mono(
         return stem
 
     if transition_type == "phrase_cut":
-        result = _phrase_cut(source_region, target_region)
+        result = _phrase_cut(
+            source_region,
+            target_region,
+            seam_samples=phrase_cut_seam_samples(sr, len(source_region)),
+        )
     elif transition_type == "crossfade":
         result = _crossfade(source_region, target_region)
     elif transition_type == "beatmatched_blend":
@@ -350,7 +367,12 @@ def _apply_transition_mono(
     return result.astype(np.float32)
 
 
-def _phrase_cut(source: np.ndarray, target: np.ndarray) -> np.ndarray:
+def _phrase_cut(
+    source: np.ndarray,
+    target: np.ndarray,
+    *,
+    seam_samples: int | None = None,
+) -> np.ndarray:
     """Clean cut at a phrase boundary.
 
     Keep the outgoing phrase until the actual handoff, then use a very brief
@@ -362,7 +384,8 @@ def _phrase_cut(source: np.ndarray, target: np.ndarray) -> np.ndarray:
     n = len(source)
     if n == 0:
         return np.zeros(0, dtype=np.float32)
-    click_guard = max(2, min(256, n // 4))  # 5-6ms at 44.1kHz
+    click_guard = seam_samples if seam_samples is not None else max(2, min(256, n // 4))
+    click_guard = min(n, len(target), max(1, click_guard))
 
     result = np.asarray(source, dtype=np.float32).copy()
     cut_point = n - click_guard

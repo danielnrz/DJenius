@@ -5,6 +5,7 @@ import soundfile as sf
 import json
 
 from djenius.audio.performance_renderer import render_performance_mix
+from djenius.audio.transitions import phrase_cut_seam_samples
 from djenius.core.models import (
     PerformanceAppearance,
     PerformanceSegment,
@@ -154,6 +155,63 @@ def test_section_edit_execution_mode_selects_phrase_cut_at_runtime(tmp_path):
     assert event["execution_operation"] == "phrase_cut_internal_section_edit"
     assert event["transition_type"] == "phrase_cut"
     assert event["planned_transition_type"] == "beatmatched_blend"
+    assert event["actual_seam_samples"] == phrase_cut_seam_samples(sample_rate, 8000)
+    assert event["target_consumed_samples"] == event["actual_seam_samples"]
+    assert event["target_end_sample"] == event["target_start_sample"] + event["target_consumed_samples"]
+    assert event["micro_crossfade_duration_sec"] == event["actual_seam_duration_sec"]
+
+
+def test_internal_phrase_cut_uses_seam_samples_not_nominal_seconds(tmp_path):
+    sample_rate = 44100
+    duration_samples = sample_rate * 5
+    t = np.arange(duration_samples, dtype=np.float32) / sample_rate
+    source_path = tmp_path / "seconds-not-samples.wav"
+    signal = np.column_stack([
+        0.15 * np.sin(2 * np.pi * 220 * t),
+        0.10 * np.sin(2 * np.pi * 330 * t),
+    ])
+    sf.write(source_path, signal, sample_rate)
+    track = TrackProfile(
+        id="a", metadata=TrackMetadata(filepath=str(source_path), title="a", duration_sec=5),
+        analysis=TrackAnalysis(bpm=120, bpm_confidence=.9, analysis_confidence=.9),
+    )
+    first = PerformanceSegment(id="one", track_id="a", source_start_sec=0, source_end_sec=2, confidence=.9)
+    second = PerformanceSegment(id="two", track_id="a", source_start_sec=2.5, source_end_sec=4.5, confidence=.9)
+    nominal_overlap_sec = 0.02
+    timeline = PerformanceTimeline(
+        appearances=[
+            PerformanceAppearance(id="one", segment=first, output_start_sec=0, output_end_sec=2),
+            PerformanceAppearance(id="two", segment=second, output_start_sec=1.98, output_end_sec=3.98, reprise=True),
+        ],
+        transitions=[PerformanceTransition(
+            source_appearance_id="one", target_appearance_id="two",
+            transition_type=TransitionType.PHRASE_CUT,
+            overlap_duration_sec=nominal_overlap_sec, source_start_sec=1.98, source_end_sec=2,
+            target_start_sec=2.5, target_end_sec=2.5 + nominal_overlap_sec,
+            target_consumed_duration_sec=nominal_overlap_sec,
+            technical_score=.8, local_context_score=.8, phase_error_ms=0.0,
+            execution_mode="section_edit", blueprint_decision="VARIATE",
+            technique_name="section edit", edit_quality_class="GOOD",
+        )],
+        total_duration_sec=3.98,
+    )
+    render_performance_mix(
+        SetPlan(tracks=[track], performance_timeline=timeline),
+        str(tmp_path / "seconds-not-samples.wav"), sample_rate=sample_rate,
+    )
+    diagnostics = json.loads((tmp_path / "seconds-not-samples_diagnostics.json").read_text())
+    event = next(item for item in diagnostics["events"] if item["type"] == "performance_transition")
+    overlap_samples = round(nominal_overlap_sec * sample_rate)
+    seam_samples = phrase_cut_seam_samples(sample_rate, overlap_samples)
+    assert overlap_samples == 882
+    assert seam_samples == 220
+    assert event["nominal_overlap_samples"] == overlap_samples
+    assert event["actual_seam_samples"] == seam_samples
+    assert event["target_consumed_samples"] == seam_samples
+    assert event["target_end_sample"] == event["target_start_sample"] + seam_samples
+    assert event["target_body_start_sample"] == event["target_end_sample"]
+    assert event["target_consumed_duration_sec"] == round(seam_samples / sample_rate, 6)
+    assert event["micro_crossfade_duration_sec"] == round(seam_samples / sample_rate, 6)
 
 
 def test_section_edit_runtime_records_safety_fallback(tmp_path):

@@ -20,7 +20,7 @@ import soundfile as sf
 
 from djenius.audio.provenance import audit_performance_provenance
 from djenius.audio.renderer import _compute_track_gain_db, _load_audio, _to_stereo
-from djenius.audio.transitions import apply_transition
+from djenius.audio.transitions import apply_transition, phrase_cut_seam_samples
 from djenius.audio.transition_preparation import render_preparation
 from djenius.core.models import SetPlan
 from djenius.core.performance import require_valid_performance_timeline
@@ -218,16 +218,15 @@ def render_performance_mix(
 
             target_head = current_stereo[target_base_offset + target_preparation_samples:]
             body_start = len(output)
+            actual_seam_samples = 0
             if transition.execution_mode == "section_edit" and execution_operation == "phrase_cut_internal_section_edit":
                 # An internal edit consumes only the tiny seam handle.  A
                 # multi-second overlap would discard the target phrase before
                 # its body can begin, making the edit sound patched.
+                actual_seam_samples = phrase_cut_seam_samples(sample_rate, overlap)
                 target_consumed = min(
                     len(target_head),
-                    max(1, int(round(
-                        transition.target_consumed_duration_sec
-                        or min(transition.overlap_duration_sec, 0.02) * sample_rate
-                    ))),
+                    actual_seam_samples,
                 )
             else:
                 target_consumed = min(
@@ -310,7 +309,13 @@ def render_performance_mix(
                 "edit_quality_class": transition.edit_quality_class,
                 "source_edit_boundary_sec": transition.source_edit_boundary_sec,
                 "target_edit_boundary_sec": transition.target_edit_boundary_sec,
-                "micro_crossfade_duration_sec": transition.micro_crossfade_duration_sec,
+                # Keep nominal planning values separate from the physical
+                # phrase-cut seam.  The latter is also the target interval
+                # already represented by the transition audio.
+                "nominal_overlap_samples": overlap,
+                "actual_seam_samples": actual_seam_samples,
+                "actual_seam_duration_sec": round(actual_seam_samples / sample_rate, 6) if actual_seam_samples else 0.0,
+                "micro_crossfade_duration_sec": round(actual_seam_samples / sample_rate, 6) if actual_seam_samples else transition.micro_crossfade_duration_sec,
                 "blueprint_source_role": transition.blueprint_source_role,
                 "blueprint_target_role": transition.blueprint_target_role,
                 "blueprint_decision": transition.blueprint_decision,
@@ -337,7 +342,10 @@ def render_performance_mix(
                 "source_vocal_density": transition.source_vocal_density,
                 "target_vocal_density": transition.target_vocal_density,
                 "requires_time_stretch": transition.requires_stretch,
-                "target_consumed_duration_sec": transition.target_consumed_duration_sec,
+                "target_consumed_samples": target_consumed,
+                "target_body_start_sample": int(round(transition.target_start_sec * sample_rate)) + target_preparation_samples + target_consumed,
+                "nominal_target_consumed_duration_sec": transition.target_consumed_duration_sec,
+                "target_consumed_duration_sec": round(target_consumed / sample_rate, 6),
                 "target_preparation_consumed_duration_sec": round(target_preparation_samples / sample_rate, 4),
                 "preparation_start_sample": preparation_start,
                 "preparation_end_sample": output_start,
