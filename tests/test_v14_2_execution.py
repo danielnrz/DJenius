@@ -110,3 +110,82 @@ def test_contiguous_stay_renders_without_a_conventional_transition(tmp_path):
     assert result["duration_sec"] == 4.0
     diagnostics = json.loads((tmp_path / "stay_diagnostics.json").read_text())
     assert any(item["type"] == "performance_continuation" for item in diagnostics["events"])
+
+
+def test_section_edit_execution_mode_selects_phrase_cut_at_runtime(tmp_path):
+    sample_rate = 8000
+    t = np.arange(sample_rate * 8, dtype=np.float32) / sample_rate
+    source_path = tmp_path / "section.wav"
+    signal = np.column_stack([
+        0.18 * np.sin(2 * np.pi * 220 * t),
+        0.12 * np.sin(2 * np.pi * 330 * t),
+    ])
+    sf.write(source_path, signal, sample_rate)
+    track = TrackProfile(
+        id="a", metadata=TrackMetadata(filepath=str(source_path), title="a", duration_sec=8),
+        analysis=TrackAnalysis(bpm=120, bpm_confidence=.9, analysis_confidence=.9),
+    )
+    first = PerformanceSegment(id="one", track_id="a", source_start_sec=0, source_end_sec=3, confidence=.9)
+    second = PerformanceSegment(id="two", track_id="a", source_start_sec=4, source_end_sec=7, confidence=.9)
+    transition = PerformanceTransition(
+        source_appearance_id="one", target_appearance_id="two",
+        transition_type=TransitionType.BEATMATCHED_BLEND,
+        overlap_duration_sec=1.0, source_start_sec=2.0, source_end_sec=3.0,
+        target_start_sec=4.0, target_end_sec=5.0,
+        technical_score=.8, local_context_score=.8, phase_error_ms=0.0,
+        execution_mode="section_edit", blueprint_decision="VARIATE",
+        technique_name="section edit", technique_operations=[{"type": "section_edit"}],
+    )
+    timeline = PerformanceTimeline(
+        appearances=[
+            PerformanceAppearance(id="one", segment=first, output_start_sec=0, output_end_sec=3),
+            PerformanceAppearance(id="two", segment=second, output_start_sec=2, output_end_sec=5, reprise=True),
+        ],
+        transitions=[transition], total_duration_sec=5,
+    )
+    result = render_performance_mix(
+        SetPlan(tracks=[track], performance_timeline=timeline),
+        str(tmp_path / "section.wav"), sample_rate=sample_rate,
+    )
+    assert result["provenance_audit"]["clean"]
+    diagnostics = json.loads((tmp_path / "section_diagnostics.json").read_text())
+    event = next(item for item in diagnostics["events"] if item["type"] == "performance_transition")
+    assert event["execution_mode"] == "section_edit"
+    assert event["execution_operation"] == "phrase_cut_internal_section_edit"
+    assert event["transition_type"] == "phrase_cut"
+    assert event["planned_transition_type"] == "beatmatched_blend"
+
+
+def test_section_edit_runtime_records_safety_fallback(tmp_path):
+    sample_rate = 8000
+    t = np.arange(sample_rate * 8, dtype=np.float32) / sample_rate
+    source_path = tmp_path / "fallback.wav"
+    sf.write(source_path, np.column_stack([.1 * np.sin(2 * np.pi * 220 * t)] * 2), sample_rate)
+    track = TrackProfile(
+        id="a", metadata=TrackMetadata(filepath=str(source_path), title="a", duration_sec=8),
+        analysis=TrackAnalysis(bpm=120, bpm_confidence=.9, analysis_confidence=.9),
+    )
+    first = PerformanceSegment(id="one", track_id="a", source_start_sec=0, source_end_sec=3, confidence=.9)
+    second = PerformanceSegment(id="two", track_id="a", source_start_sec=4, source_end_sec=7, confidence=.9)
+    timeline = PerformanceTimeline(
+        appearances=[
+            PerformanceAppearance(id="one", segment=first, output_start_sec=0, output_end_sec=3),
+            PerformanceAppearance(id="two", segment=second, output_start_sec=2, output_end_sec=5, reprise=True),
+        ],
+        transitions=[PerformanceTransition(
+            source_appearance_id="one", target_appearance_id="two",
+            transition_type=TransitionType.BEATMATCHED_BLEND,
+            overlap_duration_sec=1.0, source_start_sec=2.0, source_end_sec=3.0,
+            target_start_sec=4.0, target_end_sec=5.0,
+            technical_score=.4, local_context_score=.4, phase_error_ms=200.0,
+            execution_mode="section_edit", blueprint_decision="VARIATE",
+        )], total_duration_sec=5,
+    )
+    render_performance_mix(
+        SetPlan(tracks=[track], performance_timeline=timeline),
+        str(tmp_path / "fallback.wav"), sample_rate=sample_rate,
+    )
+    diagnostics = json.loads((tmp_path / "fallback_diagnostics.json").read_text())
+    event = next(item for item in diagnostics["events"] if item["type"] == "performance_transition")
+    assert event["execution_operation"] == "declared_transition_fallback"
+    assert "safety gates" in event["execution_fallback_reason"]

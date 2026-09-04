@@ -595,14 +595,15 @@ class PerformanceTransition:
     landing_operations: list[dict] = field(default_factory=list)
     rendered_preparation: bool = False
     rendered_landing: bool = False
-    # V14.2: the blueprint execution contract.  These fields are metadata
-    # only; the existing V13/V13.2 renderer remains the DSP executor.
+    # V14.2: the blueprint execution contract.  The renderer consumes these
+    # fields while the existing V13/V13.2 DSP remains the executor.
     blueprint_source_role: str = ""
     blueprint_target_role: str = ""
     blueprint_decision: str = "SWITCH"
     musical_goal: str = ""
     execution_directive: dict = field(default_factory=dict)
     execution_mode: str = "transition"  # transition, continuation, section_edit
+    execution_fallback_reason: str = ""
 
     def to_dict(self) -> dict:
         result = asdict(self)

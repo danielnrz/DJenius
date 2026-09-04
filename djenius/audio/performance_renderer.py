@@ -118,6 +118,38 @@ def render_performance_mix(
                 if progress_callback:
                     progress_callback(30 + (index + 1) / max(len(timeline.appearances), 1) * 55, f"Rendering appearance {index + 1}/{len(timeline.appearances)}")
                 continue
+            render_transition_type = transition.transition_type.value
+            render_technique_operations = transition.technique_operations
+            execution_fallback_reason = transition.execution_fallback_reason
+            execution_operation = "declared_transition"
+            if transition.execution_mode == "section_edit":
+                # VARIATE is an internal edit, not a generic blend.  Reuse
+                # the existing phrase-cut DSP only when the recorded pair
+                # evidence is strong enough to make the cut safe.  The
+                # fallback remains the declared transition and is explicit
+                # in diagnostics rather than silently pretending an edit ran.
+                same_track = (
+                    previous_appearance.segment.track_id == segment.track_id
+                )
+                section_edit_safe = (
+                    same_track
+                    and abs(float(transition.phase_error_ms)) <= 62.5
+                    and float(transition.technical_score) >= 0.70
+                    and float(transition.local_context_score) >= 0.65
+                )
+                if section_edit_safe:
+                    render_transition_type = "phrase_cut"
+                    render_technique_operations = [
+                        item for item in (transition.technique_operations or [])
+                        if item.get("type") != "section_edit"
+                    ]
+                    execution_operation = "phrase_cut_internal_section_edit"
+                else:
+                    execution_fallback_reason = execution_fallback_reason or (
+                        "section edit declined: pair evidence did not meet the "
+                        "phase, technical, and local-context safety gates"
+                    )
+                    execution_operation = "declared_transition_fallback"
             overlap = min(
                 len(previous_segment), len(current_stereo),
                 max(1, int(round(transition.overlap_duration_sec * sample_rate))),
@@ -193,7 +225,7 @@ def render_performance_mix(
                 source_audio=source_tail,
                 target_audio=target_head,
                 sr=sample_rate,
-                transition_type=transition.transition_type.value,
+                transition_type=render_transition_type,
                 overlap_samples=overlap,
                 source_exit_sample=len(source_tail) - overlap,
                 target_entry_sample=0,
@@ -207,7 +239,7 @@ def render_performance_mix(
                 target_low_energy=transition.target_bass_activity,
                 target_mid_energy=transition.target_local_energy,
                 use_time_stretch=transition.requires_stretch,
-                technique_operations=transition.technique_operations,
+                technique_operations=render_technique_operations,
             )
             if len(transition_audio) != overlap:
                 raise ValueError("Performance transition produced an unexpected duration")
@@ -247,11 +279,14 @@ def render_performance_mix(
                 "output_end_sample": output_start + overlap,
                 "mix_start_sample": output_start,
                 "mix_end_sample": output_start + overlap,
-                "transition_type": transition.transition_type.value,
+                "transition_type": render_transition_type,
+                "planned_transition_type": transition.transition_type.value,
                 "transition_role": transition.transition_role,
                 "performance_state": transition.performance_state,
                 "next_performance_state": transition.next_performance_state,
                 "execution_mode": transition.execution_mode,
+                "execution_operation": execution_operation,
+                "execution_fallback_reason": execution_fallback_reason,
                 "blueprint_source_role": transition.blueprint_source_role,
                 "blueprint_target_role": transition.blueprint_target_role,
                 "blueprint_decision": transition.blueprint_decision,
