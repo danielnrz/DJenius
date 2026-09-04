@@ -353,29 +353,23 @@ def _apply_transition_mono(
 def _phrase_cut(source: np.ndarray, target: np.ndarray) -> np.ndarray:
     """Clean cut at a phrase boundary.
 
-    Very brief crossfade (just a few samples) to avoid clicks.
+    Keep the outgoing phrase until the actual handoff, then use a very brief
+    seam blend into the target.  The old implementation blended at sample
+    zero of the transition buffer and then immediately played the target;
+    that made an internal edit sound like a random patch even when its grid
+    coordinates were valid.
     """
     n = len(source)
-    click_guard = min(256, n // 4)  # ~6ms at 44100
+    if n == 0:
+        return np.zeros(0, dtype=np.float32)
+    click_guard = max(2, min(256, n // 4))  # 5-6ms at 44.1kHz
 
-    result = np.zeros(n, dtype=np.float32)
-
-    # Source plays up to the cut point
+    result = np.asarray(source, dtype=np.float32).copy()
     cut_point = n - click_guard
-    result[:cut_point] = source[:cut_point]
-
-    # Short crossfade for click prevention
-    fade_out = linear_fade_out(click_guard * 2)
-    fade_in = linear_fade_in(click_guard * 2)
-
-    region = min(click_guard * 2, n)
-    result[:region] = (
-        source[:region] * fade_out[:region]
-        + target[:region] * fade_in[:region]
+    result[cut_point:] = (
+        source[cut_point:] * linear_fade_out(click_guard)
+        + target[:click_guard] * linear_fade_in(click_guard)
     )
-
-    # Target plays after
-    result[region:] = target[region:]
 
     return result
 

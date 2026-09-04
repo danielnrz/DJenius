@@ -131,11 +131,18 @@ def render_performance_mix(
                 same_track = (
                     previous_appearance.segment.track_id == segment.track_id
                 )
+                recorded_edit_quality_safe = transition.edit_quality_class in {"SEAMLESS", "GOOD"}
                 section_edit_safe = (
                     same_track
                     and abs(float(transition.phase_error_ms)) <= 62.5
-                    and float(transition.technical_score) >= 0.70
-                    and float(transition.local_context_score) >= 0.65
+                    and (
+                        recorded_edit_quality_safe
+                        or (
+                            not transition.edit_quality_class
+                            and float(transition.technical_score) >= 0.70
+                            and float(transition.local_context_score) >= 0.65
+                        )
+                    )
                 )
                 if section_edit_safe:
                     render_transition_type = "phrase_cut"
@@ -211,16 +218,28 @@ def render_performance_mix(
 
             target_head = current_stereo[target_base_offset + target_preparation_samples:]
             body_start = len(output)
-            target_consumed = min(
-                len(target_head),
-                max(
-                    overlap,
-                    int(round(
-                        (transition.target_consumed_duration_sec or transition.overlap_duration_sec)
-                        * sample_rate
-                    )),
-                ),
-            )
+            if transition.execution_mode == "section_edit" and execution_operation == "phrase_cut_internal_section_edit":
+                # An internal edit consumes only the tiny seam handle.  A
+                # multi-second overlap would discard the target phrase before
+                # its body can begin, making the edit sound patched.
+                target_consumed = min(
+                    len(target_head),
+                    max(1, int(round(
+                        transition.target_consumed_duration_sec
+                        or min(transition.overlap_duration_sec, 0.02) * sample_rate
+                    ))),
+                )
+            else:
+                target_consumed = min(
+                    len(target_head),
+                    max(
+                        overlap,
+                        int(round(
+                            (transition.target_consumed_duration_sec or transition.overlap_duration_sec)
+                            * sample_rate
+                        )),
+                    ),
+                )
             transition_audio = apply_transition(
                 source_audio=source_tail,
                 target_audio=target_head,
@@ -287,6 +306,11 @@ def render_performance_mix(
                 "execution_mode": transition.execution_mode,
                 "execution_operation": execution_operation,
                 "execution_fallback_reason": execution_fallback_reason,
+                "edit_quality_score": transition.edit_quality_score,
+                "edit_quality_class": transition.edit_quality_class,
+                "source_edit_boundary_sec": transition.source_edit_boundary_sec,
+                "target_edit_boundary_sec": transition.target_edit_boundary_sec,
+                "micro_crossfade_duration_sec": transition.micro_crossfade_duration_sec,
                 "blueprint_source_role": transition.blueprint_source_role,
                 "blueprint_target_role": transition.blueprint_target_role,
                 "blueprint_decision": transition.blueprint_decision,

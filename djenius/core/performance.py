@@ -25,6 +25,11 @@ from djenius.core.models import (
     TransitionType,
     EnergyProfile,
 )
+from djenius.core.phrase_edit import (
+    align_internal_edit_boundaries,
+    assess_internal_edit,
+    internal_edit_overlap_sec,
+)
 from djenius.core.intent import SetIntent
 from djenius.core.intent_scoring import TrackIntentScore, score_track_intent
 from djenius.core.transition_quality import score_transition_candidate
@@ -1068,28 +1073,45 @@ def plan_performance_timeline(
                 strong_effects_remaining=strong_remaining,
                 directive=directive,
             )
+            same_track = previous.segment.track_id == appearance.segment.track_id
+            internal_alignment = None
+            internal_quality = None
+            if decision == "VARIATE" and same_track:
+                internal_alignment = align_internal_edit_boundaries(
+                    previous_track,
+                    current_track,
+                    previous.segment.source_end_sec,
+                    appearance.segment.source_start_sec,
+                )
+                internal_quality = assess_internal_edit(pair, internal_alignment)
             actual_overlap = round(min(
                 pair.overlap_duration_sec,
                 previous.segment.duration_sec * 0.30,
                 appearance.segment.duration_sec * 0.30,
             ), 4)
             execution_mode = "continuation" if contiguous_same_track else (
-                "section_edit" if decision == "VARIATE" and previous.segment.track_id == appearance.segment.track_id else "transition"
+                "section_edit" if decision == "VARIATE" and same_track else "transition"
             )
-            if (
-                execution_mode == "section_edit"
-                and pair.phase_score >= 0.75
-                and pair.local_context_score >= 0.65
-            ):
+            if execution_mode == "section_edit" and internal_quality and internal_quality.quality_class in {"SEAMLESS", "GOOD"}:
                 # A safe same-track VARIATE is an internal remix edit.  Keep
                 # it phrase-aligned and explicit instead of rendering a
                 # generic fade that makes the same record sound restarted.
                 pair.transition_type = TransitionType.PHRASE_CUT
                 pair.technique_intent = "CALLBACK"
                 pair.technique_name = "section edit"
-                pair.technique_reason = "Same-track VARIATE uses a phrase-safe internal section edit."
+                pair.technique_reason = internal_quality.reason
                 pair.technique_operations = [{"type": "section_edit", "phrase_aligned": True}]
                 pair.technique_tier = "subtle"
+                # Internal edits replace only a tiny seam handle.  The source
+                # sections themselves remain intact and the target phrase is
+                # not discarded as if this were a DJ overlap.
+                actual_overlap = min(actual_overlap, internal_edit_overlap_sec())
+            elif execution_mode == "section_edit":
+                execution_mode = "transition"
+                pair.technique_reason = (
+                    (internal_quality.reason if internal_quality else "internal edit evidence unavailable")
+                    + "; fell back to a safe transition"
+                )
             if execution_mode == "continuation":
                 actual_overlap = 0.0
             appearance.output_start_sec = (
@@ -1185,6 +1207,16 @@ def plan_performance_timeline(
                 musical_goal=directive.get("musical_goal", ""),
                 execution_directive=directive,
                 execution_mode=execution_mode,
+                execution_fallback_reason=(
+                    "same-track VARIATE edit declined: " + internal_quality.reason
+                    if decision == "VARIATE" and same_track and execution_mode != "section_edit" and internal_quality
+                    else ""
+                ),
+                edit_quality_score=(internal_quality.score if internal_quality else 0.0),
+                edit_quality_class=(internal_quality.quality_class if internal_quality else ""),
+                source_edit_boundary_sec=(internal_alignment.source_boundary_sec if internal_alignment else 0.0),
+                target_edit_boundary_sec=(internal_alignment.target_boundary_sec if internal_alignment else 0.0),
+                micro_crossfade_duration_sec=(actual_overlap if internal_quality and execution_mode == "section_edit" else 0.0),
             ))
             recent_techniques.append(pair.technique_name)
             del recent_techniques[:-6]

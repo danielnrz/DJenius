@@ -604,6 +604,12 @@ class PerformanceTransition:
     execution_directive: dict = field(default_factory=dict)
     execution_mode: str = "transition"  # transition, continuation, section_edit
     execution_fallback_reason: str = ""
+    # V14.3: inspectable internal-edit seam evidence.
+    edit_quality_score: float = 0.0
+    edit_quality_class: str = ""
+    source_edit_boundary_sec: float = 0.0
+    target_edit_boundary_sec: float = 0.0
+    micro_crossfade_duration_sec: float = 0.0
 
     def to_dict(self) -> dict:
         result = asdict(self)

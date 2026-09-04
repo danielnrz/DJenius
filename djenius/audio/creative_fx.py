@@ -42,7 +42,13 @@ def tape_stop(audio: np.ndarray, strength: float = 0.7) -> np.ndarray:
 
 
 def loop_roll(audio: np.ndarray, sample_rate: int, bpm: float, *, beats: int = 1, repeats: int = 2) -> np.ndarray:
-    """Repeat a bounded final beat/phrase inside an existing transition."""
+    """Repeat a bounded final beat/phrase with treated wraparound seams.
+
+    The operation remains shape-preserving and operates only on the already
+    declared transition buffer.  Every repeat boundary receives a short
+    overlap blend; this is deliberately a loop-construction improvement, not
+    a new effect or an implicit source replay.
+    """
     data, was_mono = _stereo(audio)
     if len(data) < 32 or sample_rate <= 0 or bpm <= 0:
         return np.asarray(audio, dtype=np.float32)
@@ -57,12 +63,30 @@ def loop_roll(audio: np.ndarray, sample_rate: int, bpm: float, *, beats: int = 1
     for position in range(start, len(data), loop_length):
         count = min(loop_length, len(data) - position)
         result[position:position + count] = loop[:count]
-    guard = min(loop_length // 4, len(result) // 10)
+    guard = min(loop_length // 8, max(2, int(round(sample_rate * 0.012))))
+    guard = min(guard, loop_length // 4, len(result) // 10)
     if guard >= 2:
-        result[start:start + guard] = (
-            data[start:start + guard] * np.linspace(1.0, 0.0, guard)[:, None]
-            + result[start:start + guard] * np.linspace(0.0, 1.0, guard)[:, None]
-        )
+        fade_in = np.linspace(0.0, 1.0, guard, dtype=np.float32)[:, None]
+        fade_out = 1.0 - fade_in
+        for repeat_index in range(repeats):
+            seam = start + repeat_index * loop_length
+            if seam >= len(result):
+                break
+            pre_start = max(0, seam - guard)
+            count = min(guard, seam - pre_start)
+            if count <= 1 or seam + count > len(result):
+                continue
+            left = result[pre_start:seam].copy()
+            right = loop[:count]
+            # Crossfade over the final part of the previous cycle, then
+            # continue with the loop interior.  This keeps the audio after
+            # the seam at its original musical position while ensuring that
+            # the first sample after the boundary is not a phase jump.
+            result[pre_start:seam] = left * fade_out[:count] + right * fade_in[:count]
+            interior_end = min(len(result), seam + count)
+            interior_count = interior_end - seam
+            if interior_count > 0:
+                result[seam:interior_end] = loop[count:count + interior_count]
     return result[:, 0] if was_mono else result
 
 
@@ -115,9 +139,14 @@ def apply_creative_operations(
         if kind == "tape_stop":
             transformed = tape_stop(transformed, operation.get("strength", 0.7))
         elif kind == "loop_roll":
+            loop_bars = operation.get("bars")
+            loop_beats = (
+                max(1, int(round(float(loop_bars) * 4.0)))
+                if loop_bars is not None else operation.get("beats", 1)
+            )
             transformed = loop_roll(
                 transformed, sample_rate, source_bpm,
-                beats=operation.get("beats", 1), repeats=operation.get("repeats", 2),
+                beats=loop_beats, repeats=operation.get("repeats", 2),
             )
         elif kind == "generated_fx":
             fx = procedural_fx(
