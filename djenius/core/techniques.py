@@ -85,6 +85,8 @@ def build_musical_situation(source, target, pair, *, style: str) -> MusicalSitua
         downbeat_alignment=max(0.0, 1.0 - min(1.0, abs(float(getattr(pair, "phase_error_ms", 1000.0))) / 250.0)),
         desired_style=style,
         local_context_score=float(getattr(pair, "local_context_score", 0.5)),
+        transition_role=str(getattr(pair, "transition_role", "CONTINUE")),
+        performance_state=str(getattr(pair, "performance_state", "DEVELOP")),
     )
 
 
@@ -114,6 +116,7 @@ def rank_techniques(
     performance_state: str = "DEVELOP",
     recent_strong_distance: int | None = None,
     strong_effects_remaining: int | None = None,
+    directive: dict | None = None,
 ) -> list[TechniqueCandidate]:
     """Rank a small technique vocabulary for one concrete handoff."""
     if not allow_creative_fx:
@@ -129,6 +132,11 @@ def rank_techniques(
     bpm_delta = abs(situation.source_bpm - situation.target_bpm) / max(situation.source_bpm, 1.0)
     close_groove = min(situation.rhythm_fit, situation.harmonic_fit, situation.downbeat_alignment)
     energy_lift = situation.energy_direction == "build"
+    directive = directive or {}
+    require_payoff = bool(directive.get("require_payoff", False))
+    preserve_groove = bool(directive.get("preserve_groove", False))
+    vocal_clearance = bool(directive.get("prefer_vocal_clearance", False))
+    decision = str(directive.get("blueprint_decision", "SWITCH")).upper()
     candidates = [_candidate(
         "clean continuation", "SMOOTH_CONTINUATION", base_transition_type,
         0.50 + 0.30 * situation.local_context_score
@@ -156,7 +164,8 @@ def rank_techniques(
             and situation.phrase_alignment >= 0.70
             and situation.downbeat_alignment >= 0.68
             and situation.local_context_score >= 0.62
-            and intensity != "subtle"):
+            and intensity != "subtle"
+            and (base_transition_type in {TransitionType.BEATMATCHED_BLEND, TransitionType.BASS_SWAP} or require_payoff)):
         candidates.append(_candidate(
             "loop-roll drop", "DROP_REVEAL", TransitionType.CROSSFADE,
             0.54 + 0.30 * min(situation.rhythm_fit, situation.local_context_score), 0.70,
@@ -164,7 +173,19 @@ def rank_techniques(
             [{"type": "loop_roll", "beats": 1, "repeats": 2},
              {"type": "generated_fx", "effect": "riser", "level": 0.025, "seed": 13}],
         ))
-    if (style in {"club", "experimental"} and energy_lift
+    if (decision == "VARIATE"
+            and situation.phrase_alignment >= 0.82
+            and situation.downbeat_alignment >= 0.78
+            and situation.local_context_score >= 0.65
+            and (not (situation.source_vocal_state == "dense" and situation.target_vocal_state == "dense")
+                 or bool(directive.get("same_track")))):
+        candidates.append(_candidate(
+            "section edit", "CALLBACK", TransitionType.PHRASE_CUT,
+            0.64 + 0.24 * min(situation.phrase_alignment, situation.downbeat_alignment), 0.78,
+            "A same-track section edit is safe at the declared phrase/downbeat boundary.",
+            [{"type": "section_edit", "phrase_aligned": True}],
+        ))
+    if (style in {"club", "experimental"} and (energy_lift or require_payoff)
             and situation.harmonic_fit >= 0.72
             and situation.downbeat_alignment >= 0.78
             and situation.phrase_alignment >= 0.74):
@@ -206,6 +227,28 @@ def rank_techniques(
     # need room to land and a small budget so the performance has contrast.
     for item in candidates:
         item.score += role_fit(item.name, transition_role, style)
+        name = item.name.lower()
+        if require_payoff:
+            if item.tier == "strong":
+                item.score += 0.16
+            elif item.tier == "subtle":
+                item.score -= 0.13
+        if preserve_groove:
+            if any(token in name for token in ("beatmatched", "bass", "filter", "continuation")):
+                item.score += 0.08
+            if any(token in name for token in ("tape", "loop", "drop switch")):
+                item.score -= 0.12
+        if vocal_clearance and any(token in name for token in ("echo", "filter", "continuation", "crossfade")):
+            item.score += 0.07
+        if decision == "VARIATE" and "continuation" in name:
+            item.score -= 0.12
+        if decision == "VARIATE":
+            if name == "section edit":
+                item.score += 0.14
+            elif any(token in name for token in ("crossfade", "beatmatched blend")):
+                item.score -= 0.06
+        if decision == "CALLBACK" and any(token in name for token in ("echo", "crossfade", "loop", "drop")):
+            item.score += 0.05
         if item.tier == "strong":
             if strong_effects_remaining is not None and strong_effects_remaining <= 0:
                 item.score -= 0.60
@@ -213,6 +256,8 @@ def rank_techniques(
                 item.score -= 0.34
             if style in {"smooth", "story"} and transition_role not in {"RESET", "REVEAL"}:
                 item.score -= 0.20
+            if not bool(directive.get("allow_strong_technique", True)):
+                item.score -= 0.35
     candidates.sort(key=lambda item: (item.score, item.confidence, item.name), reverse=True)
     return candidates
 
@@ -230,6 +275,7 @@ def choose_technique(
     performance_state: str = "DEVELOP",
     recent_strong_distance: int | None = None,
     strong_effects_remaining: int | None = None,
+    directive: dict | None = None,
 ) -> TechniqueCandidate:
     """Choose the highest-ranked safe technique for one concrete handoff."""
     return rank_techniques(
@@ -244,6 +290,7 @@ def choose_technique(
         performance_state=performance_state,
         recent_strong_distance=recent_strong_distance,
         strong_effects_remaining=strong_effects_remaining,
+        directive=directive,
     )[0]
 
 

@@ -32,6 +32,7 @@ from djenius.core.local_context import score_local_context
 from djenius.core.techniques import build_musical_situation, choose_technique
 from djenius.core.performance_direction import (
     build_performance_arc,
+    build_performance_directive,
     creative_budget,
     state_energy_target,
     technique_tier,
@@ -328,6 +329,7 @@ class SegmentPairQuality:
     technique_reason: str = ""
     technique_operations: list[dict] = None
     technique_tier: str = "subtle"
+    execution_directive: dict | None = None
 
     def to_dict(self) -> dict:
         result = asdict(self)
@@ -424,6 +426,7 @@ def score_segment_pair(
     performance_state: str = "DEVELOP",
     recent_strong_distance: int | None = None,
     strong_effects_remaining: int | None = None,
+    directive: dict | None = None,
 ) -> SegmentPairQuality:
     """Score and recipe-select one concrete A -> B segment handoff.
 
@@ -431,6 +434,10 @@ def score_segment_pair(
     vocal calculations to the mature full-context transition evaluator.  The
     segment layer only supplies the actual source/target musical windows.
     """
+    directive = directive or {}
+    if directive:
+        transition_role = str(directive.get("transition_role", transition_role))
+        performance_state = str(directive.get("performance_state", performance_state))
     bars = _transition_bar_count(style)
     source_bpm = float(source.bpm) if source.bpm > 0 else 120.0
     target_bpm = float(target.bpm) if target.bpm > 0 else 120.0
@@ -592,11 +599,13 @@ def score_segment_pair(
         performance_state=performance_state,
         recent_strong_distance=recent_strong_distance,
         strong_effects_remaining=strong_effects_remaining,
+        directive=directive,
     )
     allowed = set(_pair_transition_types(style, intent))
     if technique.transition_type not in allowed and technique.transition_type != transition_type:
         technique = choose_technique(
             situation, transition_type, style=style, allow_creative_fx=False,
+            directive=directive,
         )
     if technique.transition_type != transition_type:
         use_stretch = technique.transition_type == TransitionType.BEATMATCHED_BLEND and use_stretch
@@ -656,6 +665,7 @@ def score_segment_pair(
         technique_reason=technique.reason,
         technique_operations=technique.operations,
         technique_tier=technique_tier(technique.name),
+        execution_directive=directive,
     )
 
 
@@ -716,6 +726,14 @@ def plan_performance_timeline(
     appearances: list[PerformanceAppearance] = []
     track_by_id = {track.id: track for track in tracks}
 
+    def boundary_directive(index: int) -> dict:
+        """Return the blueprint directive for the boundary before index."""
+        if not blueprint_acts or index <= 0 or index >= len(blueprint_acts):
+            return {}
+        return build_performance_directive(
+            blueprint_acts[index - 1], blueprint_acts[index], performance_style,
+        ).to_dict()
+
     def usable_for(track: TrackProfile) -> list[PerformanceSegment]:
         result = []
         for segment in segments[track.id]:
@@ -764,14 +782,17 @@ def plan_performance_timeline(
                 if appearances:
                     previous = appearances[-1].segment
                     boundary = direction[position - 1] if position - 1 < len(direction) else transition_direction(performance_states, position - 1)
+                    directive = boundary_directive(position)
+                    directive["same_track"] = previous.track_id == track.id
                     pair = score_segment_pair(
                         track_by_id[previous.track_id], previous, track, segment,
                         style=performance_style, intent=intent,
                         recent_techniques=tuple(recent_techniques),
-                        transition_role=boundary.transition_role,
-                        performance_state=boundary.state,
+                        transition_role=directive.get("transition_role", boundary.transition_role),
+                        performance_state=directive.get("performance_state", boundary.state),
                         recent_strong_distance=recent_strong_distance,
                         strong_effects_remaining=strong_remaining,
+                        directive=directive,
                     )
                     pair_score = pair.overall_score
                 is_new_track = track.id not in seen_counts
@@ -1028,27 +1049,62 @@ def plan_performance_timeline(
             previous = appearances[index - 1]
             previous_track = track_by_id[previous.segment.track_id]
             current_track = track_by_id[appearance.segment.track_id]
+            directive = boundary_directive(index)
+            directive["same_track"] = previous.segment.track_id == appearance.segment.track_id
+            boundary = direction[index - 1] if index - 1 < len(direction) else transition_direction(performance_states, index - 1)
+            decision = str(directive.get("blueprint_decision", "SWITCH")).upper()
+            contiguous_same_track = (
+                decision == "STAY"
+                and previous.segment.track_id == appearance.segment.track_id
+                and abs(appearance.segment.source_start_sec - previous.segment.source_end_sec) <= 0.5
+            )
             pair = score_segment_pair(
                 previous_track, previous.segment, current_track, appearance.segment,
                 style=performance_style, intent=intent,
                 recent_techniques=tuple(recent_techniques),
-                transition_role=(direction[index - 1].transition_role if index - 1 < len(direction) else "CONTINUE"),
-                performance_state=(direction[index - 1].state if index - 1 < len(direction) else "DEVELOP"),
+                transition_role=directive.get("transition_role", boundary.transition_role),
+                performance_state=directive.get("performance_state", boundary.state),
                 recent_strong_distance=recent_strong_distance,
                 strong_effects_remaining=strong_remaining,
+                directive=directive,
             )
             actual_overlap = round(min(
                 pair.overlap_duration_sec,
                 previous.segment.duration_sec * 0.30,
                 appearance.segment.duration_sec * 0.30,
             ), 4)
-            appearance.output_start_sec = max(0.0, previous.output_end_sec - actual_overlap)
+            execution_mode = "continuation" if contiguous_same_track else (
+                "section_edit" if decision == "VARIATE" and previous.segment.track_id == appearance.segment.track_id else "transition"
+            )
+            if (
+                execution_mode == "section_edit"
+                and pair.phase_score >= 0.75
+                and pair.local_context_score >= 0.65
+            ):
+                # A safe same-track VARIATE is an internal remix edit.  Keep
+                # it phrase-aligned and explicit instead of rendering a
+                # generic fade that makes the same record sound restarted.
+                pair.transition_type = TransitionType.PHRASE_CUT
+                pair.technique_intent = "CALLBACK"
+                pair.technique_name = "section edit"
+                pair.technique_reason = "Same-track VARIATE uses a phrase-safe internal section edit."
+                pair.technique_operations = [{"type": "section_edit", "phrase_aligned": True}]
+                pair.technique_tier = "subtle"
+            if execution_mode == "continuation":
+                actual_overlap = 0.0
+            appearance.output_start_sec = (
+                previous.output_end_sec
+                if execution_mode == "continuation"
+                else max(0.0, previous.output_end_sec - actual_overlap)
+            )
             target_consumed = _target_consumed_duration(
                 pair.transition_type, actual_overlap, previous_track.bpm,
                 current_track.bpm, use_time_stretch=pair.requires_stretch,
             )
-            prep_bars = direction[index - 1].preparation_bars if index - 1 < len(direction) else 1
-            land_bars = direction[index - 1].landing_bars if index - 1 < len(direction) else 2
+            if execution_mode == "continuation":
+                target_consumed = 0.0
+            prep_bars = (2 if directive.get("require_payoff") else boundary.preparation_bars) if directive else boundary.preparation_bars
+            land_bars = boundary.landing_bars
             preparation_duration, landing_duration = _phase_durations(
                 previous.segment,
                 appearance.segment,
@@ -1058,12 +1114,17 @@ def plan_performance_timeline(
                 land_bars,
                 actual_overlap,
             )
+            if execution_mode == "continuation":
+                preparation_duration = 0.0
+                landing_duration = 0.0
             preparation_ops = build_preparation_operations(
                 pair.technique_name,
-                direction[index - 1].transition_role if index - 1 < len(direction) else "CONTINUE",
+                directive.get("transition_role", boundary.transition_role),
                 performance_style,
                 stems_available=bool(getattr(previous_track.analysis, "stems", {}) and getattr(current_track.analysis, "stems", {})),
             )
+            if execution_mode == "continuation":
+                preparation_ops = []
             transitions.append(PerformanceTransition(
                 position=index,
                 source_appearance_id=previous.id,
@@ -1108,9 +1169,9 @@ def plan_performance_timeline(
                 technique_confidence=pair.technique_confidence,
                 technique_reason=pair.technique_reason,
                 technique_operations=pair.technique_operations or [],
-                performance_state=(direction[index - 1].state if index - 1 < len(direction) else "DEVELOP"),
-                next_performance_state=(direction[index - 1].next_state if index - 1 < len(direction) else "OUTRO"),
-                transition_role=(direction[index - 1].transition_role if index - 1 < len(direction) else "CONTINUE"),
+                performance_state=directive.get("performance_state", boundary.state),
+                next_performance_state=directive.get("next_performance_state", boundary.next_state),
+                transition_role=directive.get("transition_role", boundary.transition_role),
                 preparation_bars=prep_bars,
                 landing_bars=land_bars,
                 preparation_duration_sec=preparation_duration,
@@ -1118,6 +1179,12 @@ def plan_performance_timeline(
                 technique_tier=pair.technique_tier,
                 preparation_operations=preparation_ops,
                 landing_operations=landing_operations(),
+                blueprint_source_role=directive.get("source_role", ""),
+                blueprint_target_role=directive.get("target_role", ""),
+                blueprint_decision=decision,
+                musical_goal=directive.get("musical_goal", ""),
+                execution_directive=directive,
+                execution_mode=execution_mode,
             ))
             recent_techniques.append(pair.technique_name)
             del recent_techniques[:-6]
@@ -1164,7 +1231,7 @@ def plan_performance_timeline(
         ),
         layered_events=[],
         performance_states=performance_states[:len(appearances)],
-        transition_roles=[item.transition_role for item in direction[:max(0, len(appearances) - 1)]],
+        transition_roles=[item.transition_role for item in transitions],
         creative_budget=budget,
         technique_counts=dict(sorted({name: sum(1 for item in transitions if item.technique_name == name) for name in {item.technique_name for item in transitions}}.items())),
         strong_effect_count=sum(1 for item in transitions if item.technique_tier == "strong"),
@@ -1209,6 +1276,10 @@ def validate_performance_timeline(
                 violations.append(f"duplicate source region for {appearance.segment.track_id}")
             elif overlap > source_overlap_tolerance_sec:
                 violations.append(f"excessive source overlap for {appearance.segment.track_id}")
+            elif abs(start - old_end) <= source_overlap_tolerance_sec or abs(end - old_start) <= source_overlap_tolerance_sec:
+                # A declared contiguous continuation consumes the next
+                # source samples directly; it is not a replay/reprise.
+                continue
             elif not appearance.reprise:
                 violations.append(f"repeated track appearance is not declared as reprise: {appearance.id}")
         regions[appearance.segment.track_id].append((start, end, appearance.reprise))
@@ -1217,6 +1288,12 @@ def validate_performance_timeline(
         target = by_id.get(transition.target_appearance_id)
         if source is None or target is None:
             violations.append(f"transition {index + 1} references unknown appearance")
+            continue
+        if transition.execution_mode == "continuation":
+            if source.segment.track_id != target.segment.track_id or abs(
+                target.segment.source_start_sec - source.segment.source_end_sec
+            ) > source_overlap_tolerance_sec:
+                violations.append(f"continuation {index + 1} is not source-contiguous")
             continue
         if not (source.segment.source_start_sec - 0.01 <= transition.source_start_sec <= transition.source_end_sec <= source.segment.source_end_sec + 0.01):
             violations.append(f"transition {index + 1} source interval is outside segment")

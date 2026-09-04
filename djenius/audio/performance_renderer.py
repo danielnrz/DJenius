@@ -75,6 +75,49 @@ def render_performance_mix(
         else:
             transition = timeline.transitions[index - 1]
             previous_appearance = timeline.appearances[index - 1]
+            if transition.execution_mode == "continuation":
+                # A blueprint STAY over contiguous source material is a real
+                # source-continuation edit, not a disguised fade-out/fade-in.
+                # Keep the transition object for provenance and diagnostics,
+                # but append the declared target interval directly.
+                out_start = len(output)
+                body_start = len(output)
+                output = np.concatenate([output, current_stereo], axis=0)
+                events.append({
+                    "type": "performance_continuation",
+                    "source_appearance_id": previous_appearance.id,
+                    "target_appearance_id": appearance.id,
+                    "track_id": segment.track_id,
+                    "source_start_sample": int(round(previous_appearance.segment.source_end_sec * sample_rate)),
+                    "source_end_sample": int(round(previous_appearance.segment.source_end_sec * sample_rate)),
+                    "target_start_sample": left,
+                    "target_end_sample": right,
+                    "output_start_sample": out_start,
+                    "output_end_sample": len(output),
+                    "execution_mode": transition.execution_mode,
+                    "blueprint_decision": transition.blueprint_decision,
+                    "musical_goal": transition.musical_goal,
+                })
+                events.append({
+                    "type": "appearance",
+                    "appearance_id": appearance.id,
+                    "track_id": segment.track_id,
+                    "track_title": tracks[segment.track_id].title,
+                    "source_start_sample": left,
+                    "source_end_sample": right,
+                    "output_start_sample": out_start,
+                    "output_end_sample": len(output),
+                    "reprise": appearance.reprise,
+                    "section_type": segment.section_type,
+                    "semantic_role": segment.semantic_role,
+                    "intent_score": appearance.intent_score,
+                    "intent_status": appearance.intent_status,
+                    "body_start_sample": body_start,
+                })
+                previous_segment = current_stereo
+                if progress_callback:
+                    progress_callback(30 + (index + 1) / max(len(timeline.appearances), 1) * 55, f"Rendering appearance {index + 1}/{len(timeline.appearances)}")
+                continue
             overlap = min(
                 len(previous_segment), len(current_stereo),
                 max(1, int(round(transition.overlap_duration_sec * sample_rate))),
@@ -205,6 +248,15 @@ def render_performance_mix(
                 "mix_start_sample": output_start,
                 "mix_end_sample": output_start + overlap,
                 "transition_type": transition.transition_type.value,
+                "transition_role": transition.transition_role,
+                "performance_state": transition.performance_state,
+                "next_performance_state": transition.next_performance_state,
+                "execution_mode": transition.execution_mode,
+                "blueprint_source_role": transition.blueprint_source_role,
+                "blueprint_target_role": transition.blueprint_target_role,
+                "blueprint_decision": transition.blueprint_decision,
+                "musical_goal": transition.musical_goal,
+                "execution_directive": transition.execution_directive,
                 "confidence": transition.confidence,
                 "transition_bars": transition.length_bars,
                 "phase_error_ms": transition.phase_error_ms,

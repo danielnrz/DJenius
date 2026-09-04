@@ -45,6 +45,114 @@ class DirectionDecision:
     landing_bars: int
 
 
+@dataclass(frozen=True)
+class PerformanceDirective:
+    """Executable, data-only translation of two blueprint acts.
+
+    The directive is deliberately smaller than a blueprint.  It tells the
+    existing V13 technique selector what the boundary is trying to achieve;
+    it never contains waveform instructions or arbitrary source timestamps.
+    """
+
+    source_role: str = ""
+    target_role: str = ""
+    blueprint_decision: str = "SWITCH"
+    musical_goal: str = "smooth continuation"
+    intensity: str = "moderate"
+    preserve_groove: bool = False
+    require_payoff: bool = False
+    prefer_vocal_clearance: bool = False
+    allow_strong_technique: bool = True
+    preparation_goal: str = ""
+    landing_goal: str = ""
+    transition_role: str = "CONTINUE"
+    performance_state: str = "DEVELOP"
+    next_performance_state: str = "DEVELOP"
+
+    def to_dict(self) -> dict:
+        return {
+            "source_role": self.source_role,
+            "target_role": self.target_role,
+            "blueprint_decision": self.blueprint_decision,
+            "musical_goal": self.musical_goal,
+            "intensity": self.intensity,
+            "preserve_groove": self.preserve_groove,
+            "require_payoff": self.require_payoff,
+            "prefer_vocal_clearance": self.prefer_vocal_clearance,
+            "allow_strong_technique": self.allow_strong_technique,
+            "preparation_goal": self.preparation_goal,
+            "landing_goal": self.landing_goal,
+            "transition_role": self.transition_role,
+            "performance_state": self.performance_state,
+            "next_performance_state": self.next_performance_state,
+        }
+
+
+def build_performance_directive(
+    source_act: dict | None,
+    target_act: dict | None,
+    performance_style: str,
+) -> PerformanceDirective:
+    """Compile blueprint role/decision metadata into execution guidance."""
+    source_act = source_act or {}
+    target_act = target_act or {}
+    source_role = str(source_act.get("role", ""))
+    target_role = str(target_act.get("role", ""))
+    decision = str(target_act.get("decision", "SWITCH") or "SWITCH").upper()
+    source_out = str(source_act.get("transition_role_out", "CONTINUE") or "CONTINUE").upper()
+    target_in = str(target_act.get("transition_role_in", "CONTINUE") or "CONTINUE").upper()
+
+    # The target's incoming role describes what the listener should hear at
+    # this boundary.  The source's outgoing role is the fallback for older
+    # blueprints that did not populate incoming roles.
+    role = target_in if target_in != "CONTINUE" else source_out
+    role_goals = {
+        "BUILD": ("build anticipation", "raise energy into the next idea", True, False),
+        "REVEAL": ("deliver a prepared payoff", "make the target landing feel earned", True, False),
+        "RELEASE": ("release tension", "give the next section room to breathe", False, True),
+        "RESET": ("reset tempo or musical identity", "land cleanly after the reset", False, False),
+        "CALLBACK": ("reveal a recognizable callback", "let the returned idea land clearly", False, True),
+        "CLOSE": ("close the performance cleanly", "leave a stable final landing", False, True),
+        "LIFT": ("lift the musical energy", "keep the groove stable while it rises", True, False),
+        "CONTINUE": ("continue the musical idea", "preserve a stable groove", False, False),
+    }
+    goal, landing, payoff, vocal_clearance = role_goals.get(role, role_goals["CONTINUE"])
+    preserve_groove = role in {"CONTINUE", "LIFT"} or source_role == target_role == "GROOVE"
+    if target_role in {"BREATHING_ROOM", "RELEASE"}:
+        vocal_clearance = True
+    intensity = "strong" if role in {"REVEAL", "RESET"} else "moderate"
+    if performance_style in {"smooth", "story"} and role not in {"RESET", "REVEAL"}:
+        intensity = "subtle"
+    if decision == "STAY":
+        goal = "continue the current musical idea"
+        landing = "preserve continuity without a conventional handoff"
+        preserve_groove = True
+        payoff = False
+    elif decision == "VARIATE":
+        goal = "develop the current track with an intentional section edit"
+        landing = "make the new section land without a fade-out/fade-in reset"
+    elif decision == "LAYER":
+        goal = "introduce the new role as a controlled layer"
+        landing = "return to one clear dominant musical source"
+    allow_strong = performance_style not in {"smooth", "story"} or role in {"RESET", "REVEAL"}
+    return PerformanceDirective(
+        source_role=source_role,
+        target_role=target_role,
+        blueprint_decision=decision,
+        musical_goal=goal,
+        intensity=intensity,
+        preserve_groove=preserve_groove,
+        require_payoff=payoff,
+        prefer_vocal_clearance=vocal_clearance,
+        allow_strong_technique=allow_strong,
+        preparation_goal=goal,
+        landing_goal=landing,
+        transition_role=role,
+        performance_state=str(source_act.get("state", "DEVELOP")),
+        next_performance_state=str(target_act.get("state", "DEVELOP")),
+    )
+
+
 def build_performance_arc(count: int, style: str) -> list[str]:
     """Return a compact state path before individual transitions are scored."""
     if count <= 0:
