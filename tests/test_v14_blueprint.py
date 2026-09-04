@@ -1,11 +1,13 @@
 """V14 whole-performance director tests using synthetic analysis only."""
 
 from djenius.core.blueprint import (
+    DirectorIntent,
     MUSICAL_ROLES,
     BlueprintAct,
     RemixBlueprint,
     build_remix_blueprint,
     compile_blueprint,
+    derive_director_intent,
 )
 from djenius.core.intent import SetIntent
 from djenius.core.models import (
@@ -133,3 +135,58 @@ def test_narrative_request_uses_segment_director_mode():
     )
     assert intent.performance_mode == "segment"
     assert intent.performance_style == "experimental"
+
+
+def test_director_priorities_change_with_request_axes():
+    meaning = derive_director_intent(
+        SetIntent(raw_text="heartbreak remix", desired_themes=["heartbreak"]),
+        "experimental",
+    )
+    sound = derive_director_intent(
+        SetIntent(raw_text="energetic club remix", desired_moods=["energetic"], desired_activity=["dance"]),
+        "club",
+    )
+    assert meaning.meaning_priority > meaning.sound_priority
+    assert sound.groove_priority > meaning.groove_priority
+    assert sound.sound_priority > meaning.sound_priority
+
+
+def test_complete_blueprint_search_retains_ranked_alternatives_and_score_components():
+    tracks = [_rich_profile(str(index), energy=0.35 + index * 0.2) for index in range(4)]
+    blueprint = build_remix_blueprint(
+        tracks, 300, SetIntent(raw_text="energetic heartbreak remix", desired_themes=["heartbreak"]),
+        performance_style="experimental",
+    )
+    assert len(blueprint.candidate_blueprints) >= 3
+    assert 0.0 <= blueprint.whole_score <= 1.0
+    assert "request_fidelity" in blueprint.whole_score_components
+
+
+def test_role_aware_energy_penalty_applies_to_peak_but_not_release():
+    from djenius.core.blueprint import _role_score
+    from djenius.core.models import PerformanceSegment
+
+    track = _rich_profile("low", energy=0.2)
+    segment = PerformanceSegment(track_id="low", source_start_sec=0, source_end_sec=16, energy=0.2, quality_score=0.9)
+    intent = SetIntent(raw_text="energetic heartbreak remix", desired_themes=["heartbreak"], desired_moods=["energetic"])
+    peak, _, _, _ = _role_score("PEAK", track, segment, intent)
+    release, _, _, _ = _role_score("RELEASE", track, segment, intent)
+    assert release > peak
+
+
+def test_stay_switch_decisions_are_explicit_and_not_descriptive_only():
+    tracks = [_rich_profile("a"), _rich_profile("b")]
+    blueprint = build_remix_blueprint(tracks, 300, SetIntent(raw_text="remix"), performance_style="experimental")
+    assert blueprint.stay_switch_decisions
+    assert {item["decision"] for item in blueprint.stay_switch_decisions} <= {"STAY", "VARIATE", "LAYER", "SWITCH"}
+
+
+def test_director_intent_is_serialized_into_blueprint():
+    blueprint = build_remix_blueprint(
+        [_rich_profile("a"), _rich_profile("b")], 180,
+        SetIntent(raw_text="energetic heartbreak remix", desired_themes=["heartbreak"]),
+        performance_style="experimental",
+    )
+    assert isinstance(blueprint.director_intent, dict)
+    assert blueprint.director_intent["meaning_priority"] > 0.0
+    assert blueprint.primary_vocal_anchor

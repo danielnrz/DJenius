@@ -156,6 +156,9 @@ Meaning and sound evidence stay separate, and the existing V9-V13 timeline
 compiler remains responsible for source bounds, preparation, layering, and
 renderer safety. A blueprint may deliberately stay with a groove, use fewer
 tracks, or return to a recognizable hook rather than switching for novelty.
+V14.1 compares complete blueprint candidates with normalized meaning/sound
+priorities, role-aware energy constraints, anchor identities, and explicit
+stay/variate/switch decisions before compiling the selected path.
 
 ## Future direction
 
