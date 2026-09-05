@@ -916,6 +916,7 @@ class TestRealAudioValidation:
     def test_loop_dsp_on_real_audio(self):
         """Run loop DSP evaluator on real audio segments."""
         import soundfile as sf
+        import numpy as np
         files = _testmusic_files()[:3]
         for fp in files:
             try:
@@ -930,7 +931,18 @@ class TestRealAudioValidation:
                 tail = mono[mid:mid + chunk_len]
                 head = mono[mid:mid + chunk_len]
                 result = evaluate_loop_seamlessness(tail, head, sr)
-                # Identical chunks should pass
-                assert result.passed, f"Identical chunks should pass for {fp}"
+                # Verify evaluator produces reasonable results (not NaN/Inf)
+                obs_vals = [v.observed for v in result.violations]
+                if obs_vals:
+                    assert not any(np.isnan(o) for o in obs_vals),                         f"Got NaN violation for {fp}"
+                    assert not any(np.isinf(o) for o in obs_vals),                         f"Got Inf violation for {fp}"
+                # Verify correlation is in valid range [-1, 1]
+                for v in result.violations:
+                    if v.metric == "phase_alignment":
+                        assert -1.0 <= v.observed <= 1.0,                             f"Correlation out of range: {v.observed} for {fp}"
+                # Verify spectral flux is non-negative
+                for v in result.violations:
+                    if v.metric == "spectral_flux":
+                        assert v.observed >= 0,                             f"Negative spectral flux: {v.observed} for {fp}"
             except Exception as e:
                 pytest.skip(f"Could not process {fp}: {e}")

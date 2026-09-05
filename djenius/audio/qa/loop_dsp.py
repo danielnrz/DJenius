@@ -121,6 +121,15 @@ def _bass_derivative_sign_change(
     """
     if tail_bass.size < 2 or head_bass.size < 2:
         return False
+    # Guard: avoid sign-flip false positives when bass values are near-zero
+    tail_last2 = tail_bass[-2:]
+    head_first2 = head_bass[:2]
+    if abs(tail_bass[-1]) < 1e-4 and abs(tail_bass[-2]) < 1e-4:
+        # Both tail samples are near-silent → not a real bass transition
+        return False
+    if abs(head_bass[1]) < 1e-4 and abs(head_bass[0]) < 1e-4:
+        # Both head samples are near-silent → not a real bass transition
+        return False
     tail_deriv = float(tail_bass[-1] - tail_bass[-2])
     head_deriv = float(head_bass[1] - head_bass[0])
     return (tail_deriv * head_deriv) < 0 and abs(tail_deriv) > 1e-6 and abs(head_deriv) > 1e-6
@@ -187,22 +196,40 @@ def evaluate_loop_seamlessness(
         ))
 
     # ── Phase / cross-correlation ─────────────────────────────────────
-    # Use the last 10 ms of tail and first 10 ms of head for fine alignment.
-    n_corr = max(1, sample_rate // 100)  # 10 ms
-    tail_end = tail_audio[-n_corr:] if tail_audio.size >= n_corr else tail_audio
-    head_start = head_audio[:n_corr] if head_audio.size >= n_corr else head_audio
-    corr = _cross_correlation(tail_end, head_start)
-    if corr < min_correlation:
+    # Use a 50 ms window for stable alignment; skip if either chunk is too quiet.
+    n_corr = max(2, sample_rate // 20)  # ~50 ms minimum
+    # Ensure we have enough non-silence energy for meaningful correlation
+    tail_energy = float(np.sum(tail_audio ** 2)) if tail_audio.size > 0 else 0.0
+    head_energy = float(np.sum(head_audio ** 2)) if head_audio.size > 0 else 0.0
+    min_energy = sample_rate * 1e-6  # approximate energy floor
+    if tail_energy < min_energy or head_energy < min_energy:
+        # Too quiet to evaluate; record and skip correlation check
         result.add(QAViolation(
             module="loop_dsp",
             metric="phase_alignment",
             threshold=min_correlation,
-            observed=round(corr, 4),
+            observed=0.0,
             context={
-                "correlation": round(corr, 4),
-                "window_ms": 10,
+                "correlation": 0.0,
+                "skipped": "below_energy_floor",
+                "window_ms": 50,
             },
         ))
+    else:
+        tail_end = tail_audio[-n_corr:] if tail_audio.size >= n_corr else tail_audio
+        head_start = head_audio[:n_corr] if head_audio.size >= n_corr else head_audio
+        corr = _cross_correlation(tail_end, head_start)
+        if corr < min_correlation:
+            result.add(QAViolation(
+                module="loop_dsp",
+                metric="phase_alignment",
+                threshold=min_correlation,
+                observed=round(corr, 4),
+                context={
+                    "correlation": round(corr, 4),
+                    "window_ms": 50,
+                },
+            ))
 
     # ── Spectral flux ─────────────────────────────────────────────────
     n_fft = min(1024, tail_audio.size, head_audio.size)
