@@ -40,6 +40,11 @@ def _collect_edit_points(plan: Any) -> list[tuple[str, float, Any]]:
         source_id = getattr(trans, "source_track_id", "")
         if source_exit > 0 and source_id:
             edits.append((source_id, source_exit, trans))
+
+        target_entry = getattr(trans, "target_entry_time", 0.0)
+        target_id = getattr(trans, "target_track_id", "")
+        if target_entry > 0 and target_id:
+            edits.append((target_id, target_entry, trans))
     return edits
 
 

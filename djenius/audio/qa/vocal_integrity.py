@@ -77,11 +77,11 @@ def _nearest_word_margin(cut: float, words: list[tuple[str, float, float]]) -> t
     best_word = ""
     best_inside = False
     for text, wstart, wend in words:
-        if wstart <= cut < wend:
+        if wstart < cut < wend:
             # Inside the word — distance is to the nearest boundary
             dist = min(cut - wstart, wend - cut)
             inside = True
-        elif cut < wstart:
+        elif cut <= wstart:
             dist = wstart - cut
             inside = False
         else:
@@ -180,21 +180,34 @@ def evaluate_edit_point(
                 ))
 
     # ── Dense phrase interruption ──────────────────────────────────────
-    if vocal_regions and phrase_boundaries:
+    if vocal_regions:
         if _in_vocal_region(cut_time, vocal_regions):
-            phrase_dist = _nearest_phrase_boundary(cut_time, phrase_boundaries)
-            if phrase_dist > phrase_margin_sec:
+            if not phrase_boundaries:
                 result.add(QAViolation(
                     module="vocal_integrity",
                     metric="phrase_interruption",
                     threshold=phrase_margin_sec,
-                    observed=round(phrase_dist, 6),
+                    observed=float('inf'),
                     timestamp=cut_time,
                     context={
                         "cut_time": cut_time,
-                        "phrase_distance_sec": round(phrase_dist, 6),
+                        "skipped": "missing_phrase_metadata",
                     },
                 ))
+            else:
+                phrase_dist = _nearest_phrase_boundary(cut_time, phrase_boundaries)
+                if phrase_dist > phrase_margin_sec:
+                    result.add(QAViolation(
+                        module="vocal_integrity",
+                        metric="phrase_interruption",
+                        threshold=phrase_margin_sec,
+                        observed=round(phrase_dist, 6),
+                        timestamp=cut_time,
+                        context={
+                            "cut_time": cut_time,
+                            "phrase_distance_sec": round(phrase_dist, 6),
+                        },
+                    ))
 
     # ── Stem bleed check ──────────────────────────────────────────────
     if vocal_stem_audio is not None and vocal_stem_audio.size > 0:

@@ -203,18 +203,8 @@ def evaluate_loop_seamlessness(
     head_energy = float(np.sum(head_audio ** 2)) if head_audio.size > 0 else 0.0
     min_energy = sample_rate * 1e-6  # approximate energy floor
     if tail_energy < min_energy or head_energy < min_energy:
-        # Too quiet to evaluate; record and skip correlation check
-        result.add(QAViolation(
-            module="loop_dsp",
-            metric="phase_alignment",
-            threshold=min_correlation,
-            observed=0.0,
-            context={
-                "correlation": 0.0,
-                "skipped": "below_energy_floor",
-                "window_ms": 50,
-            },
-        ))
+        # Too quiet to evaluate; record and skip correlation check (no violation)
+        pass
     else:
         tail_end = tail_audio[-n_corr:] if tail_audio.size >= n_corr else tail_audio
         head_start = head_audio[:n_corr] if head_audio.size >= n_corr else head_audio

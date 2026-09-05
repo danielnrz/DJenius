@@ -389,7 +389,7 @@ class TestLoopDSP:
 
     def test_cross_correlation_identical(self):
         """Identical signals have correlation ~1."""
-        x = np.random.randn(1000)
+        x = np.linspace(-1, 1, 1000)
         corr = _cross_correlation(x, x)
         assert corr == pytest.approx(1.0, abs=1e-6)
 
@@ -402,7 +402,7 @@ class TestLoopDSP:
 
     def test_spectral_flux_identical(self):
         """Identical signals have flux ~0."""
-        x = np.random.randn(1024)
+        x = np.linspace(-1, 1, 1024)
         flux = _spectral_flux(x, x)
         assert flux == pytest.approx(0.0, abs=1e-6)
 
@@ -928,7 +928,7 @@ class TestRealAudioValidation:
                 # Take two chunks from the middle
                 mid = int(duration / 2 * sr)
                 chunk_len = min(sr, len(mono) - mid)
-                tail = mono[mid:mid + chunk_len]
+                tail = mono[mid - chunk_len:mid] if mid >= chunk_len else mono[:mid]
                 head = mono[mid:mid + chunk_len]
                 result = evaluate_loop_seamlessness(tail, head, sr)
                 # Verify evaluator produces reasonable results (not NaN/Inf)
