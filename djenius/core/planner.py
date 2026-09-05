@@ -18,6 +18,12 @@ from djenius.core.models import (
     TrackProfile, SetPlan, TransitionPlan, TransitionType,
     CompatibilityScore, EnergyProfile,
 )
+from djenius.audio.qa.macro_structure import (
+    OVERLAPPING_TYPES,
+    MIN_OVERLAP_FOR_FADE,
+    MAX_FADE_DOMINANCE,
+)
+
 from djenius.core.scorer import (
     score_compatibility,
     compute_preference_bonuses,
@@ -1183,6 +1189,30 @@ def _build_set_plan(
                 total_duration += max(0.0, final_track_end_time - target_cursor)
     elif best_path:
         total_duration = best_path[0].duration_sec
+
+
+    # ── Fade dominance check ────────────────────────────────────────────
+    # Ensure total overlap from overlapping transition types stays within
+    # MAX_FADE_DOMINANCE (20%) of total mix duration.
+    # Uses the same thresholds as djenius.audio.qa.macro_structure.
+    overlap_total = 0.0
+    for t in transitions:
+        ttype = getattr(t, "transition_type", None)
+        ttype_val = (ttype.value.lower() if hasattr(ttype, "value") else str(ttype)).lower()
+        overlap = getattr(t, "overlap_duration", 0.0)
+        if ttype_val in OVERLAPPING_TYPES and overlap >= MIN_OVERLAP_FOR_FADE:
+            overlap_total += overlap
+    if total_duration > 0:
+        fade_dominance = overlap_total / total_duration
+        if fade_dominance > MAX_FADE_DOMINANCE:
+            # Apply penalty proportional to excess
+            excess = fade_dominance - MAX_FADE_DOMINANCE
+            penalty = excess * plan.score * 0.5  # 50% penalty per 0.1 excess
+            plan.score = max(0.0, plan.score - penalty)
+            plan.human_readable_reasons.append(
+                f"Fade dominance {round(fade_dominance, 3)} exceeds MAX_FADE_DOMINANCE {MAX_FADE_DOMINANCE}; "
+                f"applied {round(excess, 3)} excess with {round(penalty, 3)} score penalty."
+            )
 
     return SetPlan(
         tracks=best_path,
