@@ -28,6 +28,8 @@ from djenius.core.nl_parser import ollama_model_name, parse_request
 from djenius.core.meaning import MEANING_ANALYSIS_VERSION, MEANING_MODEL_VERSION, THEMES, LYRICAL_MOODS, meaning_model_name, meaning_state
 from djenius.core.semantic import ACTIVITIES, INTENSITIES, MOODS, SEMANTIC_LABELS, STYLES
 from djenius.core.planner import plan_ordered_set, plan_set
+from djenius.audio.qa.gate import run_qa_gate
+
 from djenius.core.performance import reorder_performance_timeline
 from djenius.db.cache import AnalysisCache, compute_file_hash
 from djenius.db.preferences import PreferenceProfile
@@ -818,6 +820,16 @@ class LocalAppService:
                 preference_bonuses=preference_bonuses,
                 seed=seed,
             )
+
+            # Run QA gate for production validation
+            qa_result = run_qa_gate(plan)
+            if not qa_result.passed:
+                for violation in qa_result.violations:
+                    plan.human_readable_reasons.append(
+                        f"QA Gate: {violation.module}.{violation.metric} "
+                        f"(threshold={violation.threshold}, observed={violation.observed})"
+                    )
+
             from djenius.core.explanations import explain_set_plan
 
             plan.human_readable_reasons = explain_set_plan(plan)

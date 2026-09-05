@@ -1206,9 +1206,14 @@ def _build_set_plan(
         fade_dominance = overlap_total / total_duration
         if fade_dominance > MAX_FADE_DOMINANCE:
             # Apply penalty proportional to excess
+            # Compute transition score (same formula as final score computation)
+            transition_score = float(
+                np.mean([t.quality_score.overall_score for t in transitions if t.quality_score])
+                if transitions else 0.0
+            )
             excess = fade_dominance - MAX_FADE_DOMINANCE
-            penalty = excess * plan.score * 0.5  # 50% penalty per 0.1 excess
-            plan.score = max(0.0, plan.score - penalty)
+            penalty = excess * transition_score * 0.5  # 50% penalty per 0.1 excess
+            transition_score = max(0.0, transition_score - penalty)
             plan.human_readable_reasons.append(
                 f"Fade dominance {round(fade_dominance, 3)} exceeds MAX_FADE_DOMINANCE {MAX_FADE_DOMINANCE}; "
                 f"applied {round(excess, 3)} excess with {round(penalty, 3)} score penalty."
