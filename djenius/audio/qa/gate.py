@@ -142,9 +142,16 @@ def run_qa_gate(
         result.merge(evaluate_macro_pacing_from_timeline(timeline, **macro_kwargs))
 
     # ── Phase 2: Vocal integrity (metadata + optional stem cache) ─────
-    # Combine edit points from both SetPlan transitions and PerformanceTimeline
-    edit_points = _collect_edit_points(plan)
-    edit_points.extend(_collect_timeline_edit_points(plan))
+    # Combine edit points from both SetPlan transitions and PerformanceTimeline,
+    # deduplicating by (track_id, time) to avoid evaluating the same edit twice.
+    seen: set[tuple[str, float]] = set()
+    edit_points: list[tuple[str, float, Any]] = []
+    for pts in (_collect_edit_points(plan), _collect_timeline_edit_points(plan)):
+        for track_id, cut_time, trans in pts:
+            key = (track_id, cut_time)
+            if key not in seen:
+                seen.add(key)
+                edit_points.append((track_id, cut_time, trans))
     for track_id, cut_time, _trans in edit_points:
         track = _get_track_by_id(plan, track_id)
         if track is None:

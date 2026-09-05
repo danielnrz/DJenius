@@ -60,7 +60,7 @@ def _total_overlap_duration(transitions: list[Any]) -> float:
     for t in transitions:
         overlap = getattr(t, "overlap_duration", 0.0)
         ttype = getattr(t, "transition_type", None)
-        ttype_val = ttype.value if hasattr(ttype, "value") else str(ttype)
+        ttype_val = (ttype.value.lower() if hasattr(ttype, "value") else str(ttype)).lower()
         if ttype_val in OVERLAPPING_TYPES and overlap >= MIN_OVERLAP_FOR_FADE:
             total += overlap
     return total
@@ -72,7 +72,7 @@ def _max_consecutive_complex(transitions: list[Any]) -> int:
     current_run = 0
     for t in transitions:
         ttype = getattr(t, "transition_type", None)
-        ttype_val = ttype.value if hasattr(ttype, "value") else str(ttype)
+        ttype_val = (ttype.value.lower() if hasattr(ttype, "value") else str(ttype)).lower()
         if ttype_val in COMPLEX_TYPES:
             current_run += 1
             max_run = max(max_run, current_run)

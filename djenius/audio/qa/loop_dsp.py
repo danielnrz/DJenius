@@ -95,12 +95,19 @@ def _lowpass(arr: np.ndarray, sr: int, cutoff_hz: float) -> np.ndarray:
     """Simple low-pass filter using only numpy (moving-average).
 
     Window size is chosen so the -3dB point is approximately at
-    *cutoff_hz*.
+    *cutoff_hz*.  Reflective padding is used to minimise edge effects
+    at the seam boundary.
     """
     arr = _to_mono(arr)
     win = max(1, int(sr / cutoff_hz))
     kernel = np.ones(win, dtype=np.float64) / win
-    return np.convolve(arr.astype(np.float64), kernel, mode="same")
+    pad_len = win // 2
+    # Reflect-pad to reduce startup/transient edge artefacts
+    padded = np.pad(arr.astype(np.float64), pad_len, mode='reflect')
+    filtered = np.convolve(padded, kernel, mode='same')
+    start = pad_len
+    end = start + arr.size
+    return filtered[start:end]
 
 
 def _bass_derivative_sign_change(
