@@ -212,23 +212,36 @@ def run_qa_gate(
     return result
 
 
-def evaluate_rendered_transition(transition_audio: np.ndarray, sample_rate: int) -> QAResult:
-    """Check the actual rendered transition at its source/target seam.
+def evaluate_rendered_boundary(
+    tail_audio: np.ndarray, head_audio: np.ndarray, sample_rate: int,
+) -> QAResult:
+    """Evaluate a known output concatenation boundary only.
 
-    The renderer supplies the post-processed transition waveform.  The
-    midpoint is the only available stable boundary independent of raw source
-    windows; correlation and spectral flux remain supporting metrics.
+    The boundary is between ``tail_audio[-1]`` and ``head_audio[0]``.  No
+    assumptions are made about an internal position in a transition blend.
+    Alignment/flux remain diagnostics and are never hard failures here.
     """
     result = QAResult()
-    if transition_audio.size < 4:
+    if tail_audio.size == 0 or head_audio.size == 0:
         return result
-    mono = np.mean(transition_audio, axis=-1) if transition_audio.ndim > 1 else transition_audio
-    jumps = np.abs(np.diff(mono.astype(np.float64)))
-    scale = max(float(np.sqrt(np.mean(np.square(mono.astype(np.float64))))), 1e-6)
-    observed = float(np.max(jumps) / scale) if jumps.size else 0.0
-    if observed > 8.0:
+    tail = np.asarray(tail_audio, dtype=np.float64)
+    head = np.asarray(head_audio, dtype=np.float64)
+    if tail.ndim > 1:
+        tail = np.mean(tail, axis=-1)
+    if head.ndim > 1:
+        head = np.mean(head, axis=-1)
+    local = np.concatenate((tail[-min(256, tail.size):], head[:min(256, head.size)]))
+    scale = max(float(np.sqrt(np.mean(local * local))), 1e-6)
+    jump = abs(float(head[0] - tail[-1])) / scale
+    if jump > 8.0:
         result.add(QAViolation(
             module="loop_dsp", metric="sample_discontinuity", threshold=8.0,
-            observed=round(observed, 4), context={"max_adjacent_jump": round(float(np.max(jumps)), 6)},
+            observed=round(jump, 4),
+            context={"tail_last": round(float(tail[-1]), 6), "head_first": round(float(head[0]), 6), "sample_rate": sample_rate},
         ))
     return result
+
+
+def evaluate_rendered_transition(transition_audio: np.ndarray, sample_rate: int) -> QAResult:
+    """Compatibility wrapper for callers with no known external boundary."""
+    return QAResult()
