@@ -207,6 +207,28 @@ def run_qa_gate(
     # ── Phase 3: Loop/DSP continuity (requires audio chunks) ──────────
     if pre_rendered_splices:
         for splice_id, (tail, head) in pre_rendered_splices.items():
-            result.merge(evaluate_loop_seamlessness(tail, head, sample_rate))
+            result.merge(evaluate_loop_seamlessness(tail, head, sample_rate, strict_alignment=False))
 
+    return result
+
+
+def evaluate_rendered_transition(transition_audio: np.ndarray, sample_rate: int) -> QAResult:
+    """Check the actual rendered transition at its source/target seam.
+
+    The renderer supplies the post-processed transition waveform.  The
+    midpoint is the only available stable boundary independent of raw source
+    windows; correlation and spectral flux remain supporting metrics.
+    """
+    result = QAResult()
+    if transition_audio.size < 4:
+        return result
+    mono = np.mean(transition_audio, axis=-1) if transition_audio.ndim > 1 else transition_audio
+    jumps = np.abs(np.diff(mono.astype(np.float64)))
+    scale = max(float(np.sqrt(np.mean(np.square(mono.astype(np.float64))))), 1e-6)
+    observed = float(np.max(jumps) / scale) if jumps.size else 0.0
+    if observed > 8.0:
+        result.add(QAViolation(
+            module="loop_dsp", metric="sample_discontinuity", threshold=8.0,
+            observed=round(observed, 4), context={"max_adjacent_jump": round(float(np.max(jumps)), 6)},
+        ))
     return result

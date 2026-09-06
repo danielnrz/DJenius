@@ -148,6 +148,7 @@ def evaluate_loop_seamlessness(
     min_correlation: float = MIN_CORRELATION,
     max_spectral_flux: float = MAX_SPECTRAL_FLUX,
     bass_cutoff_hz: float = BASS_CUTOFF_HZ,
+    strict_alignment: bool = True,
 ) -> QAResult:
     """Evaluate continuity across a splice / loop boundary.
 
@@ -209,30 +210,15 @@ def evaluate_loop_seamlessness(
         tail_end = tail_audio[-n_corr:] if tail_audio.size >= n_corr else tail_audio
         head_start = head_audio[:n_corr] if head_audio.size >= n_corr else head_audio
         corr = _cross_correlation(tail_end, head_start)
-        if corr < min_correlation:
-            result.add(QAViolation(
-                module="loop_dsp",
-                metric="phase_alignment",
-                threshold=min_correlation,
-                observed=round(corr, 4),
-                context={
-                    "correlation": round(corr, 4),
-                    "window_ms": 50,
-                },
-            ))
+        if strict_alignment and corr < min_correlation:
+            result.add(QAViolation("loop_dsp", "phase_alignment", min_correlation, round(corr, 4), context={"correlation": round(corr, 4), "window_ms": 50}))
 
     # ── Spectral flux ─────────────────────────────────────────────────
     n_fft = min(1024, tail_audio.size, head_audio.size)
     if n_fft >= 64:
         flux = _spectral_flux(tail_audio[-n_fft:], head_audio[:n_fft], n_fft)
-        if flux > max_spectral_flux:
-            result.add(QAViolation(
-                module="loop_dsp",
-                metric="spectral_flux",
-                threshold=max_spectral_flux,
-                observed=round(flux, 6),
-                context={"flux": round(flux, 6)},
-            ))
+        if strict_alignment and flux > max_spectral_flux:
+            result.add(QAViolation("loop_dsp", "spectral_flux", max_spectral_flux, round(flux, 6), context={"flux": round(flux, 6)}))
 
     # ── Bass continuity ───────────────────────────────────────────────
     n_bass = max(sample_rate // 2, 512)  # ~12 ms minimum

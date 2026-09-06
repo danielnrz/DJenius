@@ -50,6 +50,7 @@ from djenius.audio.transitions import (
     target_consumed_samples,
 )
 from djenius.audio.provenance import audit_source_provenance
+from djenius.audio.qa.gate import evaluate_rendered_transition
 from djenius.utils.audio_math import normalize_lufs, soft_clip, db_to_linear
 from djenius.utils.timing import seconds_to_samples
 
@@ -265,6 +266,16 @@ def render_mix(
                     f"Transition and safe crossfade both failed for "
                     f"{source.title} -> {target.title}"
                 ) from fallback_error
+
+        rendered_qa = evaluate_rendered_transition(transition_audio, sample_rate)
+        if not rendered_qa.passed:
+            provenance = "; ".join(
+                f"{v.module}.{v.metric} (observed {v.observed} vs threshold {v.threshold})"
+                for v in rendered_qa.violations
+            )
+            raise RuntimeError(
+                f"Rendered transition QA failed for {source.title} -> {target.title}: {provenance}"
+            )
 
         if len(transition_audio) != spec["requested_overlap_samples"]:
             raise RuntimeError(
