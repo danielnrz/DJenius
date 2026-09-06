@@ -833,6 +833,13 @@ class LocalAppService:
             from djenius.core.explanations import explain_set_plan
 
             plan.human_readable_reasons = explain_set_plan(plan)
+            if not qa_result.passed:
+                plan.human_readable_reasons.append("QA Gate Status: FAILED")
+                reasons = "; ".join(f"{v.module}.{v.metric} (observed {v.observed} vs threshold {v.threshold})" for v in qa_result.violations)
+                raise ValueError(f"QA Gate failed before plan storage. Violations: {reasons}")
+            else:
+                plan.human_readable_reasons.append("QA Gate Status: PASSED")
+
             plan_id = uuid.uuid4().hex
             with self._lock:
                 self._plans[plan_id] = plan
