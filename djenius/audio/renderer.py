@@ -282,7 +282,7 @@ def render_mix(
             )
         rendered_end_qa = evaluate_rendered_boundary(
             transition_audio,
-            target_audio[spec["target_end_sample"]:spec["target_end_sample"] + 256],
+            target_audio[effective_target_end:effective_target_end + 256],
             sample_rate,
         )
         if not rendered_end_qa.passed:
