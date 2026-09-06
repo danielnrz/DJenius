@@ -44,7 +44,7 @@ from djenius.audio.qa.macro_structure import (
     _max_consecutive_complex,
     _technique_diversity,
 )
-from djenius.audio.qa.gate import run_qa_gate
+from djenius.audio.qa.gate import evaluate_rendered_boundary, run_qa_gate
 
 
 # ─── Helpers ────────────────────────────────────────────────────────────
@@ -314,6 +314,26 @@ class TestVocalIntegrity:
 # ═══════════════════════════════════════════════════════════════════════
 # 2. Loop DSP — unit tests
 # ═══════════════════════════════════════════════════════════════════════
+
+class TestRenderedBoundary:
+    def test_good_boundary_passes(self):
+        audio = _sine(44100, 440.0, 0.1)
+        result = evaluate_rendered_boundary(audio[:2205], audio[2205:], 44100)
+        assert result.passed
+        assert result.violations == []
+
+    def test_bad_boundary_rejects_with_provenance(self):
+        tail = _sine(44100, 440.0, 0.1)[:2205]
+        head = _sine(44100, 440.0, 0.1)[2205:]
+        head[0] = tail[-1] + 10.0
+        result = evaluate_rendered_boundary(tail, head, 44100)
+        assert not result.passed
+        violation = result.violations[0]
+        assert violation.metric == "sample_discontinuity"
+        assert violation.context["sample_rate"] == 44100
+        assert "tail_last" in violation.context
+        assert "head_first" in violation.context
+
 
 class TestLoopDSP:
 

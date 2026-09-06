@@ -240,8 +240,3 @@ def evaluate_rendered_boundary(
             context={"tail_last": round(float(tail[-1]), 6), "head_first": round(float(head[0]), 6), "sample_rate": sample_rate},
         ))
     return result
-
-
-def evaluate_rendered_transition(transition_audio: np.ndarray, sample_rate: int) -> QAResult:
-    """Compatibility wrapper for callers with no known external boundary."""
-    return QAResult()
