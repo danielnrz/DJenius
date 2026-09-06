@@ -11,6 +11,7 @@ from djenius.core.phrase_edit import (
     align_internal_edit_boundaries,
     internal_edit_overlap_sec,
 )
+from djenius.core.performance import plan_performance_timeline
 from djenius.core.models import TrackAnalysis, TrackMetadata, TrackProfile
 
 
@@ -34,6 +35,16 @@ def test_phrase_cut_keeps_outgoing_audio_until_the_actual_seam():
 
 def test_internal_edit_uses_a_bounded_micro_seam():
     assert 0.005 <= internal_edit_overlap_sec() <= 0.080
+
+
+def test_internal_edit_prefers_low_vocal_structural_candidate():
+    source = _track([0.0, 4.0, 4.5, 5.0, 8.0])
+    source.analysis.vocal_regions = [(4.3, 4.7)]
+    source.analysis.phrase_boundaries = [4.0, 5.0]
+    target = _track([0.0, 4.0, 4.5, 5.0, 8.0])
+    alignment = align_internal_edit_boundaries(source, target, 4.5, 4.5)
+    assert alignment.source_boundary_sec in {4.0, 5.0}
+    assert alignment.source_boundary_sec != 4.5
 
 
 def test_internal_edit_snaps_to_nearby_bar_boundaries():
