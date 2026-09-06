@@ -25,16 +25,6 @@ class InternalEditQuality:
     reason: str
 
 
-@dataclass(frozen=True)
-class VariatePlan:
-    operation: str
-    source_boundary: float
-    target_boundary: float
-    safe_source: bool
-    safe_target: bool
-    seam_length: float
-
-
 def _safe_candidate(
     track,
     value: float,
