@@ -74,6 +74,10 @@ temp/
 cache/
 .caches/
 
+# Local certification and listening artifacts
+CERTIFICATION_REPORT.md
+LISTENING_REVIEW.md
+
 # Secrets
 .env
 .env.*
