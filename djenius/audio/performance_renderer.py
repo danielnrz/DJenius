@@ -161,8 +161,39 @@ def render_performance_mix(
                 len(previous_segment), len(current_stereo),
                 max(1, int(round(transition.overlap_duration_sec * sample_rate))),
             )
-            output_start = len(output) - overlap
             source_tail = previous_segment
+            source_boundary = None
+            source_left = None
+            if transition.execution_mode == "section_edit" and transition.source_edit_boundary_sec > 0:
+                source_track_audio = audio[previous_appearance.segment.track_id]
+                source_boundary_sec = min(transition.source_edit_boundary_sec, tracks[previous_appearance.segment.track_id].duration_sec)
+                source_boundary = min(
+                    len(source_track_audio),
+                    max(0, int(round(source_boundary_sec * sample_rate))),
+                )
+                original_previous_end = min(
+                    len(source_track_audio),
+                    max(0, int(round(previous_appearance.segment.source_end_sec * sample_rate))),
+                )
+                trim_samples = original_previous_end - source_boundary
+                if trim_samples > 0:
+                    if trim_samples >= len(output) or trim_samples > len(previous_segment):
+                        execution_operation = "declared_transition_fallback"
+                        execution_fallback_reason = (
+                            execution_fallback_reason or
+                            "section edit declined: resolved source boundary precedes rendered material"
+                        )
+                    else:
+                        # Physical truncation: remove the tail between resolved boundary and original end
+                        output = output[:-trim_samples]
+                        # Update source_tail to reflect the new boundary
+                        source_tail = source_tail[:-trim_samples] if len(source_tail) > trim_samples else source_tail[:0]
+                if execution_operation == "phrase_cut_internal_section_edit":
+                    source_left = max(0, source_boundary - overlap)
+                    source_tail = _to_stereo(source_track_audio[source_left:source_boundary]).astype(np.float32)
+                    if len(source_tail) < overlap:
+                        source_tail = previous_segment[-overlap:]
+            output_start = len(output) - overlap
             preparation_samples = min(
                 max(0, int(round(transition.preparation_duration_sec * sample_rate))),
                 max(0, output_start),
@@ -185,7 +216,7 @@ def render_performance_mix(
             target_preparation_audit: dict | None = None
             target_base_offset = max(
                 0,
-                int(round(transition.target_start_sec * sample_rate)) - left,
+                int(round((transition.target_edit_boundary_sec if transition.execution_mode == "section_edit" and transition.target_edit_boundary_sec > 0 else transition.target_start_sec) * sample_rate)) - left,
             )
             if (
                 preparation_samples
@@ -283,16 +314,49 @@ def render_performance_mix(
             target_consumed_total = target_base_offset + target_preparation_samples + target_consumed
             output = np.concatenate([output[:-overlap], _to_stereo(transition_audio), current_stereo[target_consumed_total:]], axis=0)
             out_start = output_start
+            # Compute the authoritative source boundary for provenance.  When
+            # a section edit physically truncates the source, the renderer's
+            # source_end_sample must reflect the actual rendered boundary, not
+            # the planner's declared interval.
+            resolved_source_boundary = source_boundary
+            if transition.execution_mode == "section_edit" and source_boundary is not None and trim_samples > 0 and trim_samples < len(output):
+                # Physical truncation occurred; report the actual rendered
+                # boundary in provenance coordinates.
+                resolved_source_boundary = source_boundary
+
             events.append({
                 "type": "performance_transition",
                 "source_appearance_id": timeline.appearances[index - 1].id,
                 "target_appearance_id": appearance.id,
                 "source_track_id": timeline.appearances[index - 1].segment.track_id,
                 "target_track_id": segment.track_id,
-                "source_start_sample": int(round(transition.source_start_sec * sample_rate)),
-                "source_end_sample": int(round(transition.source_end_sec * sample_rate)),
-                "target_start_sample": int(round(transition.target_start_sec * sample_rate)) + target_preparation_samples,
-                "target_end_sample": int(round(transition.target_start_sec * sample_rate)) + target_preparation_samples + target_consumed,
+                    # Transition sample fields are planned with the track's
+                    # analysis rate; derive renderer-audit coordinates at the
+                    # actual output sample rate instead.
+                "source_start_sample": (
+                    int(round(previous_appearance.segment.source_start_sec * sample_rate))
+                    if transition.execution_mode == "section_edit" and source_left is not None
+                    else int(round(transition.source_start_sec * sample_rate))
+                ),
+                "source_end_sample": (
+                    resolved_source_boundary
+                    if resolved_source_boundary is not None
+                    else int(round(transition.source_end_sec * sample_rate))
+                ),
+                    "target_start_sample": (
+                        int(round(transition.target_start_sec * sample_rate))
+                        if transition.execution_mode == "section_edit"
+                        else int(round(transition.target_start_sec * sample_rate))
+                    ) + target_preparation_samples,
+                    "target_end_sample": (
+                        int(round(
+                            (transition.target_edit_boundary_sec
+                             if transition.execution_mode == "section_edit" and transition.target_edit_boundary_sec > 0
+                             else transition.target_start_sec) * sample_rate
+                        )) + target_consumed
+                        if transition.execution_mode == "section_edit"
+                        else int(round(transition.target_end_sec * sample_rate))
+                    ) + target_preparation_samples,
                 "output_start_sample": output_start,
                 "output_end_sample": output_start + overlap,
                 "mix_start_sample": output_start,
@@ -343,7 +407,7 @@ def render_performance_mix(
                 "target_vocal_density": transition.target_vocal_density,
                 "requires_time_stretch": transition.requires_stretch,
                 "target_consumed_samples": target_consumed,
-                "target_body_start_sample": int(round(transition.target_start_sec * sample_rate)) + target_preparation_samples + target_consumed,
+                "target_body_start_sample": int(round((transition.target_edit_boundary_sec if transition.execution_mode == "section_edit" and transition.target_edit_boundary_sec > 0 else transition.target_start_sec) * sample_rate)) + target_preparation_samples + target_consumed,
                 "nominal_target_consumed_duration_sec": transition.target_consumed_duration_sec,
                 "target_consumed_duration_sec": round(target_consumed / sample_rate, 6),
                 "target_preparation_consumed_duration_sec": round(target_preparation_samples / sample_rate, 4),

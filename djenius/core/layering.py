@@ -193,11 +193,10 @@ def prepare_layered_events(
         for target_segment in _instrumental_section_options(target, target_app.segment):
             candidate_quality = score_layer_candidate(source, source_app.segment, target, target_segment)
             audits.append({
-                "source_track_id": source.id,
-                "target_track_id": target.id,
-                "source_segment_id": source_app.segment.id,
-                "target_segment_id": target_segment.id,
-                "quality": candidate_quality.to_dict(),
+            "source_track_id": source.id,
+            "target_track_id": target.id,
+            "target_segment_id": target_segment.id,
+            "quality": candidate_quality.to_dict(),
             })
             if candidate_quality.accepted:
                 selected_target_segment = target_segment
@@ -266,12 +265,11 @@ def prepare_layered_events(
                 for target_segment in _instrumental_section_options(target, target_app.segment):
                     candidate_quality = score_layer_candidate(source, source_app.segment, target, target_segment)
                     audits.append({
-                        "source_track_id": source.id,
-                        "target_track_id": target.id,
-                        "source_segment_id": source_app.segment.id,
-                        "target_segment_id": target_segment.id,
-                        "quality": candidate_quality.to_dict(),
-                        "callback": True,
+                    "source_track_id": source.id,
+                    "target_track_id": target.id,
+                    "target_segment_id": target_segment.id,
+                    "quality": candidate_quality.to_dict(),
+                    "callback": True,
                     })
                     if candidate_quality.accepted:
                         selected_target_segment = target_segment

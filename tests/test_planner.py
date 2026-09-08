@@ -11,6 +11,7 @@ from djenius.core.planner import (
     _compute_set_energy_profile,
     _energy_progression_bonus,
     _starting_energy_preference,
+    plan_set,
 )
 
 
@@ -163,3 +164,24 @@ class TestStartingEnergyPreference:
         t = _make_track("mid", 0.5)
         score = _starting_energy_preference(t, EnergyProfile.COOLDOWN)
         assert 0.0 <= score <= 1.0
+
+
+def test_plan_set_relaxes_when_strict_transition_filters_empty():
+    from djenius.core.intent import make_intent
+
+    tracks = [_make_track("source", 0.5), _make_track("target", 0.5)]
+    for track in tracks:
+        track.analysis.vocal_regions = [(0.0, track.duration_sec)]
+    plan = plan_set(
+        tracks,
+        target_duration_sec=300.0,
+        max_tracks=2,
+        intent=make_intent("smooth"),
+        seed=7,
+    )
+
+    assert len(plan.transitions) == 1
+    assert {
+        plan.transitions[0].source_track_id,
+        plan.transitions[0].target_track_id,
+    } == {"source", "target"}

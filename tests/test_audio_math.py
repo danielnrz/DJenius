@@ -81,15 +81,33 @@ class TestSoftClip:
     def test_above_threshold_compressed(self):
         audio = np.array([0.0, 0.5, 1.0, 2.0], dtype=np.float32)
         result = soft_clip(audio, threshold_db=-6.0)
-        # Peaks above threshold should be reduced
         assert abs(result[3]) < abs(audio[3])
-        # Values below threshold unchanged
         assert result[0] == 0.0
 
     def test_preserves_length(self):
         audio = np.random.randn(1000).astype(np.float32) * 0.5
         result = soft_clip(audio)
         assert len(result) == 1000
+
+    def test_continuous_at_threshold(self):
+        from djenius.utils.audio_math import db_to_linear
+        threshold = db_to_linear(-1.0)
+        just_below = np.array([threshold - 1e-6])
+        just_above = np.array([threshold + 1e-6])
+        r_below = soft_clip(just_below, -1.0)
+        r_above = soft_clip(just_above, -1.0)
+        assert abs(r_above[0] - r_below[0]) < 1e-4
+
+    def test_monotonic(self):
+        vals = np.linspace(0.0, 2.0, 500)
+        result = soft_clip(vals, -1.0)
+        assert np.all(np.diff(result) >= -1e-10)
+
+    def test_boundary_equals_threshold(self):
+        from djenius.utils.audio_math import db_to_linear
+        threshold = db_to_linear(-1.0)
+        result = soft_clip(np.array([threshold]), -1.0)
+        np.testing.assert_allclose(result[0], threshold, atol=1e-8)
 
 
 class TestRMSEnergy:

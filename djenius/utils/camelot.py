@@ -150,6 +150,9 @@ def detect_key_from_chroma(chroma: list[float]) -> tuple[str, str, float]:
     if chroma_arr.sum() < 1e-10:
         return ("", "", 0.0)
 
+    if np.std(chroma_arr) < 1e-10:
+        return ("", "", 0.0)
+
     # Normalize
     chroma_arr = chroma_arr / chroma_arr.sum()
 

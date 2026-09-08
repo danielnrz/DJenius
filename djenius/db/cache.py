@@ -125,6 +125,7 @@ class AnalysisCache:
             return None
 
         metadata = TrackMetadata(**json.loads(row[0]))
+        metadata.filepath = filepath
         analysis = TrackAnalysis.from_dict(json.loads(row[1]))
 
         profile = TrackProfile(

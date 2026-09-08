@@ -610,6 +610,11 @@ class PerformanceTransition:
     source_edit_boundary_sec: float = 0.0
     target_edit_boundary_sec: float = 0.0
     micro_crossfade_duration_sec: float = 0.0
+    # V14.3: sample-based boundaries for provenance audit.
+    source_start_sample: int = 0
+    source_end_sample: int = 0
+    target_start_sample: int = 0
+    target_end_sample: int = 0
 
     def to_dict(self) -> dict:
         result = asdict(self)

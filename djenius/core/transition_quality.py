@@ -28,8 +28,10 @@ def playtime_bounds(track: TrackProfile) -> tuple[float, float, float]:
 
 
 def target_entry_limit(track: TrackProfile) -> float:
-    """Keep normal entries near the beginning of the target's musical story."""
-    return min(max(45.0, track.duration_sec * 0.30), 180.0)
+    """Keep normal entries near the beginning of the target's musical story.
+    Clamped to track duration to prevent exceeding short tracks.
+    """
+    return min(max(45.0, track.duration_sec * 0.30), 180.0, track.duration_sec)
 
 
 def score_transition_candidate(

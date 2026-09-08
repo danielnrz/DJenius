@@ -239,7 +239,10 @@ def plan(
         "output/set_plan.json", "--output", "-o",
         help="Output path for the set plan JSON"
     ),
-    duration: float = typer.Option(1800.0, "--duration", "-d", help="Target duration in seconds"),
+    duration: Optional[float] = typer.Option(
+        None, "--duration", "-d",
+        help="Target duration in seconds (overrides any preset default)",
+    ),
     energy: str = typer.Option(
         "steady", "--energy", "-e",
         help="Energy profile: steady, slow_build, warmup_to_peak, wave, peak_early, peak_late, cooldown"
@@ -285,7 +288,8 @@ def plan(
     # Build intent from request/preset or legacy flags
     intent = None
     effective_energy = energy
-    effective_duration = duration
+    duration_explicit = duration is not None
+    effective_duration: float = duration if duration_explicit else 1800.0
 
     if request:
         intent = parse_request(request, use_llm=use_llm)
@@ -296,8 +300,7 @@ def plan(
             f"transition={intent.transition_style}, duration={intent.target_duration_sec:.0f}s",
             border_style="blue",
         ))
-        # Use intent-derived values
-        if intent.target_duration_sec:
+        if not duration_explicit and intent.target_duration_sec:
             effective_duration = intent.target_duration_sec
     elif preset:
         intent = make_intent(preset)
@@ -306,7 +309,7 @@ def plan(
             f"Preset: {preset}",
             border_style="blue",
         ))
-        if intent.target_duration_sec:
+        if not duration_explicit and intent.target_duration_sec:
             effective_duration = intent.target_duration_sec
     else:
         console.print(Panel("[bold]Planning DJ Set[/]", border_style="blue"))
@@ -736,7 +739,10 @@ def auto(
         "wav", "--format", "-f",
         help="Output format: wav or mp3"
     ),
-    duration: float = typer.Option(1800.0, "--duration", "-d", help="Target duration in seconds"),
+    duration: Optional[float] = typer.Option(
+        None, "--duration", "-d",
+        help="Target duration in seconds (overrides any preset default)",
+    ),
     energy: str = typer.Option(
         "steady", "--energy", "-e",
         help="Energy profile: steady, slow_build, warmup_to_peak, wave, peak_early, peak_late, cooldown"
@@ -792,7 +798,8 @@ def auto(
     # Build intent from request/preset or legacy flags
     intent = None
     effective_energy = energy
-    effective_duration = duration
+    duration_explicit = duration is not None
+    effective_duration: float = duration if duration_explicit else 1800.0
 
     if request:
         intent = parse_request(request, use_llm=use_llm)
@@ -800,11 +807,13 @@ def auto(
                       f"energy={intent.energy_profile.value if intent.energy_profile else 'auto'}, "
                       f"transition={intent.transition_style}, "
                       f"duration={intent.target_duration_sec:.0f}s")
-        if intent.target_duration_sec:
+        if not duration_explicit and intent.target_duration_sec:
             effective_duration = intent.target_duration_sec
     elif preset:
         intent = make_intent(preset)
         console.print(f"\n[bold blue]Using preset:[/] {preset}")
+        if not duration_explicit and intent.target_duration_sec:
+            effective_duration = intent.target_duration_sec
 
     # Step 1: Scan
     console.print("\n[bold blue]1. Scanning library...[/]")

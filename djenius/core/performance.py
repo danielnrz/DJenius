@@ -730,6 +730,7 @@ def plan_performance_timeline(
     desired_variety = float(intent.desired_variety) if intent else 0.35
     appearances: list[PerformanceAppearance] = []
     track_by_id = {track.id: track for track in tracks}
+    track_lengths = {track.id: int(track.duration_sec * track.metadata.sample_rate) for track in tracks}
 
     def boundary_directive(index: int) -> dict:
         """Return the blueprint directive for the boundary before index."""
@@ -1058,11 +1059,11 @@ def plan_performance_timeline(
             directive["same_track"] = previous.segment.track_id == appearance.segment.track_id
             boundary = direction[index - 1] if index - 1 < len(direction) else transition_direction(performance_states, index - 1)
             decision = str(directive.get("blueprint_decision", "SWITCH")).upper()
-            contiguous_same_track = (
-                decision == "STAY"
-                and previous.segment.track_id == appearance.segment.track_id
+            physically_contiguous_same_track = (
+                previous.segment.track_id == appearance.segment.track_id
                 and abs(appearance.segment.source_start_sec - previous.segment.source_end_sec) <= 0.5
             )
+            contiguous_same_track = decision == "STAY" and physically_contiguous_same_track
             pair = score_segment_pair(
                 previous_track, previous.segment, current_track, appearance.segment,
                 style=performance_style, intent=intent,
@@ -1092,7 +1093,7 @@ def plan_performance_timeline(
             execution_mode = "continuation" if contiguous_same_track else (
                 "section_edit" if decision == "VARIATE" and same_track else "transition"
             )
-            if execution_mode == "section_edit" and internal_quality and internal_quality.quality_class in {"SEAMLESS", "GOOD"}:
+            if execution_mode == "section_edit" and internal_quality and internal_quality.quality_class in {"SEAMLESS", "GOOD"} and internal_alignment and internal_alignment.aligned:
                 # A safe same-track VARIATE is an internal remix edit.  Keep
                 # it phrase-aligned and explicit instead of rendering a
                 # generic fade that makes the same record sound restarted.
@@ -1107,11 +1108,33 @@ def plan_performance_timeline(
                 # not discarded as if this were a DJ overlap.
                 actual_overlap = min(actual_overlap, internal_edit_overlap_sec())
             elif execution_mode == "section_edit":
-                execution_mode = "transition"
-                pair.technique_reason = (
-                    (internal_quality.reason if internal_quality else "internal edit evidence unavailable")
-                    + "; fell back to a safe transition"
+                # A declined same-track VARIATE is still a STAY: replace the
+                # selected reprise with the next physically contiguous region
+                # rather than rendering a crossfade that changes the request.
+                continuation = min(
+                    (
+                        candidate for candidate in segments.get(previous.segment.track_id, [])
+                        if abs(candidate.source_start_sec - previous.segment.source_end_sec) <= 0.5
+                    ),
+                    key=lambda candidate: (abs(candidate.source_start_sec - previous.segment.source_end_sec), candidate.id),
+                    default=None,
                 )
+                if continuation is not None:
+                    appearance.segment = continuation
+                    physically_contiguous_same_track = True
+                    execution_mode = "continuation"
+                    pair.technique_reason = "requested VARIATE; no safe compatible internal edit; fallback STAY"
+                    appearance.output_start_sec = previous.output_end_sec
+                else:
+                    # Decline the VARIATE appearance rather than replaying the
+                    # previous source interval.  The existing timeline
+                    # mechanism permits ending the plan at the last legal
+                    # appearance; that is a true STAY decline, not a mix.
+                    appearances.pop()
+                    break
+                internal_alignment = None
+                internal_quality = None
+                pair.technique_reason = "requested VARIATE; no safe internal edit; using forward contiguous STAY"
             if execution_mode == "continuation":
                 actual_overlap = 0.0
             appearance.output_start_sec = (
@@ -1147,16 +1170,71 @@ def plan_performance_timeline(
             )
             if execution_mode == "continuation":
                 preparation_ops = []
+            track_lengths = {
+                track.id: int(track.duration_sec * track.metadata.sample_rate)
+                for track in tracks
+            }
+            # Compute absolute source/target coordinates.  The source side is
+            # always the previous appearance; the target side is the current
+            # appearance.  Section-edit boundaries are clamped within their
+            # respective segments before deriving the physical intervals.
+            src_start_sec = round(max(previous.segment.source_start_sec, previous.segment.source_end_sec - actual_overlap), 4)
+            src_end_sec = round(previous.segment.source_end_sec, 4)
+            tgt_start_sec = round(appearance.segment.source_start_sec, 4)
+            tgt_end_sec = round(appearance.segment.source_start_sec + target_consumed, 4)
+            if execution_mode == "section_edit" and internal_alignment:
+                source_boundary_sec = min(
+                    max(internal_alignment.source_boundary_sec, previous.segment.source_start_sec),
+                    previous.segment.source_end_sec,
+                )
+                target_boundary_sec = min(
+                    max(internal_alignment.target_boundary_sec, appearance.segment.source_start_sec),
+                    appearance.segment.source_end_sec,
+                )
+                src_start_sec = round(max(previous.segment.source_start_sec, source_boundary_sec - actual_overlap), 4)
+                src_end_sec = round(source_boundary_sec, 4)
+                tgt_start_sec = round(target_boundary_sec, 4)
+                tgt_end_sec = round(min(appearance.segment.source_end_sec, target_boundary_sec + target_consumed), 4)
+            if execution_mode == "continuation":
+                src_start_sec = round(max(previous.segment.source_start_sec, previous.segment.source_end_sec - actual_overlap), 4)
+                src_end_sec = round(previous.segment.source_end_sec, 4)
+                tgt_start_sec = round(appearance.segment.source_start_sec, 4)
+                tgt_end_sec = round(appearance.segment.source_start_sec + target_consumed, 4)
+
             transitions.append(PerformanceTransition(
                 position=index,
                 source_appearance_id=previous.id,
                 target_appearance_id=appearance.id,
                 transition_type=pair.transition_type,
                 overlap_duration_sec=actual_overlap,
-                source_start_sec=round(previous.segment.source_end_sec - actual_overlap, 4),
-                source_end_sec=round(previous.segment.source_end_sec, 4),
-                target_start_sec=round(appearance.segment.source_start_sec, 4),
-                target_end_sec=round(appearance.segment.source_start_sec + target_consumed, 4),
+                source_start_sec=src_start_sec,
+                source_end_sec=src_end_sec,
+                target_start_sec=tgt_start_sec,
+                target_end_sec=tgt_end_sec,
+                source_start_sample=int(round(
+                    max(0, min(
+                        src_start_sec,
+                        previous_track.duration_sec
+                    )) * previous_track.metadata.sample_rate
+                )),
+                source_end_sample=int(round(
+                    max(0, min(
+                        src_end_sec,
+                        previous_track.duration_sec
+                    )) * previous_track.metadata.sample_rate
+                )),
+                target_start_sample=int(round(
+                    max(0, min(
+                        tgt_start_sec,
+                        current_track.duration_sec
+                    )) * current_track.metadata.sample_rate
+                )),
+                target_end_sample=int(round(
+                    max(0, min(
+                        tgt_end_sec,
+                        current_track.duration_sec
+                    )) * current_track.metadata.sample_rate
+                )),
                 confidence=round(min(previous.segment.confidence, appearance.segment.confidence), 3),
                 technical_score=pair.technical_score,
                 explanation=pair.explanation,
@@ -1214,8 +1292,19 @@ def plan_performance_timeline(
                 ),
                 edit_quality_score=(internal_quality.score if internal_quality else 0.0),
                 edit_quality_class=(internal_quality.quality_class if internal_quality else ""),
-                source_edit_boundary_sec=(internal_alignment.source_boundary_sec if internal_alignment else 0.0),
-                target_edit_boundary_sec=(internal_alignment.target_boundary_sec if internal_alignment else 0.0),
+                source_edit_boundary_sec=round(
+                    min(
+                        max(internal_alignment.source_boundary_sec, previous.segment.source_start_sec),
+                        previous.segment.source_end_sec,
+                    )
+                    if execution_mode == "section_edit" and internal_alignment
+                    else (internal_alignment.source_boundary_sec if internal_alignment else 0.0),
+                    4,
+                ),
+                target_edit_boundary_sec=round(
+                    min(internal_alignment.target_boundary_sec, current_track.duration_sec)
+                    if execution_mode == "section_edit" and internal_alignment else (internal_alignment.target_boundary_sec if internal_alignment else 0.0), 4
+                ),
                 micro_crossfade_duration_sec=(actual_overlap if internal_quality and execution_mode == "section_edit" else 0.0),
             ))
             recent_techniques.append(pair.technique_name)
@@ -1327,8 +1416,9 @@ def validate_performance_timeline(
             ) > source_overlap_tolerance_sec:
                 violations.append(f"continuation {index + 1} is not source-contiguous")
             continue
-        if not (source.segment.source_start_sec - 0.01 <= transition.source_start_sec <= transition.source_end_sec <= source.segment.source_end_sec + 0.01):
-            violations.append(f"transition {index + 1} source interval is outside segment")
+        src_ok = source.segment.source_start_sec - 0.01 <= transition.source_start_sec <= transition.source_end_sec <= source.segment.source_end_sec + 0.01
+        if not src_ok:
+            violations.append(f"transition {index + 1} source interval is outside segment (src_start={transition.source_start_sec:.4f}, src_end={transition.source_end_sec:.4f}, seg_start={source.segment.source_start_sec:.4f}, seg_end={source.segment.source_end_sec:.4f}, tol_min={source.segment.source_start_sec - 0.01:.4f}, tol_max={source.segment.source_end_sec + 0.01:.4f})")
         if not (target.segment.source_start_sec - 0.01 <= transition.target_start_sec <= transition.target_end_sec <= target.segment.source_end_sec + 0.01):
             violations.append(f"transition {index + 1} target interval is outside segment")
     if abs(timeline.total_duration_sec - max((item.output_end_sec for item in timeline.appearances), default=0.0)) > 0.01:

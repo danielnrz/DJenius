@@ -18,6 +18,12 @@ from djenius.core.models import (
     TrackProfile, SetPlan, TransitionPlan, TransitionType,
     CompatibilityScore, EnergyProfile,
 )
+from djenius.audio.qa.macro_structure import (
+    OVERLAPPING_TYPES,
+    MIN_OVERLAP_FOR_FADE,
+    MAX_FADE_DOMINANCE,
+)
+
 from djenius.core.scorer import (
     score_compatibility,
     compute_preference_bonuses,
@@ -455,12 +461,14 @@ def _filter_tracks_by_intent(
 
         filtered.append(track)
 
-    # Safety: if filtering removed everything, return original
+    # Safety: a hard range must never empty a non-empty library.
     if len(filtered) < 2:
-        logger.warning(
-            "Intent filtering reduced tracks from %d to %d. Using all tracks.",
-            len(tracks), len(filtered),
-        )
+        if tracks:
+            logger.warning(
+                "Intent filtering reduced tracks from %d to %d; ranges were "
+                "too restrictive for this library, so all tracks are used.",
+                len(tracks), len(filtered),
+            )
         return tracks
 
     return filtered
@@ -967,8 +975,9 @@ def _build_set_plan(
         target_entry_limit,
     )
 
-    transitions = []
+    transitions: list[TransitionPlan] = []
     total_duration = 0.0
+    human_readable_reasons: list[str] = []
     transition_types = allowed_transition_types or list(TransitionType)
 
     for i in range(len(best_path) - 1):
@@ -1013,103 +1022,161 @@ def _build_set_plan(
                 if transition_type in conservative_types
             ] or [TransitionType.CROSSFADE]
 
-        for transition_type in candidate_types:
-            for length_bars in _length_options(
-                transition_type, intent, max_transition_bars,
-            ):
-                overlap = bar_duration * length_bars
-                requires_stretch = (
-                    transition_type == TransitionType.BEATMATCHED_BLEND
-                    and abs(source.bpm - target.bpm) / max(source.bpm, 1.0) > 0.01
-                    and compat.tempo_score > 0.5
-                )
-                target_bpm = source.bpm if requires_stretch else 0.0
-                target_consumed = _target_consumed_seconds(
-                    transition_type, overlap, source.bpm, target.bpm, requires_stretch,
-                )
-                earliest_exit = incoming_cursor + minimum_body
-                latest_exit = min(
-                    incoming_cursor + maximum_body,
-                    source.duration_sec - overlap,
-                )
-                entry_limit = min(
-                    target_entry_limit(target),
-                    target.duration_sec - target_consumed - 20.0,
-                )
-                exits = [
-                    point for point in source_candidates
-                    if earliest_exit <= point <= latest_exit
-                ]
-                entries = [
-                    point for point in target_candidates
-                    if 0.0 <= point <= entry_limit
-                ]
-                for source_exit in exits:
-                    for target_entry in entries:
-                        quality, recipe, context = score_transition_candidate(
-                            source,
-                            target,
-                            source_exit,
-                            target_entry,
-                            overlap,
-                            transition_type,
-                            incoming_source_cursor=incoming_cursor,
-                            intent=intent,
-                            energy_profile=energy_profile,
+        def _generate(strict: bool, score_scale: float = 1.0):
+            nonlocal candidate_plans
+            for transition_type in candidate_types:
+                for length_bars in _length_options(
+                    transition_type, intent, max_transition_bars,
+                ):
+                    overlap = bar_duration * length_bars
+                    requires_stretch = (
+                        transition_type == TransitionType.BEATMATCHED_BLEND
+                        and abs(source.bpm - target.bpm) / max(source.bpm, 1.0) > 0.01
+                        and compat.tempo_score > 0.5
+                    )
+                    target_bpm = source.bpm if requires_stretch else 0.0
+                    target_consumed = _target_consumed_seconds(
+                        transition_type, overlap, source.bpm, target.bpm, requires_stretch,
+                    )
+                    if strict:
+                        earliest_exit = incoming_cursor + minimum_body
+                        latest_exit = min(
+                            incoming_cursor + maximum_body,
+                            source.duration_sec - overlap,
                         )
-                        if (
-                            intent
-                            and intent.effective_vocal_preference() == "vocal_safe"
-                            and context["vocal_collision"] > 0.16
-                            and transition_type not in (
+                        entry_limit = min(
+                            target_entry_limit(target),
+                            target.duration_sec - target_consumed - 20.0,
+                        )
+                    else:
+                        earliest_exit = incoming_cursor
+                        latest_exit = source.duration_sec - overlap
+                        entry_limit = target.duration_sec - target_consumed
+                    exits = [
+                        point for point in source_candidates
+                        if earliest_exit <= point <= latest_exit
+                    ]
+                    entries = [
+                        point for point in target_candidates
+                        if 0.0 <= point <= entry_limit
+                    ]
+                    for source_exit in exits:
+                        for target_entry in entries:
+                            quality, recipe, context = score_transition_candidate(
+                                source,
+                                target,
+                                source_exit,
+                                target_entry,
+                                overlap,
+                                transition_type,
+                                incoming_source_cursor=incoming_cursor,
+                                intent=intent,
+                                energy_profile=energy_profile,
+                            )
+                            if strict:
+                                if (
+                                    intent
+                                    and intent.effective_vocal_preference() == "vocal_safe"
+                                    and context["vocal_collision"] > 0.16
+                                    and transition_type not in (
+                                        TransitionType.PHRASE_CUT,
+                                        TransitionType.MASHUP,
+                                    )
+                                ):
+                                    continue
+                                if (
+                                    intent
+                                    and intent.effective_transition_style() == "smooth"
+                                    and context["vocal_collision"] > 0.25
+                                ):
+                                    continue
+                                if context["predicted_transition_trough_db"] > 3.5:
+                                    continue
+                                if (
+                                    energy_profile == EnergyProfile.WARMUP_TO_PEAK
+                                    and i < max(1, int((len(best_path) - 1) * 0.7))
+                                    and context["energy_delta_db"] < -2.5
+                                ):
+                                    continue
+                            aggressive = transition_type in (
+                                TransitionType.BASS_SWAP,
                                 TransitionType.PHRASE_CUT,
+                                TransitionType.ECHO_OUT,
+                                TransitionType.LOOP_BLEND,
                                 TransitionType.MASHUP,
                             )
-                        ):
-                            continue
-                        if (
-                            intent
-                            and intent.effective_transition_style() == "smooth"
-                            and context["vocal_collision"] > 0.25
-                        ):
-                            continue
-                        if context["predicted_transition_trough_db"] > 3.5:
-                            continue
-                        if (
-                            energy_profile == EnergyProfile.WARMUP_TO_PEAK
-                            and i < max(1, int((len(best_path) - 1) * 0.7))
-                            and context["energy_delta_db"] < -2.5
-                        ):
-                            continue
-                        aggressive = transition_type in (
-                            TransitionType.BASS_SWAP,
-                            TransitionType.PHRASE_CUT,
-                            TransitionType.ECHO_OUT,
-                            TransitionType.LOOP_BLEND,
-                            TransitionType.MASHUP,
-                        )
-                        selection_score = quality.overall_score
-                        if aggressive and recipe.confidence < 0.62:
-                            selection_score *= 0.65
-                        candidate_plans.append((
-                            selection_score,
-                            source_exit,
-                            target_entry,
-                            overlap,
-                            length_bars,
-                            transition_type,
-                            requires_stretch,
-                            target_bpm,
-                            quality,
-                            recipe,
-                            context,
-                        ))
+                            selection_score = quality.overall_score * score_scale
+                            if strict and aggressive and recipe.confidence < 0.62:
+                                selection_score *= 0.65
+                            candidate_plans.append((
+                                selection_score,
+                                source_exit,
+                                target_entry,
+                                overlap,
+                                length_bars,
+                                transition_type,
+                                requires_stretch,
+                                target_bpm,
+                                quality,
+                                recipe,
+                                context,
+                            ))
+
+        _generate(strict=True)
 
         if not candidate_plans:
-            raise ValueError(
-                f"No forward transition window remains in {source.title}: "
-                f"cursor {incoming_cursor:.3f}s, duration {source.duration_sec:.3f}s"
+            _generate(strict=False, score_scale=0.9)
+            if candidate_plans:
+                logger.warning(
+                    "Relaxed transition quality filters for %s -> %s",
+                    source.title, target.title,
+                )
+
+        if not candidate_plans:
+            fallback_type = (
+                TransitionType.CROSSFADE
+                if TransitionType.CROSSFADE in candidate_types
+                else candidate_types[0]
             )
+            fallback_overlap = min(
+                bar_duration * 4.0,
+                source.duration_sec - incoming_cursor,
+                target.duration_sec,
+            )
+            if fallback_overlap <= 0.05:
+                logger.warning(
+                    "No forward transition window remains in %s: "
+                    "cursor %.3fs, duration %.3fs. Truncating set.",
+                    source.title, incoming_cursor, source.duration_sec,
+                )
+                break
+            source_exit = min(incoming_cursor, source.duration_sec - fallback_overlap)
+            target_entry = 0.0
+            quality, recipe, context = score_transition_candidate(
+                source, target, source_exit, target_entry, fallback_overlap,
+                fallback_type,
+                incoming_source_cursor=incoming_cursor,
+                intent=intent,
+                energy_profile=energy_profile,
+            )
+            recipe.confidence = min(recipe.confidence, 0.25)
+            recipe.reasoning = (
+                "Bounded fallback transition after strict and relaxed candidate "
+                "searches found no valid musical window. " + recipe.reasoning
+            )
+            candidate_plans.append((
+                quality.overall_score * 0.25,
+                source_exit,
+                target_entry,
+                fallback_overlap,
+                1,
+                fallback_type,
+                False,
+                0.0,
+                quality,
+                recipe,
+                context,
+            ))
 
         candidate_plans.sort(
             key=lambda item: (
@@ -1184,6 +1251,34 @@ def _build_set_plan(
     elif best_path:
         total_duration = best_path[0].duration_sec
 
+
+    # ── Fade dominance check ────────────────────────────────────────────
+    # Ensure total overlap from overlapping transition types stays within
+    # MAX_FADE_DOMINANCE (20%) of total mix duration.
+    # Uses the same thresholds as djenius.audio.qa.macro_structure.
+    overlap_total = 0.0
+    for t in transitions:
+        ttype = getattr(t, "transition_type", None)
+        ttype_val = (ttype.value.lower() if hasattr(ttype, "value") else str(ttype)).lower()
+        overlap = getattr(t, "overlap_duration", 0.0)
+        if ttype_val in OVERLAPPING_TYPES and overlap >= MIN_OVERLAP_FOR_FADE:
+            overlap_total += overlap
+
+    base_score = float(
+        np.mean([t.quality_score.overall_score for t in transitions if t.quality_score])
+        if transitions else 0.0
+    )
+    if total_duration > 0:
+        fade_dominance = overlap_total / total_duration
+        if fade_dominance > MAX_FADE_DOMINANCE:
+            excess = fade_dominance - MAX_FADE_DOMINANCE
+            penalty = excess * base_score * 0.5
+            base_score = max(0.0, base_score - penalty)
+            human_readable_reasons.append(
+                f"Fade dominance {round(fade_dominance, 3)} exceeds MAX_FADE_DOMINANCE {MAX_FADE_DOMINANCE}; "
+                f"applied {round(excess, 3)} excess with {round(penalty, 3)} score penalty."
+            )
+
     return SetPlan(
         tracks=best_path,
         transitions=transitions,
@@ -1194,14 +1289,11 @@ def _build_set_plan(
             float(np.mean([t.confidence for t in transitions])) if transitions else 0.0,
             3,
         ),
-        score=round(
-            float(np.mean([t.quality_score.overall_score for t in transitions
-                          if t.quality_score])) if transitions else 0.0,
-            3,
-        ),
+        score=round(base_score, 3),
         final_track_end_time=(
             round(final_track_end_time, 3) if final_track_end_time is not None else None
         ),
+        human_readable_reasons=human_readable_reasons,
     )
 
 
