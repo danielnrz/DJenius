@@ -213,3 +213,11 @@ djenius/
 ## License
 
 MIT License - see [LICENSE](LICENSE) for details.
+
+## Known Limitations
+
+- **Automatic Analysis Accuracy:** BPM, key, and downbeat detection rely on heuristic analysis and may occasionally be incorrect (e.g., half/double tempo errors or minor key mismatches).
+- **Vocal Collision Avoidance:** The planner attempts to avoid vocal-on-vocal overlapping during transitions, but may not be perfect due to the probabilistic nature of vocal detection.
+- **Stem Separation (Optional):** Requires heavy local AI models (Demucs) and sufficient memory. May fail gracefully on tracks with unusual structures.
+- **Cache Invalidations:** Manual edits to the cached music metadata overlay automatic results, but renaming or moving a file clears its cache since it uses content hashing.
+

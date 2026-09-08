@@ -483,8 +483,8 @@ class TestSampleExactA:
         tet_1 = 0.0
         od = 0.3
 
-        a_audio = _const_audio(dur_a, 1.0)
-        b_audio = _const_audio(dur_b, 2.0)
+        a_audio = _const_audio(dur_a, 0.2)
+        b_audio = _const_audio(dur_b, 0.8)
 
         track_a = _make_track("a", "A", "/mock/a.wav", dur_a)
         track_b = _make_track("b", "B", "/mock/b.wav", dur_b)
@@ -501,7 +501,9 @@ class TestSampleExactA:
         output_path = str(tmp_path / "out.wav")
         mock_load = _make_mock_load({"/mock/a.wav": a_audio, "/mock/b.wav": b_audio})
 
-        with mock.patch("djenius.audio.renderer._load_audio", side_effect=mock_load):
+        with mock.patch("djenius.audio.renderer._load_audio", side_effect=mock_load), \
+             mock.patch("djenius.audio.renderer.normalize_lufs", lambda x, *args, **kwargs: x), \
+             mock.patch("djenius.audio.renderer.soft_clip", lambda x, *args, **kwargs: x):
             result = render_mix(plan, output_path, "wav", sample_rate=SR)
 
         out, _ = sf.read(output_path)
@@ -533,8 +535,8 @@ class TestSampleExactB:
         tet_1 = 0.0
         od = 0.2
 
-        a_audio = _const_audio(dur_a, 1.0)
-        b_audio = _const_audio(dur_b, 2.0)
+        a_audio = _const_audio(dur_a, 0.2)
+        b_audio = _const_audio(dur_b, 0.8)
 
         track_a = _make_track("a", "A", "/mock/a.wav", dur_a)
         track_b = _make_track("b", "B", "/mock/b.wav", dur_b)
@@ -551,7 +553,9 @@ class TestSampleExactB:
         output_path = str(tmp_path / "out.wav")
         mock_load = _make_mock_load({"/mock/a.wav": a_audio, "/mock/b.wav": b_audio})
 
-        with mock.patch("djenius.audio.renderer._load_audio", side_effect=mock_load):
+        with mock.patch("djenius.audio.renderer._load_audio", side_effect=mock_load), \
+             mock.patch("djenius.audio.renderer.normalize_lufs", lambda x, *args, **kwargs: x), \
+             mock.patch("djenius.audio.renderer.soft_clip", lambda x, *args, **kwargs: x):
             result = render_mix(plan, output_path, "wav", sample_rate=SR)
 
         with open(result["timeline_diagnostics_path"]) as f:
@@ -586,8 +590,8 @@ class TestSampleExactC:
         # This lets us verify the transition uses the right part of source.
         a_n = int(dur_a * SR)
         a_audio = np.full((a_n, 2), 0.5, dtype=np.float32)
-        a_audio[set_0_s:] = 1.0
-        b_audio = _const_audio(dur_b, 2.0)
+        a_audio[set_0_s:] = 0.2
+        b_audio = _const_audio(dur_b, 0.8)
 
         track_a = _make_track("a", "A", "/mock/a.wav", dur_a)
         track_b = _make_track("b", "B", "/mock/b.wav", dur_b)
@@ -604,7 +608,9 @@ class TestSampleExactC:
         output_path = str(tmp_path / "out.wav")
         mock_load = _make_mock_load({"/mock/a.wav": a_audio, "/mock/b.wav": b_audio})
 
-        with mock.patch("djenius.audio.renderer._load_audio", side_effect=mock_load):
+        with mock.patch("djenius.audio.renderer._load_audio", side_effect=mock_load), \
+             mock.patch("djenius.audio.renderer.normalize_lufs", lambda x, *args, **kwargs: x), \
+             mock.patch("djenius.audio.renderer.soft_clip", lambda x, *args, **kwargs: x):
             result = render_mix(plan, output_path, "wav", sample_rate=SR)
 
         with open(result["timeline_diagnostics_path"]) as f:
@@ -636,9 +642,11 @@ class TestSampleExactC:
             "Transition region is silent — crossfade produced no audio"
         )
         left_ch = trans_region[:, 0]
+
+
         diffs = np.diff(left_ch)
         assert np.sum(diffs > 0) > np.sum(diffs < 0), (
-            "Transition from source(1.0) to target(2.0) "
+            "Transition from source(0.2) to target(0.8) "
             "should show overall increasing trend"
         )
 
@@ -658,11 +666,11 @@ class TestSampleExactD:
         dur_a = 1.0
         dur_b = 1.0
 
-        a_audio = _const_audio(dur_a, 1.0)
+        a_audio = _const_audio(dur_a, 0.2)
         # Target: zeros for first tet_1_s samples, then 2.0
         b_n = int(dur_b * SR)
         b_audio = np.zeros(b_n, dtype=np.float32)
-        b_audio[tet_1_s:] = 2.0
+        b_audio[tet_1_s:] = 0.8
 
         track_a = _make_track("a", "A", "/mock/a.wav", dur_a)
         track_b = _make_track("b", "B", "/mock/b.wav", dur_b)
@@ -679,7 +687,9 @@ class TestSampleExactD:
         output_path = str(tmp_path / "out.wav")
         mock_load = _make_mock_load({"/mock/a.wav": a_audio, "/mock/b.wav": b_audio})
 
-        with mock.patch("djenius.audio.renderer._load_audio", side_effect=mock_load):
+        with mock.patch("djenius.audio.renderer._load_audio", side_effect=mock_load), \
+             mock.patch("djenius.audio.renderer.normalize_lufs", lambda x, *args, **kwargs: x), \
+             mock.patch("djenius.audio.renderer.soft_clip", lambda x, *args, **kwargs: x):
             result = render_mix(plan, output_path, "wav", sample_rate=SR)
 
         with open(result["timeline_diagnostics_path"]) as f:
@@ -705,6 +715,8 @@ class TestSampleExactD:
             "Transition region is silent — crossfade produced no audio"
         )
         left_ch = trans_region[:, 0]
+
+
         diffs = np.diff(left_ch)
         assert np.sum(diffs > 0) > np.sum(diffs < 0), (
             "Crossfade from source(1.0) to target(0.0→2.0) "
@@ -739,7 +751,7 @@ class TestSampleExactE:
         dur_a = 1.0
         dur_b = 1.0
 
-        a_audio = _const_audio(dur_a, 1.0)
+        a_audio = _const_audio(dur_a, 0.2)
         # Distinct value ramp to verify exact sample position
         b_n = int(dur_b * SR)
         b_audio = np.linspace(0.0, 10.0, b_n, dtype=np.float32)
@@ -759,7 +771,9 @@ class TestSampleExactE:
         output_path = str(tmp_path / "out.wav")
         mock_load = _make_mock_load({"/mock/a.wav": a_audio, "/mock/b.wav": b_audio})
 
-        with mock.patch("djenius.audio.renderer._load_audio", side_effect=mock_load):
+        with mock.patch("djenius.audio.renderer._load_audio", side_effect=mock_load), \
+             mock.patch("djenius.audio.renderer.normalize_lufs", lambda x, *args, **kwargs: x), \
+             mock.patch("djenius.audio.renderer.soft_clip", lambda x, *args, **kwargs: x):
             result = render_mix(plan, output_path, "wav", sample_rate=SR)
 
         with open(result["timeline_diagnostics_path"]) as f:
@@ -791,8 +805,8 @@ class TestSampleExactF:
         tet_1 = 0.0
         od = 0.3
 
-        a_audio = _const_audio(dur_a, 1.0)
-        b_audio = _const_audio(dur_b, 2.0)
+        a_audio = _const_audio(dur_a, 0.2)
+        b_audio = _const_audio(dur_b, 0.8)
 
         track_a = _make_track("a", "A", "/mock/a.wav", dur_a)
         track_b = _make_track("b", "B", "/mock/b.wav", dur_b)
@@ -809,7 +823,9 @@ class TestSampleExactF:
         output_path = str(tmp_path / "out.wav")
         mock_load = _make_mock_load({"/mock/a.wav": a_audio, "/mock/b.wav": b_audio})
 
-        with mock.patch("djenius.audio.renderer._load_audio", side_effect=mock_load):
+        with mock.patch("djenius.audio.renderer._load_audio", side_effect=mock_load), \
+             mock.patch("djenius.audio.renderer.normalize_lufs", lambda x, *args, **kwargs: x), \
+             mock.patch("djenius.audio.renderer.soft_clip", lambda x, *args, **kwargs: x):
             result = render_mix(plan, output_path, "wav", sample_rate=SR)
 
         with open(result["timeline_diagnostics_path"]) as f:
@@ -841,8 +857,8 @@ class TestSampleExactG:
         tet_2 = 0.0
         od_1 = 0.1
 
-        a_audio = _const_audio(dur_a, 1.0)
-        b_audio = _const_audio(dur_b, 2.0)
+        a_audio = _const_audio(dur_a, 0.2)
+        b_audio = _const_audio(dur_b, 0.8)
         c_audio = _const_audio(dur_c, 3.0)
 
         track_a = _make_track("a", "A", "/mock/a.wav", dur_a)
@@ -866,7 +882,9 @@ class TestSampleExactG:
             "/mock/c.wav": c_audio,
         })
 
-        with mock.patch("djenius.audio.renderer._load_audio", side_effect=mock_load):
+        with mock.patch("djenius.audio.renderer._load_audio", side_effect=mock_load), \
+             mock.patch("djenius.audio.renderer.normalize_lufs", lambda x, *args, **kwargs: x), \
+             mock.patch("djenius.audio.renderer.soft_clip", lambda x, *args, **kwargs: x):
             result = render_mix(plan, output_path, "wav", sample_rate=SR)
 
         with open(result["timeline_diagnostics_path"]) as f:
@@ -893,8 +911,8 @@ class TestSampleExactH:
         tet_1 = 0.0
         od = 0.3  # But target is only 0.4s, transition wants 0.3s from start
 
-        a_audio = _const_audio(dur_a, 1.0)
-        b_audio = _const_audio(dur_b, 2.0)
+        a_audio = _const_audio(dur_a, 0.2)
+        b_audio = _const_audio(dur_b, 0.8)
 
         track_a = _make_track("a", "A", "/mock/a.wav", dur_a)
         track_b = _make_track("b", "B", "/mock/b.wav", dur_b)
@@ -911,7 +929,9 @@ class TestSampleExactH:
         output_path = str(tmp_path / "out.wav")
         mock_load = _make_mock_load({"/mock/a.wav": a_audio, "/mock/b.wav": b_audio})
 
-        with mock.patch("djenius.audio.renderer._load_audio", side_effect=mock_load):
+        with mock.patch("djenius.audio.renderer._load_audio", side_effect=mock_load), \
+             mock.patch("djenius.audio.renderer.normalize_lufs", lambda x, *args, **kwargs: x), \
+             mock.patch("djenius.audio.renderer.soft_clip", lambda x, *args, **kwargs: x):
             with pytest.raises(ValueError, match="exceeds source EOF"):
                 render_mix(plan, output_path, "wav", sample_rate=SR)
 
@@ -933,8 +953,8 @@ class TestSampleExactI:
         tet_2 = 0.0
         od_1 = 0.15
 
-        a_audio = _const_audio(dur_a, 1.0)
-        b_audio = _const_audio(dur_b, 2.0)
+        a_audio = _const_audio(dur_a, 0.2)
+        b_audio = _const_audio(dur_b, 0.8)
         c_audio = _const_audio(dur_c, 3.0)
 
         track_a = _make_track("a", "A", "/mock/a.wav", dur_a)
@@ -958,7 +978,9 @@ class TestSampleExactI:
             "/mock/c.wav": c_audio,
         })
 
-        with mock.patch("djenius.audio.renderer._load_audio", side_effect=mock_load):
+        with mock.patch("djenius.audio.renderer._load_audio", side_effect=mock_load), \
+             mock.patch("djenius.audio.renderer.normalize_lufs", lambda x, *args, **kwargs: x), \
+             mock.patch("djenius.audio.renderer.soft_clip", lambda x, *args, **kwargs: x):
             result = render_mix(plan, output_path, "wav", sample_rate=SR)
 
         with open(result["timeline_diagnostics_path"]) as f:
@@ -1007,8 +1029,8 @@ class TestSampleExactJ:
         dur_a = 1.0
         dur_b = 1.0
 
-        a_audio = _const_audio(dur_a, 1.0)
-        b_audio = _const_audio(dur_b, 2.0)
+        a_audio = _const_audio(dur_a, 0.2)
+        b_audio = _const_audio(dur_b, 0.8)
         c_audio = _const_audio(dur_c, 3.0)
 
         track_a = _make_track("a", "A", "/mock/a.wav", dur_a)
@@ -1032,7 +1054,9 @@ class TestSampleExactJ:
             "/mock/c.wav": c_audio,
         })
 
-        with mock.patch("djenius.audio.renderer._load_audio", side_effect=mock_load):
+        with mock.patch("djenius.audio.renderer._load_audio", side_effect=mock_load), \
+             mock.patch("djenius.audio.renderer.normalize_lufs", lambda x, *args, **kwargs: x), \
+             mock.patch("djenius.audio.renderer.soft_clip", lambda x, *args, **kwargs: x):
             result = render_mix(plan, output_path, "wav", sample_rate=SR)
 
         with open(result["timeline_diagnostics_path"]) as f:

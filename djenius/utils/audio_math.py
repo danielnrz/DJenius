@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import numpy as np
+import warnings
 
 
 def equal_power_crossfade(n: int) -> tuple[np.ndarray, np.ndarray]:
@@ -42,15 +43,17 @@ def linear_to_db(linear: float) -> float:
 def soft_clip(audio: np.ndarray, threshold_db: float = -1.0) -> np.ndarray:
     """Apply soft clipping to prevent hard digital distortion.
 
-    Uses a smooth tanh-based curve to gently compress peaks above threshold.
+    Uses a continuous, monotonic tanh curve above the threshold so that
+    the output equals the threshold exactly at the boundary and smoothly
+    approaches 1.0 for larger inputs.
     """
     threshold = db_to_linear(threshold_db)
     result = audio.copy()
     mask = np.abs(result) > threshold
-    # Apply tanh compression for values above threshold
     sign = np.sign(result[mask])
-    excess = np.abs(result[mask]) / threshold
-    result[mask] = sign * threshold * np.tanh(excess)
+    headroom = 1.0 - threshold + 1e-10
+    excess = (np.abs(result[mask]) - threshold) / headroom
+    result[mask] = sign * (threshold + headroom * np.tanh(excess))
     return result
 
 
@@ -215,7 +218,9 @@ def normalize_lufs(audio: np.ndarray, sr: int, target_lufs: float = -14.0) -> np
         current_lufs = meter.integrated_loudness(audio_2d)
         if np.isinf(current_lufs) or np.isnan(current_lufs):
             return audio
-        normalized = pyln.normalize.loudness(audio_2d, current_lufs, target_lufs)
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", message="Possible clipped samples in output.")
+            normalized = pyln.normalize.loudness(audio_2d, current_lufs, target_lufs)
     except Exception:
         # Fallback to peak normalization
         peak = np.max(np.abs(audio))

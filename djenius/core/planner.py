@@ -1144,10 +1144,12 @@ def _build_set_plan(
                 target.duration_sec,
             )
             if fallback_overlap <= 0.05:
-                raise ValueError(
-                    f"No forward transition window remains in {source.title}: "
-                    f"cursor {incoming_cursor:.3f}s, duration {source.duration_sec:.3f}s"
+                logger.warning(
+                    "No forward transition window remains in %s: "
+                    "cursor %.3fs, duration %.3fs. Truncating set.",
+                    source.title, incoming_cursor, source.duration_sec,
                 )
+                break
             source_exit = min(incoming_cursor, source.duration_sec - fallback_overlap)
             target_entry = 0.0
             quality, recipe, context = score_transition_candidate(
@@ -1261,18 +1263,17 @@ def _build_set_plan(
         overlap = getattr(t, "overlap_duration", 0.0)
         if ttype_val in OVERLAPPING_TYPES and overlap >= MIN_OVERLAP_FOR_FADE:
             overlap_total += overlap
+
+    base_score = float(
+        np.mean([t.quality_score.overall_score for t in transitions if t.quality_score])
+        if transitions else 0.0
+    )
     if total_duration > 0:
         fade_dominance = overlap_total / total_duration
         if fade_dominance > MAX_FADE_DOMINANCE:
-            # Apply penalty proportional to excess
-            # Compute transition score (same formula as final score computation)
-            transition_score = float(
-                np.mean([t.quality_score.overall_score for t in transitions if t.quality_score])
-                if transitions else 0.0
-            )
             excess = fade_dominance - MAX_FADE_DOMINANCE
-            penalty = excess * transition_score * 0.5  # 50% penalty per 0.1 excess
-            transition_score = max(0.0, transition_score - penalty)
+            penalty = excess * base_score * 0.5
+            base_score = max(0.0, base_score - penalty)
             human_readable_reasons.append(
                 f"Fade dominance {round(fade_dominance, 3)} exceeds MAX_FADE_DOMINANCE {MAX_FADE_DOMINANCE}; "
                 f"applied {round(excess, 3)} excess with {round(penalty, 3)} score penalty."
@@ -1288,11 +1289,7 @@ def _build_set_plan(
             float(np.mean([t.confidence for t in transitions])) if transitions else 0.0,
             3,
         ),
-        score=round(
-            float(np.mean([t.quality_score.overall_score for t in transitions
-                          if t.quality_score])) if transitions else 0.0,
-            3,
-        ),
+        score=round(base_score, 3),
         final_track_end_time=(
             round(final_track_end_time, 3) if final_track_end_time is not None else None
         ),
