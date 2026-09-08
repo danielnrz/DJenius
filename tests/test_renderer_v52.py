@@ -270,13 +270,15 @@ def test_stem_transition_receives_exact_source_offsets():
     assert captured["target_entry_sample"] == 300
 
 
-def test_planner_rejects_track_too_short_for_transition():
+def test_planner_falls_back_for_track_too_short_for_transition():
     tracks = [
         _make_track("a", "A", "/a.wav", 5.0, bpm=120.0),
         _make_track("b", "B", "/b.wav", 5.0, bpm=120.0),
     ]
-    with pytest.raises(ValueError, match="No forward transition window"):
-        plan_set(tracks, max_tracks=2)
+    plan = plan_set(tracks, max_tracks=2)
+    assert len(plan.transitions) == 1
+    assert plan.transitions[0].overlap_duration > 0
+    assert 0.0 <= plan.transitions[0].source_exit_time < 5.0
 
 
 def test_intent_transition_restrictions_are_enforced():
