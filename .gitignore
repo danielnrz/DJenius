@@ -83,3 +83,6 @@ LISTENING_REVIEW.md
 .env.*
 *.key
 *.pem
+
+# Local agent/chat session exports
+session-ses_*.md
