@@ -7,8 +7,8 @@ DJenius V2 is a local autonomous DJ performance engine. The architectural target
 | Phase | Scope | Gate | Status |
 |---|---|---|---|
 | 0 | Freeze and benchmark V1 | V1 baseline documented/reproducible | PASS |
-| 1 | Analysis V2 | unit + synthetic + real-track validation | IN PROGRESS |
-| 2 | Performance Timeline / Recipe DSL | deterministic serialization/rendering | PENDING |
+| 1 | Analysis V2 | unit + synthetic + real-track validation | PASS |
+| 2 | Performance Timeline / Recipe DSL | deterministic serialization/rendering | IN PROGRESS |
 | 3 | Core DJ technique engine | synthetic + real-audio technique gates | PENDING |
 | 4 | Groove / sampler layer | beat-aligned, safe added material | PENDING |
 | 5 | Candidate composer | 3-8 meaningfully different feasible recipes | PENDING |

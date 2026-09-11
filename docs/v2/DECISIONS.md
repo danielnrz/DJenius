@@ -26,3 +26,15 @@
 ## D006 - Private benchmark data never enters Git
 **Decision:** committed benchmark docs contain only aggregate/anonymized measurements; track names, private audio, stems, local listening reports and generated mixes remain ignored.
 **Why:** privacy boundary is a product invariant.
+
+## D007 - Analysis cache advances to version 6
+**Decision:** invalidate V1 analysis-cache rows for normal cache reads after adding the V2 feature schema.
+**Why:** silently returning version-5 rows with empty V2 fields would make planner behavior dependent on cache history. Source audio remains local; re-analysis is deterministic.
+
+## D008 - Variable-tempo zones require sustained evidence
+**Decision:** absorb tempo islands shorter than 24 detected beats into the closer neighboring zone before accepting a variable-tempo change.
+**Why:** private real-track validation showed that fills and missed/doubled beats created false 4-11-beat tempo islands. Sustained changes still survive, including the controlled 120-to-100 BPM synthetic case.
+
+## D009 - Stem activity is not stem-quality certification
+**Decision:** Phase 1 stores activity/dynamics/onset summaries for cached stems and explicitly labels the method `activity_only_no_bleed_claim`.
+**Why:** RMS/activity evidence is useful for planning, but it cannot honestly certify separation bleed/artifacts. A later dedicated quality metric must gate stem-heavy techniques.

@@ -106,6 +106,21 @@ class TrackAnalysis:
     outro_start: float = 0.0
     bar_energies: list[float] = field(default_factory=list)  # mean energy per bar
 
+    # V2 musical-intelligence layer. These are additive so V1 plans and
+    # historical caches remain readable while new planners can reason in
+    # beat/bar/phrase/section time with explicit confidence.
+    analysis_schema_version: str = ""
+    beat_positions: list[dict] = field(default_factory=list)
+    tempo_hypotheses: list[dict] = field(default_factory=list)
+    tempo_zones: list[dict] = field(default_factory=list)
+    phrase_profiles: list[dict] = field(default_factory=list)
+    section_profiles: list[dict] = field(default_factory=list)
+    groove_profile: dict = field(default_factory=dict)
+    rhythmic_density_curve: list[float] = field(default_factory=list)
+    vocal_activity_curve: list[float] = field(default_factory=list)
+    stem_activity_profiles: dict[str, dict] = field(default_factory=dict)
+    cue_candidates: list[dict] = field(default_factory=list)
+
     # Vocal regions
     vocal_regions: list[tuple[float, float]] = field(default_factory=list)  # (start, end) in sec
 
@@ -123,8 +138,13 @@ class TrackAnalysis:
         """Serialize to dict for JSON storage."""
         d = {}
         for k, v in self.__dict__.items():
-            if isinstance(v, list) and len(v) > 200:
-                # Downsample large arrays for storage
+            if (
+                isinstance(v, list)
+                and len(v) > 200
+                and k not in {"beat_positions", "tempo_zones", "phrase_profiles", "section_profiles", "cue_candidates"}
+            ):
+                # Dense legacy curves remain compact. V2 musical event lists
+                # must retain their exact beat/bar/cue indexing.
                 step = max(1, len(v) // 200)
                 d[k] = v[::step]
             else:

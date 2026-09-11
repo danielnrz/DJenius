@@ -1,12 +1,21 @@
 # DJenius V2 State
 
-## Current state
-- Branch: `v2-professional-autonomous-dj`
-- Base V1 commit: `efcfcca6d21aeaa595b236306b025b70668106fd`
-- Current phase: Phase 1 - Analysis V2
-- V1 source code remains unchanged at the Phase 0 gate.
+## CURRENT PHASE
+Phase 2 - Performance Timeline / Recipe DSL
 
-## Completed
+## CURRENT BRANCH
+`v2-professional-autonomous-dj`
+
+## LAST PUSHED COMMIT
+`589b04b844ea4cece105876a43e03a59f09f5220` - Phase 0 durable baseline before the verified Phase 1 commit.
+
+## WORKING TREE STATE
+Phase 1 implementation and documentation are verified and ready for the coherent Phase 1 commit. No private audio, stems, caches, or testMusic files are staged or tracked.
+
+- Base V1 commit: `efcfcca6d21aeaa595b236306b025b70668106fd`
+- V1 master remains unchanged.
+
+## COMPLETED WORK
 - Verified Pop!_OS remote access, repository, origin, Python 3.13.9, `.venv`, disk space, private test library, and V2 specification.
 - Read the complete 3,621-line V2 research specification.
 - Moved `session-ses_f7da.md` out of the repository to `/home/daniel/Downloads/session-ses_f7da.md` without deleting it.
@@ -30,8 +39,23 @@
 - Demucs optional dependency not installed in the current `.venv`; existing cached stems are present locally and ignored.
 - Semantic optional dependency not installed; not required for Phase 1 core analysis.
 
-## Blockers
-None for Phase 1 core analysis.
+## TEST RESULTS
+- Phase 1 targeted bundle re-verified: **65 passed in 0.86s**.
+- Phase 1 full regression re-verified: **856 passed in 17.95s**.
+- Private real-track validation re-verified on 3 anonymized tracks: sustained tempo zones 2/1/1; beat counts 195/361/423; phrase counts 5/5/8; section counts 6/6/9; cue counts 6/6/9; stem activity profiles 4/4/4.
+- Controlled synthetic 120 -> 100 BPM tempo-change test remains green.
 
-## Exact next action
-Implement the backward-compatible V2 analysis feature layer, add synthetic tests, run targeted and full regression tests, then validate on private real tracks and update this file with measured results.
+## Phase 1 result
+- Added V2 analysis schema `2.0` without removing any V1 fields.
+- Added beat/bar positions, tempo hypotheses, sustained tempo zones, phrase confidence profiles, section-local profiles, groove descriptors, vocal activity, stem activity summaries, and typed cue candidates.
+- Analysis cache version advanced from 5 to 6 so existing local tracks are re-analyzed with the new schema.
+- Synthetic/targeted gate: 65 tests passed.
+- Full regression gate after Phase 1: **856 tests passed**.
+- Private real-audio validation: 3 tracks PASS with valid serialization/bounds; tempo zones refined from initial 5/12/6 noisy islands to 2/1/1 sustained zones; cue counts 6/6/9; section counts 6/6/9; cached stems yielded 4 activity profiles per track.
+- No private track names/audio/stems/caches entered Git.
+
+## CURRENT BLOCKERS
+None for Phase 2. Optional external structure/stem models remain non-blocking.
+
+## EXACT NEXT ACTION
+Implement Phase 2's typed, serializable musical-time Performance Recipe DSL and validator, prove it can express EQ blend, bass swap, phrase cut, loop, and echo release, then add a deterministic compiler into the existing renderer-facing timeline without changing classic V1 rendering.

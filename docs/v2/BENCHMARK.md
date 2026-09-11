@@ -34,3 +34,11 @@ Phase 1 measurements will be appended after targeted, full-regression and privat
 
 ## Final certification requirement
 The release benchmark will include planned-vs-shuffled set metrics, technique diversity, audition ranking, private difficult-pair tests, multiple complete V2 sets, and blind V1-vs-V2 human listening. Automated metrics alone cannot release V2.
+
+## Phase 1 - Analysis V2 gate
+- V2 analysis schema: `2.0`; cache analysis version: 6.
+- New targeted/synthetic tests: 10; targeted bundle with legacy model/phrasing tests re-verified at **65 passed in 0.86s**.
+- Full regression re-verification: **856 passed in 17.95s**.
+- Private real-track validation (3 tracks, anonymized): BPM confidence mean 0.981; beat counts 195/361/423; sustained tempo-zone counts after refinement 2/1/1; phrase profile counts 5/5/8; section profile counts 6/6/9; cue counts 6/6/9; groove-confidence values 1.0/1.0/1.0; cached stem activity profiles 4/4/4.
+- The initial tempo-zone implementation produced 5/12/6 zones on the same tracks and was rejected as too jitter-sensitive before the phase gate.
+- Privacy check: no testMusic, generated audio, stems, data caches, or private song names in the tracked Phase 1 change set.

@@ -367,10 +367,108 @@ def analyze_track(
         logger.warning("Vocal detection failed for %s: %s", filepath, e)
         analysis.vocal_regions = []
 
+    # --- V2 musical intelligence (additive, local, deterministic) ---
+    try:
+        from types import SimpleNamespace
+        from djenius.core.analysis_v2 import (
+            V2_ANALYSIS_SCHEMA,
+            build_beat_positions,
+            build_tempo_hypotheses,
+            estimate_tempo_zones,
+            build_vocal_activity_curve,
+            compute_groove_profile,
+            build_section_profiles,
+            build_cue_candidates,
+        )
+
+        analysis.analysis_schema_version = V2_ANALYSIS_SCHEMA
+        analysis.beat_positions = build_beat_positions(
+            analysis.beat_times, analysis.downbeat_times
+        )
+        analysis.tempo_hypotheses = build_tempo_hypotheses(
+            analysis.bpm, analysis.bpm_confidence
+        )
+        analysis.tempo_zones = estimate_tempo_zones(
+            analysis.beat_times, analysis.bpm
+        )
+        analysis.vocal_activity_curve = build_vocal_activity_curve(
+            analysis.vocal_regions, duration
+        )
+        (
+            analysis.groove_profile,
+            analysis.rhythmic_density_curve,
+        ) = compute_groove_profile(y, sr, analysis.beat_times)
+
+        detected_phrase_profiles = []
+        try:
+            detected_phrase_profiles = [
+                {
+                    "time_sec": round(float(item.time_sec), 4),
+                    "bar_index": int(item.bar_index) + 1,
+                    "confidence": round(float(item.confidence), 3),
+                    "energy_change": round(float(item.energy_change), 4),
+                }
+                for item in phrase_boundaries
+            ]
+        except (NameError, TypeError):
+            detected_phrase_profiles = []
+        if not detected_phrase_profiles:
+            detected_phrase_profiles = [
+                {
+                    "time_sec": round(float(t), 4),
+                    "bar_index": int(round(t / max(4 * 60.0 / max(analysis.bpm, 60.0), 1e-6))) + 1,
+                    "confidence": 0.35,
+                    "energy_change": 0.0,
+                }
+                for t in analysis.phrase_boundaries
+            ]
+        analysis.phrase_profiles = detected_phrase_profiles
+        phrase_conf = {
+            round(float(item["time_sec"]), 4): float(item["confidence"])
+            for item in analysis.phrase_profiles
+        }
+
+        section_objects = [
+            SimpleNamespace(
+                start_sec=float(start), end_sec=float(end), label=str(label)
+            )
+            for start, end, label in analysis.structural_sections
+        ]
+        analysis.section_profiles = build_section_profiles(
+            section_objects,
+            duration=duration,
+            bpm=analysis.bpm,
+            energy_curve=analysis.energy_curve,
+            vocal_curve=analysis.vocal_activity_curve,
+            bass_curve=analysis.low_energy_curve,
+            rhythmic_density_curve=analysis.rhythmic_density_curve,
+            phrase_confidences=phrase_conf,
+        )
+        analysis.cue_candidates = build_cue_candidates(
+            analysis.beat_positions,
+            analysis.section_profiles,
+            analysis.phrase_profiles,
+            analysis.energy_curve,
+            analysis.vocal_activity_curve,
+            duration,
+        )
+    except Exception as e:
+        logger.warning("V2 musical analysis failed for %s: %s", filepath, e)
+        analysis.analysis_schema_version = ""
+        analysis.beat_positions = []
+        analysis.tempo_hypotheses = []
+        analysis.tempo_zones = []
+        analysis.phrase_profiles = []
+        analysis.section_profiles = []
+        analysis.groove_profile = {}
+        analysis.rhythmic_density_curve = []
+        analysis.vocal_activity_curve = []
+        analysis.cue_candidates = []
+
     # --- Stem Separation (optional) ---
     try:
         from djenius.audio.stems import stems_available, separate_stems, load_stems, stems_cached
-        if stems_available():
+        if stems_cached(filepath) or stems_available():
             # Always separate at full quality (44100 Hz) for best stem fidelity.
             # load_stems handles resampling to the renderer's sample rate.
             stem_sr = 44100
@@ -396,6 +494,20 @@ def analyze_track(
                     pass  # Keep heuristic vocal regions
     except Exception as e:
         logger.debug("Stem separation skipped for %s: %s", Path(filepath).name, e)
+
+    # --- V2 stem activity summary (uses cached stems even if Demucs is absent) ---
+    try:
+        if analysis.stems:
+            from djenius.audio.stems import load_stems
+            from djenius.core.analysis_v2 import compute_stem_activity_profiles
+
+            stem_audio = load_stems(filepath, sr=sr)
+            analysis.stem_activity_profiles = compute_stem_activity_profiles(
+                stem_audio, sr
+            )
+    except Exception as e:
+        logger.debug("V2 stem activity skipped for %s: %s", Path(filepath).name, e)
+        analysis.stem_activity_profiles = {}
 
     # --- Overall Confidence ---
     confidence_factors = [
