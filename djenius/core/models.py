@@ -596,6 +596,11 @@ class PerformanceTransition:
     technique_confidence: float = 0.0
     technique_reason: str = ""
     technique_operations: list[dict] = field(default_factory=list)
+    # V2 Performance Recipe DSL: optional typed-recipe provenance compiled
+    # into the legacy transition fields above.  Empty values preserve every
+    # historical V1/V9/V13/V14 plan unchanged.
+    performance_recipe: dict = field(default_factory=dict)
+    recipe_action_schedule: list[dict] = field(default_factory=list)
     # V13.1: set-level direction metadata.  These fields describe why this
     # handoff exists; the existing transition DSP remains the executor.
     performance_state: str = "DEVELOP"

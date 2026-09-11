@@ -38,3 +38,19 @@
 ## D009 - Stem activity is not stem-quality certification
 **Decision:** Phase 1 stores activity/dynamics/onset summaries for cached stems and explicitly labels the method `activity_only_no_bleed_claim`.
 **Why:** RMS/activity evidence is useful for planning, but it cannot honestly certify separation bleed/artifacts. A later dedicated quality metric must gate stem-heavy techniques.
+
+## D010 - Typed recipes compile into the existing renderer contract
+**Decision:** keep `PerformanceRecipe` above `PerformanceTransition`; compile V2 musical-time intent into the proven renderer-facing transition contract instead of replacing the V1/V9/V13/V14 renderer.
+**Why:** Phase 2 needs a richer composition language without invalidating years of deterministic timing, provenance, and QA behavior.
+
+## D011 - Recipe and action identity is content-derived
+**Decision:** derive recipe/action IDs from canonical JSON using SHA-256 prefixes rather than counters, timestamps, or random UUIDs.
+**Why:** identical musical recipes must serialize, compare, cache, and audit identically across runs.
+
+## D012 - Phase 2 records the full action schedule even when legacy DSP is the executor
+**Decision:** preserve action position, duration, quantization, ordering, parameters, clock BPM, and recipe duration in the compiled transition while mapping the five proof families to existing transition DSP.
+**Why:** Phase 2 proves the representation/serialization/rendering boundary; Phase 3 can progressively execute richer action semantics without discarding Phase 2 provenance.
+
+## D013 - Recipe validation is fail-closed
+**Decision:** reject unsupported schemas/techniques, unsafe parameters, invalid musical positions, open/nested loops, unavailable stems, and out-of-bounds segments before compilation.
+**Why:** arbitrary creative actions must never reach the renderer through permissive fallbacks.

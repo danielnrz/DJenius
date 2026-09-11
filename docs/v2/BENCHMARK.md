@@ -42,3 +42,13 @@ The release benchmark will include planned-vs-shuffled set metrics, technique di
 - Private real-track validation (3 tracks, anonymized): BPM confidence mean 0.981; beat counts 195/361/423; sustained tempo-zone counts after refinement 2/1/1; phrase profile counts 5/5/8; section profile counts 6/6/9; cue counts 6/6/9; groove-confidence values 1.0/1.0/1.0; cached stem activity profiles 4/4/4.
 - The initial tempo-zone implementation produced 5/12/6 zones on the same tracks and was rejected as too jitter-sensitive before the phase gate.
 - Privacy check: no testMusic, generated audio, stems, data caches, or private song names in the tracked Phase 1 change set.
+
+## Phase 2 - Performance Recipe DSL gate
+- New Phase 2 tests: **32 passed**.
+- Related performance/renderer targeted bundle: **75 passed in 2.06s**.
+- Complete regression: **888 passed in 15.83s** (Phase 1 baseline: 856).
+- Five proof recipes serialize deterministically and compile into the existing renderer contract: EQ blend -> beatmatched blend, bass swap -> bass swap, phrase cut -> phrase cut, loop transition -> loop blend, echo release -> echo out.
+- All five proof recipes rendered synthetic stereo audio successfully with clean provenance.
+- Beatmatched compilation explicitly records time-stretch need and target-source consumption when BPMs differ.
+- Recipe/action IDs are deterministic content hashes; round-trip serialization preserves identity and payload exactly.
+- Privacy check: no testMusic, generated audio, stems, caches, or private song names entered the tracked Phase 2 change set.
