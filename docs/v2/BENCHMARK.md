@@ -113,3 +113,16 @@ The `NO` above is deliberate: reverse sweep/cymbal passed deterministic synthesi
 - No real-pair case happened to exercise technique-memory fallback; that behavior is covered by focused deterministic tests instead.
 - Privacy boundary: private track identities, raw analyses, audio/stems/previews, and `/tmp/djenius_phase5_smoke` artifacts remain outside Git.
 - Phase 5 benchmark explicitly contains **no perceptual winner score**. Phase 6 Audition Lab will benchmark rendered candidate rejection/ranking, with the controlled acceptance requirement that known bad candidates rank below good references.
+
+## Phase 6 - Audition Lab gate
+- Dedicated Phase 6 suite: **36 passed in 2.92s**.
+- Broad V2 analysis/recipe/technique/groove/candidate/audition/renderer/provenance/application/model gate: **315 passed in 7.90s**.
+- Complete repository regression: **1062 passed in 25.28s** with **2 existing Typer/Click dependency deprecation warnings** and no asynchronous timeout failures.
+- Four anonymized private real handoffs rendered **8 / 7 / 3 / 4** candidates (**22 total**). Hard rejections were **0 / 4 / 0 / 2** and survivors were **8 / 3 / 3 / 2**.
+- Deterministic winner families were **loop_shortening / drum_bridge / stem_handoff / stem_handoff**. Survivor score spreads were **0.209766 / 0.057835 / 0.088534 / 0.043897**, so the real gate did not collapse to equal scores or one universal family.
+- Exact rerun evidence: candidate IDs, preview bounds and deterministic audio hashes, metrics, hard-rejection decisions, scores, ordering, and selected winner reproduced exactly for one anonymous real handoff.
+- Controlled real-preview damage: clean reference score **0.783336**; 100 ms beat shift **0.713880**; severe LF collision **0.701851**. Clipping/overgain, severe boundary discontinuity, catastrophic silence, and excessive FX-tail overgain were hard rejected. The defining `KNOWN BAD < GOOD REFERENCE` gate passed.
+- Score-component audit covered **120** active real-smoke values: all were bounded in `[0,1]`, all active names mapped to configured weights, and the largest observed single active-weight share was **24.44%**. Non-applicable beat/FX metrics were omitted rather than represented as punitive zeros.
+- The real gate exposed and fixed two defects before freeze: pre-existing source/target context peaks were incorrectly participating in candidate hard peak rejection, and a valid fractional-BPM impact could round one sample past the sample-layer buffer. Candidate safety is now transition-scoped with whole-preview audit fields; the one-sample terminal residue is trimmed and provenance-recorded while larger overruns remain errors.
+- The oversampled/inter-sample peak measure remains a **4x polyphase proxy**, not certified true peak. Reliable overlap-local harmonic quality, isolated-kick alignment, vocal intelligibility, and stem bleed remain explicitly deferred.
+- Privacy boundary: private track identities, raw analyses, source audio/stems, previews, and `/tmp/djenius_phase6_smoke` artifacts remain outside Git.

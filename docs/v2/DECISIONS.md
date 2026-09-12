@@ -122,3 +122,13 @@
 ## D030 - Initial Audition Lab ranking is transparent heuristic evidence, not human-quality certification
 **Decision:** activate only metrics reliably supported by current rendered audio and analysis, normalize them transparently, keep weights configurable/documented, use stable deterministic tie-breaking, and explicitly defer unsupported harmonic/perceptual claims.
 **Why:** the Phase 6 acceptance gate is controlled ordering of known-good vs known-bad references, not a claim that an automated score proves professional human DJ quality. The later blind listening gate remains authoritative for that question.
+
+## D031 - Candidate peak/silence safety is transition-scoped; preview context remains audit evidence
+**Decision:** hard peak/clipping, oversampled inter-sample peak proxy, RMS, and catastrophic-silence measurements used to judge candidate safety operate on the rendered transition region. Whole-preview peak/clipping remains reported separately for audit, while NaN/Inf and boundary integrity still cover the complete preview.
+**Why:** private real-audio smoke showed that already-mastered source/target context can contain pre-existing samples at or slightly above 0 dBFS. Rejecting a candidate for unchanged context made entire handoffs unrankable even when the candidate transition itself was safe.
+**Rejected:** raising the clipping threshold globally or silently normalizing preview inputs, both of which would weaken detection of candidate-introduced clipping.
+
+## D032 - One-sample generated-event boundary residue is an explicit rounding trim
+**Decision:** if independent seconds-to-samples rounding makes a valid generated event end exactly one sample beyond its transition buffer, trim that single terminal sample and record `rounding_trim_samples = 1` in sample-layer provenance. Any larger overrun remains a hard render error.
+**Why:** a real 117.5 BPM riser/impact candidate exposed an exact one-sample conversion mismatch (`180154` event end vs `180153` transition samples). This is quantization residue, not musical out-of-bounds behavior, and must not make an otherwise valid candidate unrenderable.
+**Rejected:** padding arbitrary overruns or loosening recipe bounds.

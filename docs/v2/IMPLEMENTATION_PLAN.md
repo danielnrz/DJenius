@@ -12,7 +12,7 @@ DJenius V2 is a local autonomous DJ performance engine. The architectural target
 | 3 | Core DJ technique engine | synthetic + real-audio technique gates | PASS |
 | 4 | Groove / sampler layer | beat-aligned, safe added material | PASS |
 | 5 | Candidate composer | 3-8 meaningfully different feasible recipes | PASS |
-| 6 | Audition Lab | known bad candidates rank below good references | PENDING |
+| 6 | Audition Lab | known bad candidates rank below good references | PASS |
 | 7 | Set Director V2 | planned sets beat shuffled baselines | PENDING |
 | 8 | UI V2 | inspect/preview/override performance | PENDING |
 | 9 | Personalization | feedback changes selection predictably | PENDING |
@@ -76,6 +76,14 @@ Required architecture/gate:
 - energy/FX/vocal interpretation is technique-aware: deliberate breakdowns, intentional vocal interaction, or inapplicable FX metrics must not be blindly penalized; unsupported harmonic precision must be explicitly deferred rather than fabricated;
 - acceptance requires controlled synthetic known-good vs intentionally damaged ordering across multiple failure modes, useful monotonicity tests where possible, deterministic preview/metrics/rejection/score/order, candidate/recipe/provenance binding, all-rejected and single-survivor behavior, anonymized private real-music smoke, complete regression, privacy gate, durable docs, commit, and push;
 - defining gate: **known bad candidates rank below good references**. Phase 6 may select one handoff winner, but must not redesign full-set ordering/storytelling; that remains Phase 7 Set Director V2.
+
+### Phase 6 gate result
+- Dedicated Audition Lab suite: **36 passed in 2.92s**; broad targeted V2/application/renderer/provenance gate: **315 passed in 7.90s**; complete repository regression: **1062 passed in 25.28s** with the same two Typer/Click dependency warnings and no async timeout failures.
+- Four anonymized private handoffs rendered **8 / 7 / 3 / 4** candidates. Hard rejections were **0 / 4 / 0 / 2**, survivors **8 / 3 / 3 / 2**, and deterministic winners were **loop_shortening / drum_bridge / stem_handoff / stem_handoff**.
+- One exact real-handoff rerun reproduced candidate IDs, preview bounds/audio hashes, metrics, rejection decisions, scores, ranking, and winner.
+- Controlled real-preview damage passed the defining gate: 100 ms beat shift and severe LF collision scored below the clean reference; clipping, severe discontinuity, catastrophic silence, and excessive FX-tail overgain were hard rejected.
+- A real-smoke review found two implementation defects before freeze: whole-preview peak gating incorrectly blamed pre-existing mastered context, and a fractional-BPM generated event could round one sample past the transition buffer. Candidate peak/silence safety is now transition-scoped with whole-preview audit fields, and only a one-sample terminal event residue is trimmed with explicit provenance.
+- Active score components are normalized and configurable; inapplicable beat/FX metrics are omitted from the active denominator. Certified true peak, isolated-kick alignment, reliable overlap-local harmonic quality, vocal intelligibility, and stem bleed remain explicitly deferred.
 
 ## Phase gates
 Every substantial phase: targeted tests, full regression where appropriate, private real-audio validation, Git diff/privacy review, docs update, coherent commit, push branch.

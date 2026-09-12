@@ -224,8 +224,18 @@ def render_performance_sample_layer(
         if dc_offset > max(0.005, level * 0.35):
             raise RuntimeError("sample event produced unsafe DC offset")
         end = start + len(sound)
+        rounding_trim_samples = 0
         if end > len(layer):
-            raise ValueError("sample event extends beyond transition buffer")
+            overflow = end - len(layer)
+            # Independent second->sample rounding of an event ending exactly
+            # on the transition boundary can differ by one sample.  Treat that
+            # single-sample quantization residue as a bounded trim; larger
+            # overruns remain a hard error.
+            if overflow > 1 or start >= len(layer):
+                raise ValueError("sample event extends beyond transition buffer")
+            sound = sound[: len(layer) - start]
+            end = len(layer)
+            rounding_trim_samples = overflow
         if float(np.max(np.abs(sound))) <= 1e-8:
             raise RuntimeError("valid sample event rendered accidental silence")
         layer[start:end] += sound
@@ -247,6 +257,7 @@ def render_performance_sample_layer(
             "level": float(event.get("level", 0.0)),
             "velocity": float(event.get("velocity", 1.0)),
             "gain_db": gain_db,
+            "rounding_trim_samples": rounding_trim_samples,
         })
 
     layer_peak = float(np.max(np.abs(layer))) if layer.size else 0.0
