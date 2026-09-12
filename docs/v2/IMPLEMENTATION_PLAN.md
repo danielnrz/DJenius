@@ -11,7 +11,7 @@ DJenius V2 is a local autonomous DJ performance engine. The architectural target
 | 2 | Performance Timeline / Recipe DSL | deterministic serialization/rendering | PASS |
 | 3 | Core DJ technique engine | synthetic + real-audio technique gates | PASS |
 | 4 | Groove / sampler layer | beat-aligned, safe added material | PASS |
-| 5 | Candidate composer | 3-8 meaningfully different feasible recipes | NEXT |
+| 5 | Candidate composer | 3-8 meaningfully different feasible recipes | PASS |
 | 6 | Audition Lab | known bad candidates rank below good references | PENDING |
 | 7 | Set Director V2 | planned sets beat shuffled baselines | PENDING |
 | 8 | UI V2 | inspect/preview/override performance | PENDING |
@@ -56,6 +56,26 @@ Required architecture/gate:
 - every candidate carries a human-readable explanation/reason codes, but no Audition-Lab quality score;
 - dedicated synthetic fixtures cover easy same-BPM, moderate/large tempo differences, vocal-heavy/instrumental overlaps, stem-rich/no-stem, strong drop, weak phrase confidence, and short boundaries;
 - acceptance requires candidate serialization/IDs/order, bounds/phrase safety, eligibility/requirements, count/diversity, no impossible generation, changed-context sensitivity, candidate recipe compilation, anonymized private real-pair smoke, full regression, privacy audit, docs, commit, and push.
+
+### Phase 5 gate result
+- Dedicated Candidate Composer suite: **40 passed in 0.42s**. Frozen Phase 2/3/4/5 gate: **170 passed in 2.09s**. Broad V2 analysis/recipe/technique/groove/candidate/application/model/transition/renderer gate: **267 passed in 6.16s**. Complete regression: **1026 passed in 27.90s** with **2 existing Typer/Click dependency deprecation warnings** and no asynchronous timeout failures.
+- Candidate identity/order are deterministic. Feasibility is checked before admission, and every accepted recipe passes the compiler gate. Family-level diversity is preferred; the candidate floor is a preference only and never permission to violate hard feasibility. If hard feasibility prevents the configured floor, diagnostics report `candidate_floor_unmet_due_to_hard_feasibility`.
+- Half/double-time handling is confidence-gated. A non-primary relation must also be sufficiently close and have hypothesis confidence **>= 0.55** before it can suppress tempo-reset eligibility. Focused tests cover below, exactly at, and above the threshold.
+- Technique memory is soft-defer. Recent feasible families are withheld while enough non-recent alternatives exist, then deterministically reintroduced only when required for the candidate floor, with `recent_repeat_required_for_candidate_floor` and provenance `repeat_allowed_to_meet_candidate_floor`. Hard-infeasible recent families are never reintroduced.
+- Six anonymized private real handoffs produced **8 / 7 / 3 / 4 / 7 / 4** accepted candidates (**33 total**), and **33/33 compiled successfully**. Candidate sets varied by context and did not always hit the cap. Private identities and analyses remain outside Git under `/tmp/djenius_phase5_smoke`.
+- Phase 5 performs **no perceptual ranking**. It generates, validates, and explains only. Phase 6 Audition Lab owns preview rendering, measurement, hard rejection, ranking, and one-handoff selection.
+
+## Phase 6 - Audition Lab
+Render short bounded previews of feasible candidates, measure them with transparent deterministic metrics, hard-reject technically invalid renders, rank surviving rendered performances, and select the best candidate for one handoff.
+
+Required architecture/gate:
+- configurable preview context around the handoff rather than full-set rendering or one blindly fixed duration; every preview binds candidate ID, recipe ID, internal source/target identity, exact bounds/duration, sample rate/channels, render configuration, and renderer provenance;
+- typed audition results separating render state, hard rejection/failure, raw technical/beat/spectral/vocal/energy/FX measurements, normalized components, deterministic score, rank, decision reason, and provenance;
+- hard technical invalidity (NaN/Inf, invalid duration/range/bounds/stems/provenance, catastrophic silence, unsafe clipping/peak, severe discontinuity/render failure, unstable stretch where detectable) is rejected before soft ranking;
+- initial ranking uses only metrics actually supported by current analysis/rendered audio, with small configurable documented weights and stable tie-breaking. It is a heuristic automated score, not a claim of human perceptual truth;
+- energy/FX/vocal interpretation is technique-aware: deliberate breakdowns, intentional vocal interaction, or inapplicable FX metrics must not be blindly penalized; unsupported harmonic precision must be explicitly deferred rather than fabricated;
+- acceptance requires controlled synthetic known-good vs intentionally damaged ordering across multiple failure modes, useful monotonicity tests where possible, deterministic preview/metrics/rejection/score/order, candidate/recipe/provenance binding, all-rejected and single-survivor behavior, anonymized private real-music smoke, complete regression, privacy gate, durable docs, commit, and push;
+- defining gate: **known bad candidates rank below good references**. Phase 6 may select one handoff winner, but must not redesign full-set ordering/storytelling; that remains Phase 7 Set Director V2.
 
 ## Phase gates
 Every substantial phase: targeted tests, full regression where appropriate, private real-audio validation, Git diff/privacy review, docs update, coherent commit, push branch.

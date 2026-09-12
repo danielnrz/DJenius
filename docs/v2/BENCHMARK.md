@@ -98,3 +98,18 @@ The `NO` above is deliberate: reverse sweep/cymbal passed deterministic synthesi
 - Duplicate sample event IDs and declared/rendered sample-layer count mismatches are explicit provenance failures.
 - Quarter/eighth/sixteenth scheduling, deterministic seeds, mono/stereo rendering, finite/non-silent checks, overlap peak protection, DC-offset protection, bounded event gains/levels, and exact event sample bounds are covered.
 - Empty `sample_layer_events` preserves the legacy renderer path; serialized transitions missing the new field deserialize to an empty list.
+
+## Phase 5 - Candidate Composer gate
+- Dedicated Phase 5 suite: **40 passed in 0.42s**.
+- Frozen Phase 2 + Phase 3 + Phase 4 + Phase 5 gate: **170 passed in 2.09s**.
+- Broad V2 analysis/recipe/technique/groove/candidate/application/model/transition/renderer gate: **267 passed in 6.16s**.
+- Complete repository regression: **1026 passed in 27.90s** with **2 existing Typer/Click dependency deprecation warnings** and no asynchronous timeout failures.
+- Candidate generation is deterministic, feasibility-first, family-diverse, explanation-bearing, and compilation-gated. The default search envelope is 3-8 where context permits; the minimum is not a hard safety override.
+- Confidence-gated half/double logic uses threshold **0.55** and is boundary-tested below/at/above threshold. Low-confidence apparent half/double relationships retain tempo-reset eligibility.
+- Technique memory is soft-defer with deterministic floor fallback. Reintroduced repeats are explicit in reason codes/provenance; hard-infeasible recent families remain rejected; unmet floors report hard-feasibility exhaustion instead of inventing candidates.
+- Six anonymized private current-V2 handoffs yielded candidate counts **8 / 7 / 3 / 4 / 7 / 4**, for **33 accepted candidates total**. **33/33** accepted recipes compiled successfully.
+- Real-pair observations matched the intended feasibility boundary: vocal-heavy contexts suppressed inappropriate long blends/loops, stem handoffs required declared stems, build/riser families required landing evidence, and large primary-tempo mismatches retained reset eligibility when appropriate.
+- `PAIR_03` changed only between equivalent tempo-relation representations to a higher-confidence equivalent; feasibility and family membership were unchanged.
+- No real-pair case happened to exercise technique-memory fallback; that behavior is covered by focused deterministic tests instead.
+- Privacy boundary: private track identities, raw analyses, audio/stems/previews, and `/tmp/djenius_phase5_smoke` artifacts remain outside Git.
+- Phase 5 benchmark explicitly contains **no perceptual winner score**. Phase 6 Audition Lab will benchmark rendered candidate rejection/ranking, with the controlled acceptance requirement that known bad candidates rank below good references.

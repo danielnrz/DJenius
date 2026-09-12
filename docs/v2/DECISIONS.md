@@ -98,3 +98,27 @@
 ## D024 - Candidate diversity is family-level by default
 **Decision:** normally emit roughly 3-8 plausible candidates and prefer different technique families/roles over many near-identical parameter variants. Explicit parameter exploration is allowed only when it is intentional and explainable.
 **Why:** the composer should present useful musical alternatives rather than inflate the search space before Audition Lab.
+
+## D025 - Candidate floors never override hard feasibility
+**Decision:** the configured Candidate Composer minimum is a diversity/search preference, not permission to manufacture or admit invalid candidates. Recent feasible families may be deterministically reintroduced only as a soft-memory fallback; hard-infeasible families remain rejected even when the floor is unmet.
+**Why:** minimum-count pressure must never weaken stem, bounds, phrase, tempo, groove, compilation, or other safety/feasibility constraints. The composer reports `candidate_floor_unmet_due_to_hard_feasibility` when reality supplies fewer valid options.
+
+## D026 - Half/double-time reset suppression requires confident alternative-tempo evidence
+**Decision:** a non-primary tempo relation may suppress tempo-reset eligibility only when its effective delta satisfies the closeness gate and its hypothesis confidence is at least `0.55`. Low-confidence apparent half/double relations do not remove reset options.
+**Why:** alternative tempo hypotheses are useful but uncertain; treating every apparent 2x/0.5x relation as authoritative can incorrectly eliminate the safest transition family.
+
+## D027 - Technique memory is a soft defer policy
+**Decision:** recent feasible technique families are deferred while enough non-recent feasible alternatives exist. They may be reintroduced in deterministic family order only when required to meet the configured candidate floor, and reintroduction must be explicit in diagnostics/provenance. Hard-infeasible recent families are never revived.
+**Why:** repetition avoidance should improve variety without turning memory into a hard ban that collapses valid candidate supply.
+
+## D028 - Audition Lab ranks rendered candidates; renderer remains an executor
+**Decision:** Phase 6 owns bounded preview rendering orchestration, metrics, hard rejection, normalized scoring, ranking, and one-handoff selection in a dedicated typed layer. Ranking logic must not be hidden inside the renderer, and Candidate Composer feasibility rules should not be duplicated unless an interface defect is proven.
+**Why:** generation, execution, technical validation, and quality comparison are distinct responsibilities. Keeping ranking outside renderer code preserves testability, transparency, and deterministic provenance.
+
+## D029 - Audition hard rejection is separate from soft score
+**Decision:** technically invalid previews fail closed before ranking; a high score in unrelated components can never rescue NaN/Inf, broken bounds/duration/provenance, catastrophic silence, unsafe clipping/peak, severe discontinuity/render failure, invalid stem use, or other hard technical failures.
+**Why:** quality scoring is meaningful only over technically valid rendered performances.
+
+## D030 - Initial Audition Lab ranking is transparent heuristic evidence, not human-quality certification
+**Decision:** activate only metrics reliably supported by current rendered audio and analysis, normalize them transparently, keep weights configurable/documented, use stable deterministic tie-breaking, and explicitly defer unsupported harmonic/perceptual claims.
+**Why:** the Phase 6 acceptance gate is controlled ordering of known-good vs known-bad references, not a claim that an automated score proves professional human DJ quality. The later blind listening gate remains authoritative for that question.
