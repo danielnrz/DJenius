@@ -971,7 +971,12 @@ class LocalAppService:
                         item.id: item for item in plan.performance_timeline.appearances
                     }
                     for transition in plan.performance_timeline.transitions:
-                        if any(item.get("type") == "target_percussion_tease" for item in transition.preparation_operations):
+                        needs_transition_stems = transition.transition_type.value in {"bass_swap", "mashup"}
+                        needs_percussion_stems = any(
+                            item.get("type") == "target_percussion_tease"
+                            for item in transition.preparation_operations
+                        )
+                        if needs_transition_stems or needs_percussion_stems:
                             for appearance_id in (transition.source_appearance_id, transition.target_appearance_id):
                                 appearance = appearance_by_id.get(appearance_id)
                                 if appearance:
@@ -1013,7 +1018,12 @@ class LocalAppService:
                         item.id: item for item in plan.performance_timeline.appearances
                     }
                     for transition in plan.performance_timeline.transitions:
-                        if any(item.get("type") == "target_percussion_tease" for item in transition.preparation_operations):
+                        needs_transition_stems = transition.transition_type.value in {"bass_swap", "mashup"}
+                        needs_percussion_stems = any(
+                            item.get("type") == "target_percussion_tease"
+                            for item in transition.preparation_operations
+                        )
+                        if needs_transition_stems or needs_percussion_stems:
                             source_appearance = appearance_by_id.get(transition.source_appearance_id)
                             target_appearance = appearance_by_id.get(transition.target_appearance_id)
                             if source_appearance:

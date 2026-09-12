@@ -792,7 +792,10 @@ def _mashup(
         return region[:length].astype(np.float32)
 
     src_vocals_r = _extract(src_vocals, source_exit_sample, n)
-    tgt_vocals_r = _extract(tgt_vocals, target_entry_sample, n)
+    tgt_vocals_r = (
+        _extract(tgt_vocals, target_entry_sample, n)
+        if tgt_vocals is not None else np.zeros(n, dtype=np.float32)
+    )
 
     # Build target instrumentation
     tgt_inst = np.zeros(n, dtype=np.float32)

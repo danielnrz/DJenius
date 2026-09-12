@@ -90,6 +90,71 @@ def loop_roll(audio: np.ndarray, sample_rate: int, bpm: float, *, beats: int = 1
     return result[:, 0] if was_mono else result
 
 
+
+def reverb_wash(audio: np.ndarray, sample_rate: int, *, wet: float = 0.28, decay_sec: float = 1.4) -> np.ndarray:
+    """Deterministic bounded multi-tap reverb wash with fixed output length."""
+    data, was_mono = _stereo(audio)
+    if len(data) == 0 or sample_rate <= 0:
+        return np.asarray(audio, dtype=np.float32)
+    wet = float(np.clip(wet, 0.0, 0.6))
+    decay_sec = float(np.clip(decay_sec, 0.1, 4.0))
+    result = data * (1.0 - wet)
+    taps = (0.067, 0.113, 0.173, 0.251)
+    weights = []
+    delayed_parts = []
+    for tap in taps:
+        delay = max(1, int(round(tap * sample_rate)))
+        if delay >= len(data):
+            continue
+        weight = float(np.exp(-tap / decay_sec))
+        delayed = np.zeros_like(data)
+        if data.shape[1] == 2:
+            delayed[delay:, 0] = data[:-delay, 1]
+            delayed[delay:, 1] = data[:-delay, 0]
+        else:
+            delayed[delay:] = data[:-delay]
+        weights.append(weight)
+        delayed_parts.append(delayed)
+    if delayed_parts:
+        scale = wet / max(sum(weights), 1e-6)
+        for weight, delayed in zip(weights, delayed_parts):
+            result += delayed * (weight * scale)
+    result = np.asarray(result, dtype=np.float32)
+    return result[:, 0] if was_mono else result
+
+
+def loop_shorten(audio: np.ndarray, sample_rate: int, bpm: float, *, sequence=(4.0, 2.0, 1.0)) -> np.ndarray:
+    """Apply a deterministic loop-length reduction over the latter source region."""
+    data, was_mono = _stereo(audio)
+    if len(data) < 64 or sample_rate <= 0 or bpm <= 0:
+        return np.asarray(audio, dtype=np.float32)
+    lengths = [float(value) for value in sequence if 0.25 <= float(value) <= 16.0]
+    if not lengths:
+        return np.asarray(audio, dtype=np.float32)
+    result = data.copy()
+    start = len(data) // 3
+    stage_edges = np.linspace(start, len(data), len(lengths) + 1, dtype=int)
+    beat_samples = sample_rate * 60.0 / bpm
+    for stage, beats in enumerate(lengths):
+        left, right = int(stage_edges[stage]), int(stage_edges[stage + 1])
+        if right - left < 8:
+            continue
+        loop_len = min(right - left, max(8, int(round(beats * beat_samples))))
+        source_start = max(0, left - loop_len)
+        template = data[source_start:source_start + loop_len]
+        if len(template) < 8:
+            template = data[left:min(len(data), left + loop_len)]
+        if len(template) < 8:
+            continue
+        tiled = np.resize(template, (right - left, data.shape[1])).astype(np.float32)
+        guard = min(max(2, int(round(sample_rate * 0.008))), len(tiled) // 8)
+        if guard >= 2:
+            fade = np.linspace(0.0, 1.0, guard, dtype=np.float32)[:, None]
+            tiled[:guard] = result[left:left + guard] * (1.0 - fade) + tiled[:guard] * fade
+        result[left:right] = tiled
+    return result[:, 0] if was_mono else result
+
+
 def procedural_fx(
     length: int,
     sample_rate: int,
@@ -106,7 +171,18 @@ def procedural_fx(
     noise = rng.standard_normal(length).astype(np.float32)
     noise /= max(float(np.max(np.abs(noise))), 1e-6)
     progress = np.linspace(0.0, 1.0, length, dtype=np.float32)
-    if effect == "impact":
+    if effect == "riser_impact":
+        riser = noise * np.power(progress, 1.8).astype(np.float32)
+        impact_len = min(length, max(32, int(round(sample_rate * 0.55))))
+        impact_progress = np.linspace(0.0, 1.0, impact_len, dtype=np.float32)
+        impact_noise = rng.standard_normal(impact_len).astype(np.float32)
+        impact_noise /= max(float(np.max(np.abs(impact_noise))), 1e-6)
+        tone = np.sin(2.0 * np.pi * 68.0 * np.arange(impact_len) / sample_rate).astype(np.float32)
+        impact = (0.55 * tone + 0.45 * impact_noise) * np.exp(-impact_progress * 14.0)
+        signal = riser
+        signal[-impact_len:] += impact.astype(np.float32)
+        envelope = np.ones(length, dtype=np.float32)
+    elif effect == "impact":
         envelope = np.exp(-progress * 18.0) * (0.75 + 0.25 * np.cos(progress * np.pi))
         tone = np.sin(2.0 * np.pi * 72.0 * np.arange(length) / sample_rate).astype(np.float32)
         signal = 0.55 * tone + 0.45 * noise
@@ -138,6 +214,16 @@ def apply_creative_operations(
         kind = str(operation.get("type", ""))
         if kind == "tape_stop":
             transformed = tape_stop(transformed, operation.get("strength", 0.7))
+        elif kind == "reverb_wash":
+            transformed = reverb_wash(
+                transformed, sample_rate, wet=float(operation.get("wet", 0.28)),
+                decay_sec=float(operation.get("decay_sec", 1.4)),
+            )
+        elif kind == "loop_shorten":
+            transformed = loop_shorten(
+                transformed, sample_rate, source_bpm,
+                sequence=operation.get("sequence", (4.0, 2.0, 1.0)),
+            )
         elif kind == "loop_roll":
             loop_bars = operation.get("bars")
             loop_beats = (
@@ -148,9 +234,13 @@ def apply_creative_operations(
                 transformed, sample_rate, source_bpm,
                 beats=loop_beats, repeats=operation.get("repeats", 2),
             )
-        elif kind == "generated_fx":
+        elif kind in {"generated_fx", "riser_impact"}:
+            effect_name = (
+                str(operation.get("effect", "riser"))
+                if kind == "generated_fx" else "riser_impact"
+            )
             fx = procedural_fx(
-                len(result), sample_rate, str(operation.get("effect", "riser")),
+                len(result), sample_rate, effect_name,
                 level=float(operation.get("level", 0.02)),
                 seed=int(operation.get("seed", 0)),
                 channels=result.shape[1] if result.ndim == 2 else 1,
@@ -160,9 +250,15 @@ def apply_creative_operations(
             result = result + fx
             generated.append({
                 "source_type": "generated_fx",
-                "effect_type": str(operation.get("effect", "riser")),
+                "effect_type": effect_name,
                 "seed": int(operation.get("seed", 0)),
                 "duration_samples": len(result),
                 "level": float(operation.get("level", 0.02)),
             })
+        elif kind in {"tempo_ramp", "bass_transfer", "echo_tail", "stem_bridge", "section_edit"}:
+            # These are declarative labels for DSP performed by the selected
+            # transition family or the performance renderer.
+            continue
+        else:
+            raise ValueError(f"unknown creative operation: {kind}")
     return transformed, generated

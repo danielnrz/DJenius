@@ -52,3 +52,17 @@ The release benchmark will include planned-vs-shuffled set metrics, technique di
 - Beatmatched compilation explicitly records time-stretch need and target-source consumption when BPMs differ.
 - Recipe/action IDs are deterministic content hashes; round-trip serialization preserves identity and payload exactly.
 - Privacy check: no testMusic, generated audio, stems, caches, or private song names entered the tracked Phase 2 change set.
+
+## Phase 3 - Core DJ Technique Engine gate
+- Dedicated Phase 3 suite: **40 passed in 1.76s**.
+- Expanded renderer/technique gate: **144 passed in 5.65s**.
+- Application-layer integration gate: **4 passed, 36 deselected in 0.92s**.
+- Final complete repository regression: **928 passed in 24.01s**.
+- Technique coverage: **12/12 implemented, 12/12 renderer-reachable, 12/12 synthetically validated, 12/12 private-real-audio smoke validated**.
+- Technique families: EQ blend, bass swap, filter blend, phrase cut, echo out/release, reverb wash, loop transition, loop shortening, drum overlay, riser+impact, tempo reset, stem handoff.
+- Private validation library contained 17 audio files; 15 had complete cached real stem sets. Only aggregate/anonymized evidence is recorded here.
+- Bass swap and stem handoff executed real cached-stem DSP paths; drum overlay consumed target drums; explicit no-stem/invalid-stem fallback diagnostics were verified.
+- Stem-path renders materially differed from their fallback renders, confirming the real-stem path was not only nominally flagged.
+- Generated FX and stem/preparation provenance remained explicit in transition diagnostics.
+- One earlier loaded full-suite run produced **921 passed, 3 failed** from fixed-timeout async polling (`job did not finish`). Those exact tests immediately passed alone (**3 passed in 4.70s**), and later unchanged full regressions passed at 928/928. This remains test-timing technical debt, not hidden history.
+- Private previews/reports remained outside Git under `/tmp/djenius_phase3_private_smoke` during validation.

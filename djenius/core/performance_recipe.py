@@ -14,6 +14,11 @@ from typing import Any
 
 RECIPE_SCHEMA_VERSION = "2.0"
 BEATS_PER_BAR = 4
+PHASE2_TECHNIQUES = {"eq_blend", "bass_swap", "phrase_cut", "loop_transition", "echo_release"}
+PHASE3_TECHNIQUES = PHASE2_TECHNIQUES | {
+    "filter_blend", "reverb_wash", "loop_shortening", "drum_overlay",
+    "riser_impact", "tempo_reset", "stem_handoff",
+}
 
 
 class TrackRole(str, Enum):
@@ -237,6 +242,7 @@ class CompiledPerformanceRecipe:
     preparation_operations: tuple[dict[str, Any], ...] = ()
     technique_operations: tuple[dict[str, Any], ...] = ()
     landing_operations: tuple[dict[str, Any], ...] = ()
+    preparation_duration_sec: float = 0.0
 
 
 def _canonicalize(value: Any) -> Any:
@@ -304,12 +310,12 @@ def validate_performance_recipe(recipe: PerformanceRecipe, context: RecipeCompil
     errors: list[str] = []
     if recipe.schema_version.split(".", 1)[0] != RECIPE_SCHEMA_VERSION.split(".", 1)[0]:
         errors.append(f"unsupported recipe schema version: {recipe.schema_version}")
-    if recipe.technique not in {"eq_blend", "bass_swap", "phrase_cut", "loop_transition", "echo_release"}:
-        errors.append(f"unsupported Phase 2 technique: {recipe.technique}")
+    if recipe.technique not in PHASE3_TECHNIQUES:
+        errors.append(f"unsupported V2 technique: {recipe.technique}")
     if not recipe.source_track_id or not recipe.target_track_id:
         errors.append("recipe requires source and target track ids")
     if recipe.source_track_id == recipe.target_track_id:
-        errors.append("Phase 2 transition recipe requires two different tracks")
+        errors.append("V2 transition recipe requires two different tracks")
     if recipe.bars < 1 or recipe.bars > 64:
         errors.append("recipe bars must be in [1, 64]")
     if not recipe.actions:
@@ -421,9 +427,16 @@ def compile_performance_recipe(recipe: PerformanceRecipe, context: RecipeCompile
     transition_type = {
         "eq_blend": "beatmatched_blend",
         "bass_swap": "bass_swap",
+        "filter_blend": "filter_sweep",
         "phrase_cut": "phrase_cut",
-        "loop_transition": "loop_blend",
         "echo_release": "echo_out",
+        "reverb_wash": "crossfade",
+        "loop_transition": "loop_blend",
+        "loop_shortening": "crossfade",
+        "drum_overlay": "crossfade",
+        "riser_impact": "crossfade",
+        "tempo_reset": "echo_out",
+        "stem_handoff": "mashup",
     }[recipe.technique]
 
     schedule = tuple({
@@ -438,6 +451,21 @@ def compile_performance_recipe(recipe: PerformanceRecipe, context: RecipeCompile
         "order": action.order,
         "parameters": _canonicalize(action.parameters),
     } for action in recipe.actions)
+
+    preparation_operations: list[dict[str, Any]] = []
+    technique_operations: list[dict[str, Any]] = []
+    preparation_duration = 0.0
+    if recipe.technique == "reverb_wash":
+        technique_operations.append({"type": "reverb_wash", "wet": 0.28, "decay_sec": 1.4})
+    elif recipe.technique == "loop_shortening":
+        technique_operations.append({"type": "loop_shorten", "sequence": [4.0, 2.0, 1.0]})
+    elif recipe.technique == "drum_overlay":
+        preparation_duration = min(recipe_duration * 0.5, context.beats_per_bar * 60.0 / clock_bpm)
+        preparation_operations.append({"type": "target_percussion_tease"})
+    elif recipe.technique == "riser_impact":
+        technique_operations.append({"type": "riser_impact", "level": 0.02, "seed": 23})
+    elif recipe.technique == "tempo_reset":
+        technique_operations.append({"type": "tape_stop", "strength": 0.72})
 
     requires_stretch = (
         transition_type == "beatmatched_blend"
@@ -461,6 +489,9 @@ def compile_performance_recipe(recipe: PerformanceRecipe, context: RecipeCompile
         requires_stretch=requires_stretch,
         target_consumed_duration_sec=round(target_consumed, 6),
         action_schedule=schedule,
+        preparation_operations=tuple(preparation_operations),
+        technique_operations=tuple(technique_operations),
+        preparation_duration_sec=round(preparation_duration, 6),
     )
 
 
@@ -487,6 +518,7 @@ def compiled_recipe_to_transition(compiled: CompiledPerformanceRecipe, context: 
         technique_confidence=1.0,
         technique_reason="typed V2 musical-time performance recipe",
         technique_operations=[dict(item) for item in compiled.technique_operations],
+        preparation_duration_sec=compiled.preparation_duration_sec,
         preparation_operations=[dict(item) for item in compiled.preparation_operations],
         landing_operations=[dict(item) for item in compiled.landing_operations],
         performance_recipe=compiled.recipe.to_dict(),
@@ -494,7 +526,11 @@ def compiled_recipe_to_transition(compiled: CompiledPerformanceRecipe, context: 
         execution_directive={
             "recipe_id": compiled.recipe.recipe_id,
             "recipe_schema": compiled.recipe.schema_version,
-            "compiler": "v2_phase2_legacy_transition_adapter",
+            "compiler": (
+                "v2_phase2_legacy_transition_adapter"
+                if int(compiled.recipe.metadata.get("phase", 2)) <= 2
+                else "v2_phase3_core_technique_adapter"
+            ),
             "clock_bpm": compiled.clock_bpm,
             "recipe_duration_sec": compiled.recipe_duration_sec,
         },
@@ -557,4 +593,69 @@ def proof_recipe(technique: str, source_track_id: str, target_track_id: str, *, 
         bars=bars,
         actions=tuple(sorted(actions, key=_action_sort_key)),
         metadata={"phase": 2, "purpose": "initial_proof"},
+    ).with_deterministic_ids()
+
+
+def phase3_recipe(technique: str, source_track_id: str, target_track_id: str, *, bars: int = 4) -> PerformanceRecipe:
+    """Build one typed recipe for each required Phase 3 core technique."""
+    if technique in PHASE2_TECHNIQUES:
+        return proof_recipe(technique, source_track_id, target_track_id, bars=bars)
+    if bars < 2:
+        raise ValueError("Phase 3 recipes require at least two bars")
+    last = bars
+    mid = max(2, (bars + 1) // 2)
+    if technique == "filter_blend":
+        actions = (
+            _action(ActionType.START, 1, 1, TrackRole.TARGET, gain_db=-10.0),
+            _action(ActionType.FILTER_HP, 1, 1, TrackRole.SOURCE, cutoff_hz=40.0, resonance=0.15),
+            _action(ActionType.FILTER_HP, last, 1, TrackRole.SOURCE, cutoff_hz=6000.0, resonance=0.20),
+            _action(ActionType.RELEASE, last, 4, TrackRole.SOURCE),
+        )
+    elif technique == "reverb_wash":
+        actions = (
+            _action(ActionType.START, 1, 1, TrackRole.TARGET, gain_db=-10.0),
+            _action(ActionType.REVERB, mid, 1, TrackRole.SOURCE, wet=0.28, decay_sec=1.4, duration_beats=4.0),
+            _action(ActionType.RELEASE, last, 4, TrackRole.SOURCE),
+        )
+    elif technique == "loop_shortening":
+        actions = (
+            _action(ActionType.START, 1, 1, TrackRole.TARGET, gain_db=-12.0),
+            _action(ActionType.LOOP_START, mid, 1, TrackRole.SOURCE, order=0, length_beats=4.0),
+            _action(ActionType.LOOP_LENGTH, last, 1, TrackRole.SOURCE, order=1, length_beats=2.0),
+            _action(ActionType.LOOP_LENGTH, last, 3, TrackRole.SOURCE, order=0, length_beats=1.0),
+            _action(ActionType.LOOP_END, last, 4, TrackRole.SOURCE, order=0),
+            _action(ActionType.RELEASE, last, 4, TrackRole.SOURCE, order=1),
+        )
+    elif technique == "drum_overlay":
+        actions = (
+            _action(ActionType.STEM_GAIN, 1, 1, TrackRole.TARGET, stem="drums", gain_db=-12.0),
+            _action(ActionType.START, mid, 1, TrackRole.TARGET, gain_db=-8.0),
+            _action(ActionType.RELEASE, last, 4, TrackRole.SOURCE),
+        )
+    elif technique == "riser_impact":
+        actions = (
+            _action(ActionType.START, 1, 1, TrackRole.TARGET, gain_db=-10.0),
+            _action(ActionType.RISER, mid, 1, TrackRole.GENERATED, level=0.018, duration_beats=4.0),
+            _action(ActionType.IMPACT, last, 4, TrackRole.GENERATED, level=0.02),
+            _action(ActionType.RELEASE, last, 4, TrackRole.SOURCE, order=1),
+        )
+    elif technique == "tempo_reset":
+        actions = (
+            _action(ActionType.RELEASE, mid, 1, TrackRole.SOURCE),
+            _action(ActionType.START, last, 1, TrackRole.TARGET, gain_db=0.0, quantization=Quantization.BAR),
+        )
+    elif technique == "stem_handoff":
+        actions = (
+            _action(ActionType.STEM_SOLO, 1, 1, TrackRole.SOURCE, stem="vocals"),
+            _action(ActionType.STEM_GAIN, 1, 1, TrackRole.TARGET, order=1, stem="drums", gain_db=-4.0),
+            _action(ActionType.STEM_GAIN, 1, 1, TrackRole.TARGET, order=2, stem="bass", gain_db=-6.0),
+            _action(ActionType.STEM_GAIN, 1, 1, TrackRole.TARGET, order=3, stem="other", gain_db=-6.0),
+            _action(ActionType.RELEASE, last, 4, TrackRole.SOURCE),
+        )
+    else:
+        raise ValueError(f"unsupported Phase 3 technique: {technique}")
+    return PerformanceRecipe(
+        technique=technique, source_track_id=source_track_id, target_track_id=target_track_id,
+        bars=bars, actions=tuple(sorted(actions, key=_action_sort_key)),
+        metadata={"phase": 3, "purpose": "core_technique"},
     ).with_deterministic_ids()

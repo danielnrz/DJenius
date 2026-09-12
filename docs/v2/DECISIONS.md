@@ -54,3 +54,27 @@
 ## D013 - Recipe validation is fail-closed
 **Decision:** reject unsupported schemas/techniques, unsafe parameters, invalid musical positions, open/nested loops, unavailable stems, and out-of-bounds segments before compilation.
 **Why:** arbitrary creative actions must never reach the renderer through permissive fallbacks.
+
+## D014 - Phase 3 extends recipes through explicit technique operations
+**Decision:** keep Phase 3 techniques inside the typed `PerformanceRecipe` -> compiler -> `PerformanceTransition` path, using explicit technique/preparation operations rather than renderer-only hidden behavior.
+**Why:** every audible technique must remain serializable, testable, explainable, and compatible with the existing deterministic renderer contract.
+
+## D015 - Stem DSP is validated at the renderer boundary and falls back explicitly
+**Decision:** bass swap and stem handoff use cached full-track stems only after channel/coverage/finite/peak/signal validation and segment-local slicing. Invalid or unavailable stems produce explicit fallback provenance.
+**Why:** cached stems are optional local inputs and must never cause silent corruption or ambiguous execution.
+
+## D016 - Generated FX carry deterministic provenance
+**Decision:** procedurally generated Phase 3 effects record effect type, deterministic seed, output sample bounds, and level in transition diagnostics.
+**Why:** generated audio is still an audible source and must be attributable like track/stem material.
+
+## D017 - Phase 3 application integration is part of the gate
+**Decision:** technique validation includes direct `LocalAppService` coverage for application-side stem discovery/loading and renderer handoff, not only unit-level transition calls.
+**Why:** a DSP path that is correct in isolation but unreachable through the actual application is not considered implemented.
+
+## D018 - Fixed-timeout async regression failures are tracked as timing debt
+**Decision:** retain the existing behavioral assertions after the observed 921-pass/3-timeout run because the same tests passed immediately alone and later unchanged full suites passed at 928/928.
+**Why:** evidence indicates load-sensitive polling timing rather than a deterministic product regression; weakening assertions would hide a real test-infrastructure issue.
+
+## D019 - Phase 4 procedural sounds precede external sample assets
+**Decision:** implement the Groove / Sampler Layer first with deterministic project-owned DSP synthesis; external sample packs are not required for the initial architecture.
+**Why:** this preserves reproducibility, licensing clarity, privacy, and provenance while establishing the musical-time scheduling system.

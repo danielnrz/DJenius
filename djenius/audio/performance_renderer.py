@@ -29,6 +29,101 @@ from djenius.utils.audio_math import db_to_linear, normalize_lufs, soft_clip
 logger = logging.getLogger(__name__)
 
 
+_STEM_TRANSITION_REQUIREMENTS = {
+    "bass_swap": ({"bass"}, {"bass"}, {"bass"}, {"bass"}),
+    "mashup": ({"vocals"}, {"drums", "bass", "other"}, {"vocals"}, {"drums"}),
+}
+
+
+def _slice_transition_stems(
+    stems: dict[str, np.ndarray] | None,
+    *,
+    required: set[str],
+    signal_required: set[str],
+    start_sample: int,
+    length: int,
+    role: str,
+) -> tuple[dict[str, np.ndarray] | None, str]:
+    """Validate and align cached stems to a segment-local transition buffer."""
+    if not stems:
+        return None, f"{role} stems unavailable"
+    missing = sorted(required - set(stems))
+    if missing:
+        return None, f"{role} stems missing required: {','.join(missing)}"
+    if start_sample < 0 or length <= 0:
+        return None, f"{role} stem window is invalid"
+
+    aligned: dict[str, np.ndarray] = {}
+    for name, raw in stems.items():
+        try:
+            values = np.asarray(raw, dtype=np.float32)
+        except (TypeError, ValueError):
+            if name in required:
+                return None, f"{role} stem {name} cannot be converted to audio"
+            continue
+        if values.ndim not in {1, 2} or (values.ndim == 2 and values.shape[1] not in {1, 2}):
+            if name in required:
+                return None, f"{role} stem {name} has invalid channel shape"
+            continue
+        end_sample = start_sample + length
+        if end_sample > len(values):
+            if name in required:
+                return None, f"{role} stem {name} does not cover the transition window"
+            continue
+        region = np.asarray(values[start_sample:end_sample], dtype=np.float32)
+        if not np.isfinite(region).all():
+            if name in required:
+                return None, f"{role} stem {name} contains non-finite samples"
+            continue
+        peak = float(np.max(np.abs(region))) if region.size else 0.0
+        if peak > 8.0:
+            if name in required:
+                return None, f"{role} stem {name} has unsafe peak level"
+            continue
+        if name in signal_required:
+            rms = float(np.sqrt(np.mean(region.astype(np.float64) ** 2))) if region.size else 0.0
+            if rms < 1e-7:
+                return None, f"{role} stem {name} has insufficient signal for stem DSP"
+        aligned[name] = region
+
+    return aligned, ""
+
+
+def _prepare_transition_stem_windows(
+    stem_audio: dict[str, dict[str, np.ndarray]] | None,
+    transition_type: str,
+    *,
+    source_track_id: str,
+    target_track_id: str,
+    source_start_sample: int,
+    source_length: int,
+    target_start_sample: int,
+    target_length: int,
+) -> tuple[dict[str, np.ndarray] | None, dict[str, np.ndarray] | None, str]:
+    """Return aligned stem windows, or an explicit safe-fallback reason."""
+    requirements = _STEM_TRANSITION_REQUIREMENTS.get(transition_type)
+    if requirements is None:
+        return None, None, ""
+    if not stem_audio:
+        return None, None, "cached stems unavailable"
+    source_required, target_required, source_signal, target_signal = requirements
+    source_stems, reason = _slice_transition_stems(
+        stem_audio.get(source_track_id), required=source_required,
+        signal_required=source_signal, start_sample=source_start_sample,
+        length=source_length, role="source",
+    )
+    if source_stems is None:
+        return None, None, reason
+    target_stems, reason = _slice_transition_stems(
+        stem_audio.get(target_track_id), required=target_required,
+        signal_required=target_signal, start_sample=target_start_sample,
+        length=target_length, role="target",
+    )
+    if target_stems is None:
+        return None, None, reason
+    return source_stems, target_stems, ""
+
+
 def render_performance_mix(
     plan: SetPlan,
     output_path: str,
@@ -162,6 +257,10 @@ def render_performance_mix(
                 max(1, int(round(transition.overlap_duration_sec * sample_rate))),
             )
             source_tail = previous_segment
+            previous_segment_left = max(
+                0, int(round(previous_appearance.segment.source_start_sec * sample_rate))
+            )
+            source_tail_start_sample = previous_segment_left
             source_boundary = None
             source_left = None
             if transition.execution_mode == "section_edit" and transition.source_edit_boundary_sec > 0:
@@ -191,8 +290,13 @@ def render_performance_mix(
                 if execution_operation == "phrase_cut_internal_section_edit":
                     source_left = max(0, source_boundary - overlap)
                     source_tail = _to_stereo(source_track_audio[source_left:source_boundary]).astype(np.float32)
+                    source_tail_start_sample = source_left
                     if len(source_tail) < overlap:
                         source_tail = previous_segment[-overlap:]
+                        source_tail_start_sample = max(
+                            previous_segment_left,
+                            previous_segment_left + len(previous_segment) - len(source_tail),
+                        )
             output_start = len(output) - overlap
             preparation_samples = min(
                 max(0, int(round(transition.preparation_duration_sec * sample_rate))),
@@ -247,7 +351,26 @@ def render_performance_mix(
                 else:
                     logger.info("Target percussion tease declined: cached drums do not cover the preparation window")
 
-            target_head = current_stereo[target_base_offset + target_preparation_samples:]
+            target_head_offset = target_base_offset + target_preparation_samples
+            target_head = current_stereo[target_head_offset:]
+            target_head_start_sample = left + target_head_offset
+            transition_source_stems, transition_target_stems, stem_fallback_reason = (
+                _prepare_transition_stem_windows(
+                    stem_audio, render_transition_type,
+                    source_track_id=previous_appearance.segment.track_id,
+                    target_track_id=segment.track_id,
+                    source_start_sample=source_tail_start_sample,
+                    source_length=len(source_tail),
+                    target_start_sample=target_head_start_sample,
+                    target_length=len(target_head),
+                )
+            )
+            stem_path_requested = render_transition_type in _STEM_TRANSITION_REQUIREMENTS
+            stem_path_rendered = bool(
+                stem_path_requested
+                and transition_source_stems is not None
+                and transition_target_stems is not None
+            )
             body_start = len(output)
             actual_seam_samples = 0
             if transition.execution_mode == "section_edit" and execution_operation == "phrase_cut_internal_section_edit":
@@ -287,6 +410,8 @@ def render_performance_mix(
                 source_mid_energy=transition.source_local_energy,
                 target_low_energy=transition.target_bass_activity,
                 target_mid_energy=transition.target_local_energy,
+                source_stems=transition_source_stems,
+                target_stems=transition_target_stems,
                 use_time_stretch=transition.requires_stretch,
                 technique_operations=render_technique_operations,
             )
@@ -299,13 +424,17 @@ def render_performance_mix(
             generated_fx = [
                 {
                     "source_type": "generated_fx",
-                    "effect_type": operation.get("effect", "riser"),
+                    "effect_type": (
+                        "riser_impact"
+                        if operation.get("type") == "riser_impact"
+                        else operation.get("effect", "riser")
+                    ),
                     "seed": operation.get("seed", 0),
                     "output_start_sample": output_start,
                     "output_end_sample": output_start + overlap,
                 }
                 for operation in (transition.technique_operations or [])
-                if operation.get("type") == "generated_fx"
+                if operation.get("type") in {"generated_fx", "riser_impact"}
             ]
             # A stretched beatmatched target may consume more source than
             # the rendered overlap.  Start the solo target body after the
@@ -454,6 +583,13 @@ def render_performance_mix(
                 "technique_reason": transition.technique_reason,
                 "technique_operations": transition.technique_operations,
                 "generated_fx_provenance": generated_fx,
+                "stem_path_requested": stem_path_requested,
+                "stem_path_rendered": stem_path_rendered,
+                "stem_path_fallback_reason": (
+                    stem_fallback_reason if stem_path_requested and not stem_path_rendered else ""
+                ),
+                "stem_path_source_stems": sorted(transition_source_stems or {}),
+                "stem_path_target_stems": sorted(transition_target_stems or {}),
             })
             transition_count += 1
         out_end = out_start + len(current_stereo)

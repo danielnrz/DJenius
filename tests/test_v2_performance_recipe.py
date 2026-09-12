@@ -141,7 +141,7 @@ def test_invalid_structure_and_action_order_are_rejected():
     earlier = RecipeAction(ActionType.GAIN, MusicalPosition(1, 1), TrackRole.TARGET, {"gain_db": -6.0})
     recipe = PerformanceRecipe("unknown", "a", "a", 0, (later, earlier)).with_deterministic_ids()
     errors = " ".join(validate_performance_recipe(recipe))
-    assert "unsupported Phase 2 technique" in errors
+    assert "unsupported V2 technique" in errors
     assert "two different tracks" in errors
     assert "bars must be" in errors
     assert "actions are not in deterministic musical-time order" in errors
