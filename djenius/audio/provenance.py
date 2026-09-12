@@ -197,6 +197,7 @@ def audit_performance_provenance(events: Iterable[dict], track_lengths: dict[str
     unchanged.
     """
     violations: list[dict] = []
+    sample_event_ids: set[str] = set()
     appearances = [event for event in events if event.get("type") == "appearance"]
     for index, event in enumerate(appearances):
         track_id = event.get("track_id", "")
@@ -234,12 +235,71 @@ def audit_performance_provenance(events: Iterable[dict], track_lengths: dict[str
         for fx_index, fx in enumerate(event.get("generated_fx_provenance", []) or []):
             fx_start = int(fx.get("output_start_sample", -1))
             fx_end = int(fx.get("output_end_sample", -1))
-            if fx.get("source_type") != "generated_fx" or fx_start < output_start or fx_end > output_end or fx_end <= fx_start:
+            owner = str(fx.get("operation_owner", ""))
+            if (
+                fx.get("source_type") != "generated_fx"
+                or fx_start < output_start
+                or fx_end > output_end
+                or fx_end <= fx_start
+                or (owner and owner != "creative_fx_dsp")
+            ):
                 violations.append({
                     "kind": "generated_fx_provenance_invalid",
                     "event_index": index,
                     "fx_index": fx_index,
                 })
+        sample_provenance = event.get("sample_layer_provenance", []) or []
+        sample_generators: set[str] = set()
+        for sample_index, sample in enumerate(sample_provenance):
+            sample_start = int(sample.get("output_start_sample", -1))
+            sample_end = int(sample.get("output_end_sample", -1))
+            event_id = str(sample.get("event_id", ""))
+            generator = str(sample.get("generator", ""))
+            recipe_id = str(sample.get("recipe_id", ""))
+            action_id = str(sample.get("action_id", ""))
+            source_type = str(sample.get("source_type", ""))
+            owner = str(sample.get("operation_owner", ""))
+            musical_position = sample.get("musical_position", {}) or {}
+            valid_position = (
+                isinstance(musical_position, dict)
+                and int(musical_position.get("bar", 0)) >= 1
+                and int(musical_position.get("beat", 0)) >= 1
+            )
+            if (
+                source_type not in {"procedural_percussion", "generated_fx"}
+                or owner != "groove_sample_layer"
+                or not event_id or not generator or not recipe_id or not action_id
+                or sample_start < output_start
+                or sample_end > output_end
+                or sample_end <= sample_start
+                or not valid_position
+            ):
+                violations.append({
+                    "kind": "sample_layer_provenance_invalid",
+                    "event_index": index,
+                    "sample_index": sample_index,
+                })
+            if event_id in sample_event_ids:
+                violations.append({
+                    "kind": "duplicate_sample_event_id",
+                    "event_index": index,
+                    "sample_index": sample_index,
+                    "event_id": event_id,
+                })
+            if event_id:
+                sample_event_ids.add(event_id)
+            if generator:
+                sample_generators.add(generator)
+        if int(event.get("sample_layer_event_count", len(sample_provenance))) != len(sample_provenance):
+            violations.append({"kind": "sample_layer_count_mismatch", "event_index": index})
+        if (
+            sample_generators & {"noise_riser_v1", "impact_v1"}
+            and any(item.get("type") == "riser_impact" for item in operations)
+        ):
+            violations.append({
+                "kind": "duplicate_riser_impact_ownership",
+                "event_index": index,
+            })
         preparation_start = int(event.get("preparation_start_sample", -1))
         preparation_end = int(event.get("preparation_end_sample", -1))
         if event.get("preparation_rendered"):

@@ -66,3 +66,35 @@ The release benchmark will include planned-vs-shuffled set metrics, technique di
 - Generated FX and stem/preparation provenance remained explicit in transition diagnostics.
 - One earlier loaded full-suite run produced **921 passed, 3 failed** from fixed-timeout async polling (`job did not finish`). Those exact tests immediately passed alone (**3 passed in 4.70s**), and later unchanged full regressions passed at 928/928. This remains test-timing technical debt, not hidden history.
 - Private previews/reports remained outside Git under `/tmp/djenius_phase3_private_smoke` during validation.
+
+## Phase 4 - Groove / Sampler Layer gate
+- Dedicated Phase 4 suite: **58 passed in 1.38s**.
+- Frozen Phase 2 + Phase 3 gate: **72 passed in 1.71s**.
+- Broad targeted renderer/provenance/application integration gate: **208 passed in 5.87s**.
+- Complete repository regression: **986 passed in 28.99s** with **2 Typer/Click dependency deprecation warnings** and no asynchronous timeout failures.
+- Five anonymized private real-audio smoke scenarios passed: percussion bridge, drum fill before landing, riser+impact, downlifter reset, and offbeat-hats percussion. Each had finite duration-correct output, `clipping_fraction = 0.0`, audible/bounded added layer, complete provenance/ownership, and a clean provenance audit.
+- Source-analysis evidence for the real smoke: BPM 117.5, BPM confidence 0.976, analysis confidence 0.956. Riser/impact landing drift was approximately 2.307 ms; detected-beatgrid drift across tested scenarios remained roughly within 44 ms worst case for the selected real beatgrid window.
+- Privacy boundary: private smoke artifacts remain only under `/tmp/djenius_phase4_smoke`; no private track identity/media is recorded in Git.
+
+### Phase 4 capability matrix
+| Capability | Implemented | Recipe reachable | Renderer reachable | Synthetically validated | Real-audio smoke validated | Provenance validated |
+|---|---|---|---|---|---|---|
+| Kick | YES | YES | YES | YES | YES | YES |
+| Snare | YES | YES | YES | YES | YES | YES |
+| Clap | YES | YES | YES | YES | YES | YES |
+| Closed hat | YES | YES | YES | YES | YES | YES |
+| Open hat | YES | YES | YES | YES | YES | YES |
+| Percussion pattern | YES | YES | YES | YES | YES | YES |
+| Drum fill | YES | YES | YES | YES | YES | YES |
+| Riser | YES | YES | YES | YES | YES | YES |
+| Downlifter | YES | YES | YES | YES | YES | YES |
+| Impact | YES | YES | YES | YES | YES | YES |
+| Reverse sweep/cymbal | YES | YES | YES | YES | NO | YES |
+
+The `NO` above is deliberate: reverse sweep/cymbal passed deterministic synthesis, recipe/compiler, renderer, and provenance tests, but was not one of the five Phase 4 real-audio smoke scenarios.
+
+### Phase 4 ownership/safety evidence
+- Phase 3 `riser_impact` stays owned by creative FX DSP; Phase 4 discrete riser/impact stays owned by the groove/sample layer. The auditor rejects an ownership collision.
+- Duplicate sample event IDs and declared/rendered sample-layer count mismatches are explicit provenance failures.
+- Quarter/eighth/sixteenth scheduling, deterministic seeds, mono/stereo rendering, finite/non-silent checks, overlap peak protection, DC-offset protection, bounded event gains/levels, and exact event sample bounds are covered.
+- Empty `sample_layer_events` preserves the legacy renderer path; serialized transitions missing the new field deserialize to an empty list.

@@ -12,6 +12,16 @@ import hashlib
 import json
 from typing import Any
 
+from djenius.core.groove import (
+    GroovePattern,
+    MusicalSubdivision,
+    PerformanceSampleEvent,
+    SUPPORTED_PROCEDURAL_GENERATORS,
+    builtin_groove_pattern,
+    default_duration_beats,
+    source_type_for_generator,
+)
+
 RECIPE_SCHEMA_VERSION = "2.0"
 BEATS_PER_BAR = 4
 PHASE2_TECHNIQUES = {"eq_blend", "bass_swap", "phrase_cut", "loop_transition", "echo_release"}
@@ -30,6 +40,8 @@ class TrackRole(str, Enum):
 
 class Quantization(str, Enum):
     BEAT = "beat"
+    EIGHTH = "eighth"
+    SIXTEENTH = "sixteenth"
     BAR = "bar"
     PHRASE = "phrase"
     NONE = "none"
@@ -57,10 +69,18 @@ class ActionType(str, Enum):
     DELAY = "delay"
     REVERB = "reverb"
     SAMPLE = "sample"
+    DRUM_PATTERN = "drum_pattern"
     RISER = "riser"
+    DOWNLIFTER = "downlifter"
     IMPACT = "impact"
     TEMPO_RAMP = "tempo_ramp"
     RELEASE = "release"
+
+
+PHASE4_SAMPLE_ACTIONS = {
+    ActionType.SAMPLE, ActionType.DRUM_PATTERN, ActionType.RISER,
+    ActionType.DOWNLIFTER, ActionType.IMPACT,
+}
 
 
 @dataclass(frozen=True)
@@ -71,10 +91,13 @@ class MusicalPosition:
     beat: int = 1
     phrase: int | None = None
     section: str = ""
+    subdivision: int = 0
+    subdivisions_per_beat: int = 1
 
     @property
-    def beat_offset(self) -> int:
-        return (self.bar - 1) * BEATS_PER_BAR + (self.beat - 1)
+    def beat_offset(self) -> float:
+        fraction = self.subdivision / max(self.subdivisions_per_beat, 1)
+        return (self.bar - 1) * BEATS_PER_BAR + (self.beat - 1) + fraction
 
     def to_dict(self) -> dict[str, Any]:
         result: dict[str, Any] = {"bar": self.bar, "beat": self.beat}
@@ -82,6 +105,9 @@ class MusicalPosition:
             result["phrase"] = self.phrase
         if self.section:
             result["section"] = self.section
+        if self.subdivision or self.subdivisions_per_beat != 1:
+            result["subdivision"] = self.subdivision
+            result["subdivisions_per_beat"] = self.subdivisions_per_beat
         return result
 
     @classmethod
@@ -92,6 +118,8 @@ class MusicalPosition:
             beat=int(values.get("beat", 1)),
             phrase=int(values["phrase"]) if values.get("phrase") is not None else None,
             section=str(values.get("section", "")),
+            subdivision=int(values.get("subdivision", 0)),
+            subdivisions_per_beat=int(values.get("subdivisions_per_beat", 1)),
         )
 
 
@@ -243,6 +271,7 @@ class CompiledPerformanceRecipe:
     technique_operations: tuple[dict[str, Any], ...] = ()
     landing_operations: tuple[dict[str, Any], ...] = ()
     preparation_duration_sec: float = 0.0
+    sample_layer_events: tuple[dict[str, Any], ...] = ()
 
 
 def _canonicalize(value: Any) -> Any:
@@ -260,7 +289,7 @@ def _stable_id(prefix: str, payload: Any) -> str:
     return f"{prefix}_{hashlib.sha256(encoded).hexdigest()[:16]}"
 
 
-def _action_sort_key(action: RecipeAction) -> tuple[int, int, str]:
+def _action_sort_key(action: RecipeAction) -> tuple[float, int, str]:
     return (action.position.beat_offset, action.order, action.action.value)
 
 
@@ -297,11 +326,126 @@ def _validate_parameter_bounds(action: RecipeAction) -> list[str]:
         bounded("beats", -64.0, 64.0)
     if action.action == ActionType.TEMPO_RAMP:
         bounded("target_bpm", 40.0, 220.0)
-    if action.action in {ActionType.RISER, ActionType.IMPACT, ActionType.SAMPLE}:
+    if action.action in PHASE4_SAMPLE_ACTIONS:
         bounded("level", 0.0, 0.05)
+        bounded("gain_db", -24.0, 0.0)
+        bounded("velocity", 0.0, 1.0)
+        if "level" in p:
+            try:
+                if float(p["level"]) <= 0.0:
+                    errors.append(f"{action.action.value}.level must be greater than zero")
+            except (TypeError, ValueError):
+                pass
+        if "velocity" in p:
+            try:
+                if float(p["velocity"]) <= 0.0:
+                    errors.append(f"{action.action.value}.velocity must be greater than zero")
+            except (TypeError, ValueError):
+                pass
+        if "seed" in p:
+            try:
+                seed = int(p["seed"])
+                if float(p["seed"]) != seed or not 0 <= seed <= 2**31 - 1:
+                    raise ValueError
+            except (TypeError, ValueError):
+                errors.append(f"{action.action.value}.seed must be an integer in [0, 2147483647]")
     if action.action in {ActionType.STEM_GAIN, ActionType.STEM_MUTE, ActionType.STEM_SOLO}:
         if str(p.get("stem", "")) not in {"vocals", "drums", "bass", "other"}:
             errors.append(f"{action.action.value} requires a known stem")
+    return errors
+
+
+def _validate_musical_position(action: RecipeAction, index: int) -> list[str]:
+    position = action.position
+    grid = position.subdivisions_per_beat
+    if grid not in {1, 2, 4}:
+        return [f"action {index} subdivisions_per_beat must be 1, 2, or 4"]
+    if position.subdivision < 0 or position.subdivision >= grid:
+        return [f"action {index} subdivision is outside its beat grid"]
+    errors: list[str] = []
+    if action.quantization in {Quantization.BEAT, Quantization.BAR, Quantization.PHRASE} and position.subdivision != 0:
+        errors.append(f"action {index} claims {action.quantization.value} quantization off its grid")
+    if action.quantization == Quantization.EIGHTH and (position.subdivision * 2) % grid != 0:
+        errors.append(f"action {index} claims eighth quantization off its grid")
+    return errors
+
+
+def _integer_parameter(parameters: dict[str, Any], name: str, default: int, low: int, high: int) -> int:
+    raw = parameters.get(name, default)
+    try:
+        value = int(raw)
+        if float(raw) != value:
+            raise ValueError
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{name} must be an integer") from exc
+    if not low <= value <= high:
+        raise ValueError(f"{name} must be in [{low}, {high}]")
+    return value
+
+
+def _pattern_from_action(action: RecipeAction) -> GroovePattern:
+    raw_pattern = action.parameters.get("pattern")
+    if raw_pattern is not None:
+        if not isinstance(raw_pattern, dict):
+            raise ValueError("drum_pattern.pattern must be an object")
+        pattern = GroovePattern.from_dict(raw_pattern)
+        return pattern if pattern.pattern_id else pattern.with_deterministic_id()
+    name = str(action.parameters.get("pattern_name", ""))
+    if not name:
+        raise ValueError("drum_pattern requires pattern or pattern_name")
+    return builtin_groove_pattern(name)
+
+
+def _validate_sample_action(action: RecipeAction, recipe: PerformanceRecipe) -> list[str]:
+    if action.action not in PHASE4_SAMPLE_ACTIONS:
+        return []
+    errors: list[str] = []
+    if action.track_role != TrackRole.GENERATED:
+        errors.append(f"{action.action.value} requires generated track role")
+    phase = int(recipe.metadata.get("phase", 2))
+    if phase < 4 and action.action in {ActionType.SAMPLE, ActionType.DRUM_PATTERN, ActionType.DOWNLIFTER}:
+        errors.append(f"{action.action.value} requires Phase 4 recipe ownership")
+    if action.action == ActionType.SAMPLE:
+        generator = str(action.parameters.get("generator", ""))
+        if generator not in SUPPORTED_PROCEDURAL_GENERATORS:
+            errors.append("sample requires a supported procedural generator")
+    if action.action == ActionType.DRUM_PATTERN:
+        try:
+            pattern = _pattern_from_action(action)
+            errors.extend(f"drum_pattern: {item}" for item in pattern.validate())
+            repetitions = _integer_parameter(action.parameters, "repetitions", 1, 1, 16)
+            bar_offset = _integer_parameter(action.parameters, "bar_offset", 0, 0, 63)
+            span = bar_offset * BEATS_PER_BAR + pattern.length_beats * repetitions
+            if action.position.beat_offset + span > recipe.bars * BEATS_PER_BAR + 1e-9:
+                errors.append("drum_pattern extends beyond recipe")
+            action_gain = float(action.parameters.get("gain_db", 0.0))
+            if any(not -24.0 <= action_gain + step.gain_db <= 0.0 for step in pattern.steps):
+                errors.append("drum_pattern combined step gain is outside [-24, 0]")
+        except (TypeError, ValueError) as exc:
+            errors.append(str(exc))
+        return errors
+    generator = {
+        ActionType.RISER: "noise_riser_v1",
+        ActionType.DOWNLIFTER: "downlifter_v1",
+        ActionType.IMPACT: "impact_v1",
+    }.get(action.action, str(action.parameters.get("generator", "")))
+    if generator in SUPPORTED_PROCEDURAL_GENERATORS:
+        duration_beats = action.duration_beats or default_duration_beats(generator)
+        if duration_beats <= 0.0:
+            errors.append(f"{action.action.value} duration must be positive")
+        elif action.position.beat_offset + duration_beats > recipe.bars * BEATS_PER_BAR + 1e-9:
+            errors.append(f"{action.action.value} extends beyond recipe")
+    raw_envelope = action.parameters.get("envelope", {}) or {}
+    if not isinstance(raw_envelope, dict):
+        errors.append(f"{action.action.value}.envelope must be an object")
+    else:
+        try:
+            attack = float(raw_envelope.get("attack_sec", action.parameters.get("attack_sec", 0.0)))
+            release = float(raw_envelope.get("release_sec", action.parameters.get("release_sec", 0.0)))
+            if attack < 0.0 or release < 0.0:
+                errors.append(f"{action.action.value} envelope times must be non-negative")
+        except (TypeError, ValueError):
+            errors.append(f"{action.action.value} envelope times must be numeric")
     return errors
 
 
@@ -331,6 +475,8 @@ def validate_performance_recipe(recipe: PerformanceRecipe, context: RecipeCompil
             errors.append(f"action {index + 1} bar is outside recipe")
         if action.position.beat < 1 or action.position.beat > BEATS_PER_BAR:
             errors.append(f"action {index + 1} beat must be in [1, 4]")
+        errors.extend(_validate_musical_position(action, index + 1))
+        errors.extend(f"action {index + 1}: {item}" for item in _validate_sample_action(action, recipe))
         if action.position.phrase is not None and action.position.phrase < 1:
             errors.append(f"action {index + 1} phrase must be one-based")
         if action.duration_beats < 0 or action.duration_beats > recipe.bars * BEATS_PER_BAR:
@@ -390,6 +536,35 @@ def validate_performance_recipe(recipe: PerformanceRecipe, context: RecipeCompil
                 errors.append("recipe exceeds source segment bounds")
             if duration > target_available + 1e-6:
                 errors.append("recipe exceeds target segment bounds")
+            for action_index, action in enumerate(recipe.actions, start=1):
+                if action.action not in PHASE4_SAMPLE_ACTIONS:
+                    continue
+                try:
+                    envelope = _event_envelope(action)
+                    if action.action == ActionType.DRUM_PATTERN:
+                        pattern = _pattern_from_action(action)
+                        durations_beats = [
+                            step.duration_beats or default_duration_beats(step.generator)
+                            for step in pattern.steps
+                        ]
+                    else:
+                        generator = {
+                            ActionType.RISER: "noise_riser_v1",
+                            ActionType.DOWNLIFTER: "downlifter_v1",
+                            ActionType.IMPACT: "impact_v1",
+                        }.get(action.action, str(action.parameters.get("generator", "")))
+                        durations_beats = (
+                            [action.duration_beats or default_duration_beats(generator)]
+                            if generator in SUPPORTED_PROCEDURAL_GENERATORS else []
+                        )
+                    if durations_beats:
+                        shortest_sec = min(durations_beats) * 60.0 / clock_bpm
+                        if envelope["attack_sec"] + envelope["release_sec"] > shortest_sec + 1e-9:
+                            errors.append(
+                                f"action {action_index}: {action.action.value} envelope exceeds event duration"
+                            )
+                except (TypeError, ValueError) as exc:
+                    errors.append(f"action {action_index}: {exc}")
         if context.source_segment_end_sec <= context.source_segment_start_sec:
             errors.append("source segment has no duration")
         if context.target_segment_end_sec <= context.target_segment_start_sec:
@@ -409,7 +584,147 @@ def require_valid_performance_recipe(recipe: PerformanceRecipe, context: RecipeC
 
 
 def _position_seconds(position: MusicalPosition, bpm: float, beats_per_bar: int = BEATS_PER_BAR) -> float:
-    return ((position.bar - 1) * beats_per_bar + (position.beat - 1)) * 60.0 / bpm
+    return position.beat_offset * 60.0 / bpm
+
+
+def _position_from_beat_offset(beat_offset: float, subdivisions_per_beat: int) -> MusicalPosition:
+    whole_beat = int(beat_offset + 1e-9)
+    fraction = max(0.0, beat_offset - whole_beat)
+    subdivision = int(round(fraction * subdivisions_per_beat))
+    if subdivision >= subdivisions_per_beat:
+        whole_beat += 1
+        subdivision = 0
+    return MusicalPosition(
+        bar=whole_beat // BEATS_PER_BAR + 1,
+        beat=whole_beat % BEATS_PER_BAR + 1,
+        subdivision=subdivision,
+        subdivisions_per_beat=subdivisions_per_beat,
+    )
+
+
+def _seed_for_action(action: RecipeAction, salt: int = 0) -> int:
+    if "seed" in action.parameters:
+        return (int(action.parameters["seed"]) + salt) % (2**31)
+    digest = hashlib.sha256(f"{action.action_id}:{salt}".encode("utf-8")).hexdigest()
+    return int(digest[:8], 16) % (2**31)
+
+
+def _event_envelope(action: RecipeAction) -> dict[str, float]:
+    raw = action.parameters.get("envelope", {}) or {}
+    if not isinstance(raw, dict):
+        raise ValueError(f"{action.action.value}.envelope must be an object")
+    attack = float(raw.get("attack_sec", action.parameters.get("attack_sec", 0.0)))
+    release = float(raw.get("release_sec", action.parameters.get("release_sec", 0.0)))
+    return {"attack_sec": attack, "release_sec": release}
+
+
+def _compiled_sample_event(
+    recipe: PerformanceRecipe,
+    action: RecipeAction,
+    position: MusicalPosition,
+    generator: str,
+    duration_beats: float,
+    clock_bpm: float,
+    *,
+    seed: int,
+    gain_db: float,
+    velocity: float,
+    pattern_id: str = "",
+) -> PerformanceSampleEvent:
+    event = PerformanceSampleEvent(
+        event_id="",
+        source_type=source_type_for_generator(generator),
+        generator=generator,
+        time_sec=round(_position_seconds(position, clock_bpm), 9),
+        duration_sec=round(duration_beats * 60.0 / clock_bpm, 9),
+        level=float(action.parameters.get("level", 0.032)),
+        gain_db=gain_db,
+        velocity=velocity,
+        seed=seed,
+        recipe_id=recipe.recipe_id,
+        action_id=action.action_id,
+        musical_position=position.to_dict(),
+        envelope=_event_envelope(action),
+        pattern_id=pattern_id,
+        subdivision=position.subdivisions_per_beat,
+        provenance={
+            "bar": position.bar,
+            "beat": position.beat,
+            "subdivision_index": position.subdivision,
+        },
+        safety={
+            "level_ceiling": 0.05,
+            "gain_db_bounds": [-24.0, 0.0],
+            "renderer_peak_ceiling": 0.95,
+        },
+    ).with_deterministic_id()
+    errors = event.validate()
+    if errors:
+        raise ValueError("invalid compiled sample event: " + "; ".join(errors))
+    return event
+
+
+def _compile_sample_layer_events(recipe: PerformanceRecipe, clock_bpm: float) -> tuple[dict[str, Any], ...]:
+    # Phase 3's combined riser_impact DSP stays frozen.  Discrete sample-layer
+    # actions become audible only for Phase 4+ recipes, preventing double FX.
+    if int(recipe.metadata.get("phase", 2)) < 4:
+        return ()
+    events: list[PerformanceSampleEvent] = []
+    for action in recipe.actions:
+        if action.action not in PHASE4_SAMPLE_ACTIONS:
+            continue
+        if action.action == ActionType.DRUM_PATTERN:
+            pattern = _pattern_from_action(action)
+            repetitions = _integer_parameter(action.parameters, "repetitions", 1, 1, 16)
+            bar_offset = _integer_parameter(action.parameters, "bar_offset", 0, 0, 63)
+            base_beat = action.position.beat_offset + bar_offset * BEATS_PER_BAR
+            for repetition in range(repetitions):
+                for step in pattern.steps:
+                    event_beat = (
+                        base_beat
+                        + repetition * pattern.length_beats
+                        + step.step / int(pattern.subdivision)
+                    )
+                    position = _position_from_beat_offset(event_beat, int(pattern.subdivision))
+                    duration_beats = step.duration_beats or default_duration_beats(step.generator)
+                    seed = _seed_for_action(
+                        action,
+                        repetition * 1009 + step.step * 37 + step.seed_offset,
+                    )
+                    events.append(_compiled_sample_event(
+                        recipe,
+                        action,
+                        position,
+                        step.generator,
+                        duration_beats,
+                        clock_bpm,
+                        seed=seed,
+                        gain_db=float(action.parameters.get("gain_db", 0.0)) + step.gain_db,
+                        velocity=float(action.parameters.get("velocity", 1.0)) * step.velocity,
+                        pattern_id=pattern.pattern_id,
+                    ))
+            continue
+        generator = {
+            ActionType.RISER: "noise_riser_v1",
+            ActionType.DOWNLIFTER: "downlifter_v1",
+            ActionType.IMPACT: "impact_v1",
+        }.get(action.action, str(action.parameters.get("generator", "")))
+        duration_beats = action.duration_beats or default_duration_beats(generator)
+        events.append(_compiled_sample_event(
+            recipe,
+            action,
+            action.position,
+            generator,
+            duration_beats,
+            clock_bpm,
+            seed=_seed_for_action(action),
+            gain_db=float(action.parameters.get("gain_db", 0.0)),
+            velocity=float(action.parameters.get("velocity", 1.0)),
+        ))
+    return tuple(
+        event.to_dict()
+        for event in sorted(events, key=lambda item: (item.time_sec, item.event_id))
+    )
 
 
 def compile_performance_recipe(recipe: PerformanceRecipe, context: RecipeCompileContext) -> CompiledPerformanceRecipe:
@@ -463,7 +778,11 @@ def compile_performance_recipe(recipe: PerformanceRecipe, context: RecipeCompile
         preparation_duration = min(recipe_duration * 0.5, context.beats_per_bar * 60.0 / clock_bpm)
         preparation_operations.append({"type": "target_percussion_tease"})
     elif recipe.technique == "riser_impact":
-        technique_operations.append({"type": "riser_impact", "level": 0.02, "seed": 23})
+        # Phase 3 owns its historical combined riser+impact inside creative FX.
+        # Phase 4 transfers discrete riser/impact ownership to sample_layer_events
+        # so the same audible material can never be rendered twice.
+        if int(recipe.metadata.get("phase", 2)) < 4:
+            technique_operations.append({"type": "riser_impact", "level": 0.02, "seed": 23})
     elif recipe.technique == "tempo_reset":
         technique_operations.append({"type": "tape_stop", "strength": 0.72})
 
@@ -475,6 +794,7 @@ def compile_performance_recipe(recipe: PerformanceRecipe, context: RecipeCompile
         overlap * context.source_bpm / context.target_bpm
         if requires_stretch else overlap
     )
+    sample_layer_events = _compile_sample_layer_events(recipe, clock_bpm)
 
     return CompiledPerformanceRecipe(
         recipe=recipe,
@@ -489,6 +809,7 @@ def compile_performance_recipe(recipe: PerformanceRecipe, context: RecipeCompile
         requires_stretch=requires_stretch,
         target_consumed_duration_sec=round(target_consumed, 6),
         action_schedule=schedule,
+        sample_layer_events=sample_layer_events,
         preparation_operations=tuple(preparation_operations),
         technique_operations=tuple(technique_operations),
         preparation_duration_sec=round(preparation_duration, 6),
@@ -523,6 +844,7 @@ def compiled_recipe_to_transition(compiled: CompiledPerformanceRecipe, context: 
         landing_operations=[dict(item) for item in compiled.landing_operations],
         performance_recipe=compiled.recipe.to_dict(),
         recipe_action_schedule=[dict(item) for item in compiled.action_schedule],
+        sample_layer_events=[dict(item) for item in compiled.sample_layer_events],
         execution_directive={
             "recipe_id": compiled.recipe.recipe_id,
             "recipe_schema": compiled.recipe.schema_version,
@@ -530,9 +852,16 @@ def compiled_recipe_to_transition(compiled: CompiledPerformanceRecipe, context: 
                 "v2_phase2_legacy_transition_adapter"
                 if int(compiled.recipe.metadata.get("phase", 2)) <= 2
                 else "v2_phase3_core_technique_adapter"
+                if int(compiled.recipe.metadata.get("phase", 2)) == 3
+                else "v2_phase4_groove_sampler_adapter"
             ),
             "clock_bpm": compiled.clock_bpm,
             "recipe_duration_sec": compiled.recipe_duration_sec,
+            "operation_ownership": {
+                "transition_family_dsp": "djenius.audio.transitions",
+                "creative_fx_dsp": "djenius.audio.creative_fx",
+                "groove_sample_layer": "djenius.audio.groove_sampler",
+            },
         },
     )
 

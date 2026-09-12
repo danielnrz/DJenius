@@ -601,6 +601,9 @@ class PerformanceTransition:
     # historical V1/V9/V13/V14 plan unchanged.
     performance_recipe: dict = field(default_factory=dict)
     recipe_action_schedule: list[dict] = field(default_factory=list)
+    # V2 Phase 4: deterministic transition-local generated/sample events.
+    # Empty remains byte-for-byte equivalent to the pre-Phase-4 renderer path.
+    sample_layer_events: list[dict] = field(default_factory=list)
     # V13.1: set-level direction metadata.  These fields describe why this
     # handoff exists; the existing transition DSP remains the executor.
     performance_state: str = "DEVELOP"

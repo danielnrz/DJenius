@@ -1,16 +1,16 @@
 # DJenius V2 State
 
 ## CURRENT PHASE
-Phase 3 - Core DJ Technique Engine: **COMPLETE, pending final commit/push verification**. Phase 4 - Groove / Sampler Layer is the exact next implementation phase.
+Phase 4 - Groove / Sampler Layer: **COMPLETE**. Phase 5 - Candidate Composer is the exact next implementation phase after the Phase 4 freeze commit is pushed and verified.
 
 ## CURRENT BRANCH
 `v2-professional-autonomous-dj`
 
-## LAST PUSHED COMMIT
-`4d825d977db19a0d6b622178a59fb52814c0f9e3` - `Add V2 performance recipe DSL` (Phase 2).
+## PREVIOUS FROZEN COMMIT
+`de52bb209d293384783156b871a011e1db2f3aab` - `Add V2 core DJ technique engine` (Phase 3).
 
 ## WORKING TREE STATE
-Phase 3 production code and tests are fully implemented and locally verified. Durable Phase 3 documentation is being finalized before the privacy gate and coherent commit. No private previews or `/tmp/djenius_phase3_private_smoke` artifacts are to enter Git.
+Phase 4 production code, tests, and durable documentation are complete locally and awaiting the coherent Phase 4 privacy/diff gate, commit, push, and local/remote HEAD verification. Private real-audio smoke artifacts remain under `/tmp/djenius_phase4_smoke` and must not enter Git.
 
 - Base V1 commit: `efcfcca6d21aeaa595b236306b025b70668106fd`
 - V1 master remains unchanged.
@@ -19,33 +19,33 @@ Phase 3 production code and tests are fully implemented and locally verified. Du
 - Phase 0 V1 benchmark frozen and documented.
 - Phase 1 Analysis V2 complete and pushed.
 - Phase 2 typed Performance Recipe DSL complete and pushed.
-- Phase 3 extends the typed recipe/compiler boundary to all 12 required technique families.
-- Added deterministic DSP for reverb wash, loop shortening, riser+impact, and tempo-reset/tape-stop behavior.
-- Added real cached-stem execution paths for bass swap and stem handoff/mashup, with explicit safe fallback diagnostics when stems are unavailable/invalid.
-- Added drum-overlay preparation using actual target drum stems when available.
-- Added renderer provenance for generated FX, stem-path request/render/fallback state, and preparation source metadata.
-- Added direct `LocalAppService` integration coverage proving application-side stem discovery/loading reaches the real renderer and transition DSP.
+- Phase 3 Core DJ Technique Engine complete and pushed at `de52bb209d293384783156b871a011e1db2f3aab`.
+- Phase 4 adds deterministic project-owned procedural kick, snare, clap, closed/open hats, percussion patterns, short drum fills, riser, downlifter, impact, and reverse-sweep/cymbal material.
+- Musical-time scheduling supports quarter, eighth, and sixteenth subdivisions with deterministic event/pattern IDs and deterministic seeds.
+- Recipe/compiler integration emits explicit `sample_layer_events`; the renderer mixes only declared events and preserves the backward-compatible empty sample-layer path.
+- Renderer safety includes finite/non-silence checks, bounded event levels/gains, overlap peak protection, mono/stereo support, and DC-offset protection.
+- Provenance records generated event ownership, deterministic IDs/seeds, musical position, output sample bounds, declared safety, and sample-layer counts.
+- Phase 3 `riser_impact` remains owned by creative FX DSP for Phase 3 recipes; Phase 4 discrete riser/impact is owned exclusively by the groove/sample layer, with duplicate-ownership detection.
+- Provenance auditing rejects duplicate sample event IDs, sample-layer count mismatches, malformed ownership/provenance, and Phase 3/4 riser-impact ownership conflicts.
 
 ## TEST RESULTS
-- Phase 3 dedicated suite: **40 passed in 1.76s**.
-- Expanded renderer/technique gate: **144 passed in 5.65s**.
-- Final complete repository regression: **928 passed in 24.01s**.
-- Application-layer integration gate: **4 passed, 36 deselected in 0.92s**.
-- All 12 technique families are implemented, renderer-reachable, synthetically validated, and private-real-audio smoke validated.
-- Private real-audio library check covered 17 audio files; 15 had complete cached real stem sets.
-- Bass swap and stem handoff executed real stem paths; drum overlay consumed target drums; stem-path output materially differed from fallback output.
-- Filter blend, reverb wash, loop shortening, riser+impact, tempo reset, and echo out all rendered successfully in private smoke validation.
-- Provenance audit remained clean for synthetic integration renders and explicitly records generated/stem execution state.
+- Dedicated Phase 4 suite: **58 passed in 1.38s**.
+- Frozen Phase 2 + Phase 3 gate: **72 passed in 1.71s**.
+- Broad targeted renderer/provenance/application integration gate: **208 passed in 5.87s**.
+- Complete repository regression: **986 passed in 28.99s**, with **2 Typer/Click dependency deprecation warnings** and no asynchronous timeout failures.
+- Five anonymized private real-audio smoke scenarios passed: percussion bridge, drum fill before landing, riser+impact, downlifter reset, and offbeat-hats percussion.
+- All five real scenarios produced finite duration-correct output with `clipping_fraction = 0.0`, non-silent/bounded added layers, complete provenance, clean provenance audit, and complete ownership records.
+- Real source analysis evidence: BPM 117.5, BPM confidence 0.976, analysis confidence 0.956. Riser/impact landing drift was approximately 2.307 ms; worst tested detected-beatgrid drift was roughly 44 ms within the selected real beatgrid window.
 
 ## KNOWN LIMITATIONS / TECHNICAL DEBT
-- One earlier full regression under load reported **921 passed, 3 failed** because three fixed-timeout asynchronous polling tests raised `job did not finish`.
-- Those exact three tests immediately passed alone (**3 passed in 4.70s**) and later unchanged full regressions passed, including the final 928-test run.
-- Treat this as load-sensitive test timing/flakiness debt; do not hide it and do not weaken the tests blindly.
-- Stem-heavy techniques still depend on locally available cached stems; missing or invalid stems must take the explicit safe fallback path.
-- Phase 3 creates technique capabilities only; automatic musical selection/diversity policy belongs to later Candidate Composer / Set Director phases.
+- Reverse sweep/cymbal is implemented, recipe/renderer reachable, synthetically validated, and provenance validated, but was not included in the five-scenario real-audio Phase 4 smoke gate.
+- Phase 4 provides capabilities only; it does not automatically decide when added percussion/FX is musically appropriate.
+- Procedural sounds are intentionally project-owned deterministic synthesis rather than external sample-pack assets; timbral sophistication can be expanded later without changing the ownership/scheduling contract.
+- Stem-heavy Phase 3 techniques still depend on locally available cached stems and explicit safe fallback semantics.
+- Historical fixed-timeout async test timing debt remains documented from Phase 3, but the Phase 4 full regression had no asynchronous timeout failures.
 
 ## CURRENT BLOCKERS
-None for Phase 4. Optional external stem/structure models remain non-blocking.
+None for Phase 5. Optional external stem/structure models and external sample assets remain non-blocking.
 
 ## EXACT NEXT ACTION
-Run the Phase 3 privacy/diff gate, commit as `Add V2 core DJ technique engine`, push and verify local/remote HEAD equality. Then begin Phase 4 Groove / Sampler Layer from the typed musical-time recipe architecture: deterministic procedural percussion/FX primitives, musical-time event scheduling, pattern sequencing, provenance, safety tests, recipe integration, synthetic rendering, and private real-audio smoke validation.
+Run the Phase 4 privacy/diff gate; commit as `Add V2 groove and sampler layer`; push `origin/v2-professional-autonomous-dj`; verify clean working tree and local/remote HEAD equality. Then begin Phase 5 Candidate Composer: typed deterministic candidates, feasibility-first generation, 3-8 meaningfully distinct technique families per handoff where context permits, explainable reason codes, recipe compilation, synthetic context matrix, anonymized private real-pair smoke, full regression, privacy audit, durable docs, and coherent commit/push. Candidate Composer generates/validates/explains only; Audition Lab owns later preview ranking.

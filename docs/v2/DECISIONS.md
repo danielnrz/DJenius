@@ -78,3 +78,23 @@
 ## D019 - Phase 4 procedural sounds precede external sample assets
 **Decision:** implement the Groove / Sampler Layer first with deterministic project-owned DSP synthesis; external sample packs are not required for the initial architecture.
 **Why:** this preserves reproducibility, licensing clarity, privacy, and provenance while establishing the musical-time scheduling system.
+
+## D020 - Phase 4 event ownership is exclusive and auditable
+**Decision:** Phase 3 combined `riser_impact` remains owned by `creative_fx_dsp` for Phase 3 recipes; Phase 4 discrete riser/impact and all new procedural pattern/sample events are owned by `groove_sample_layer`. The provenance auditor rejects duplicate riser/impact ownership, duplicate sample event IDs, and declared/rendered event-count mismatch.
+**Why:** the same audible operation must never execute twice or become ambiguous in provenance as recipe semantics evolve.
+
+## D021 - Phase 4 scheduling and synthesis are deterministic, bounded capability primitives
+**Decision:** sample-layer actions use quarter/eighth/sixteenth musical grids, content-derived event/pattern IDs, deterministic seeds, finite/peak/DC safeguards, exact transition-local placement, and a no-op empty-layer compatibility path.
+**Why:** Candidate Composer needs reproducible capabilities it can reason about without hidden renderer randomness or legacy-output changes.
+
+## D022 - Candidate Composer is feasibility-first and does not rank sound quality
+**Decision:** Phase 5 generates a small deterministic set of feasible, meaningfully different transition candidates, with explicit reasons/requirements/rejections. It does not render-and-rank candidates as though it knows which sounds best.
+**Why:** generation/validation/explanation and perceptual audition are separate responsibilities. Audition Lab owns preview measurement, rejection, and ranking.
+
+## D023 - Candidate identity and ordering are content/context derived
+**Decision:** Phase 5 candidate IDs and ordered output must be reproducible for identical source/target analyses, set context, configuration, and seed; opaque UUIDs/timestamps are prohibited.
+**Why:** deterministic candidate sets are required for caching, regression testing, provenance, and later audition comparisons.
+
+## D024 - Candidate diversity is family-level by default
+**Decision:** normally emit roughly 3-8 plausible candidates and prefer different technique families/roles over many near-identical parameter variants. Explicit parameter exploration is allowed only when it is intentional and explainable.
+**Why:** the composer should present useful musical alternatives rather than inflate the search space before Audition Lab.

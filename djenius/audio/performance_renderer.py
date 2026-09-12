@@ -18,6 +18,7 @@ from pathlib import Path
 import numpy as np
 import soundfile as sf
 
+from djenius.audio.groove_sampler import render_performance_sample_layer
 from djenius.audio.provenance import audit_performance_provenance
 from djenius.audio.renderer import _compute_track_gain_db, _load_audio, _to_stereo
 from djenius.audio.transitions import apply_transition, phrase_cut_seam_samples
@@ -417,6 +418,19 @@ def render_performance_mix(
             )
             if len(transition_audio) != overlap:
                 raise ValueError("Performance transition produced an unexpected duration")
+
+            # Phase 4 capability layer: explicit transition-local generated
+            # events are mixed only when the compiled transition declares them.
+            # The empty-list path intentionally performs no call/no copy so all
+            # legacy transitions keep the exact pre-Phase-4 audio behavior.
+            sample_layer_provenance: list[dict] = []
+            if transition.sample_layer_events:
+                transition_audio, sample_layer_provenance = render_performance_sample_layer(
+                    transition_audio,
+                    sample_rate,
+                    transition.sample_layer_events,
+                    output_start_sample=output_start,
+                )
             source_preparation_rendered = any(
                 item.get("type") in {"bass_automation", "filter_automation", "generated_fx"}
                 for item in transition.preparation_operations
@@ -424,6 +438,7 @@ def render_performance_mix(
             generated_fx = [
                 {
                     "source_type": "generated_fx",
+                    "operation_owner": "creative_fx_dsp",
                     "effect_type": (
                         "riser_impact"
                         if operation.get("type") == "riser_impact"
@@ -582,7 +597,14 @@ def render_performance_mix(
                 "technique_confidence": transition.technique_confidence,
                 "technique_reason": transition.technique_reason,
                 "technique_operations": transition.technique_operations,
+                "operation_ownership": {
+                    "transition_family_dsp": render_transition_type,
+                    "creative_fx_dsp": [str(item.get("type", "")) for item in (transition.technique_operations or [])],
+                    "groove_sample_layer": [str(item.get("event_id", "")) for item in sample_layer_provenance],
+                },
                 "generated_fx_provenance": generated_fx,
+                "sample_layer_provenance": sample_layer_provenance,
+                "sample_layer_event_count": len(sample_layer_provenance),
                 "stem_path_requested": stem_path_requested,
                 "stem_path_rendered": stem_path_rendered,
                 "stem_path_fallback_reason": (
