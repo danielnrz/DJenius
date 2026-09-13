@@ -1,52 +1,52 @@
 # DJenius V2 State
 
 ## CURRENT PHASE
-Phase 6 - Audition Lab: **COMPLETE / READY TO FREEZE**. Phase 7 - Set Director V2 is the exact next implementation phase only after the Phase 6 privacy gate, commit, push, and local/remote HEAD verification.
+Phase 7 - Set Director V2: **COMPLETE / READY TO FREEZE**. Phase 8 - UI V2 is the exact next implementation phase only after the Phase 7 privacy gate, commit, push, and local/remote HEAD verification.
 
 ## CURRENT BRANCH
 `v2-professional-autonomous-dj`
 
 ## PREVIOUS FROZEN COMMIT
-`a17d2aafa261536260eadc440ff5ea5379ce243d` - `Add V2 candidate composer` (Phase 5).
+`c55b760b5cd9439f99f312fc47c8398334df5928` - `Add V2 audition lab` (Phase 6).
 
 ## WORKING TREE STATE
-Phase 6 production code, regression tests, the one-sample Phase 4 sampler boundary fix found by Phase 6 integration, and durable documentation are complete locally and awaiting the final privacy/diff gate, coherent commit, push, and local/remote HEAD verification. Private real-audio validation artifacts remain only under `/tmp/djenius_phase6_smoke` and must not enter Git.
+Phase 7 production code (`djenius/core/set_director.py`), dedicated tests
+(`tests/test_v2_phase7_set_director.py`), and durable documentation are
+complete locally and awaiting the final privacy/diff gate, coherent commit,
+push, and local/remote HEAD verification. Private real-audio validation
+artifacts remain only under `/tmp/djenius_phase7_smoke` and must not enter
+Git.
 
 - Base V1 commit: `efcfcca6d21aeaa595b236306b025b70668106fd`.
 - V1 master remains unchanged.
 
 ## COMPLETED WORK
-- Phases 0-5 are frozen; Phase 5 is pushed at `a17d2aafa261536260eadc440ff5ea5379ce243d`.
-- Phase 6 adds deterministic bounded candidate-preview rendering plus typed audition metrics, failures, rankings, decisions, provenance, and one-handoff selection.
-- Every preview binds candidate/recipe/source/target identity, exact transition/context bounds, sample rate/channels/duration, render configuration, renderer provenance, sample-layer provenance, and deterministic audio SHA-256.
-- Hard rejection occurs before soft ranking. NaN/Inf, render failure, broken bounds, candidate-transition clipping/unsafe peak proxy, catastrophic transition silence, severe boundary discontinuity, invalid stem/provenance use, and unstable declared stretch fail closed.
-- Candidate-introduced peak/silence safety is measured on the rendered transition, while whole-preview peak/clipping remains audit metadata. This prevents pre-existing mastered source/target context from falsely rejecting every candidate.
-- The inter-sample measure is explicitly a **4x polyphase oversampled/inter-sample peak proxy**, not an ITU/broadcast-certified true-peak meter.
-- Active soft evidence covers beat-grid phase/onset/drift proxies, local tempo mismatch reporting, LF/bass/mud/HF/spectral-hole/continuity proxies, context-aware vocal collision, technique-aware energy behavior, and family-specific FX safety where applicable.
-- Unsupported overlap-local harmonic quality, certified true peak, isolated-kick alignment, vocal intelligibility, and stem bleed remain explicitly deferred rather than represented as fabricated zeros.
-- Soft components are normalized to `[0,1]`, weights are configurable, inapplicable beat/FX metrics are excluded from the active denominator, and equal scores use deterministic candidate-ID tie breaking.
-- Phase 6 integration found and fixed a one-sample second-to-sample rounding residue for a generated event ending exactly on the transition boundary. Only a one-sample overrun is trimmed and recorded in provenance; larger overruns still fail closed.
+- Phases 0-6 are frozen; Phase 6 is pushed at `c55b760b5cd9439f99f312fc47c8398334df5928`.
+- Phase 7 adds `djenius/core/set_director.py`: a deterministic, additive whole-set journey planner sitting above Phase 5 (Candidate Composer) and Phase 6 (Audition Lab), while leaving `djenius/core/planner.py` (the classic beam-search planner) completely untouched.
+- Five explicit set arcs (smooth, warm-up-to-peak, peak-time, wave, open-format) each define a deterministic per-position target energy curve (`arc_energy_target`).
+- Combinatorial audition cost is controlled by a fixed pipeline: a cheap, audio-free compatibility+arc-fit shortlist narrows next-track candidates before Phase 5 runs at all; only a configurable bounded number of the resulting Phase 5 candidates are ever rendered/audited by Phase 6; every `(source, target, context)` outcome is cached (`EdgeAuditionCache`); a hard compute ceiling falls back to a cheap-compatibility-only summary once hit.
+- The beam search over track order is fully deterministic — no randomness is used for ordering decisions, only Phase 5's `seed` salts candidate-ID hashing, and every tie breaks on the track-id tuple lexicographically.
+- A real (not merely cosmetic) tempo-reset budget exists: `CandidateSetContext.allow_tempo_reset` is actually gated by how many deliberate resets a path has already used relative to `SetDirectorConfig.effective_max_reset_budget(arc)`, so Phase 5 stops offering tempo-reset candidates once an arc's budget is spent.
+- The objective is a transparent, decomposed, non-circular sum: handoff quality (Phase 6 score), energy-arc fit, BPM-journey fit, vocal pacing, groove continuity/contrast (arc-dependent), technique diversity, artist spacing, duration fit, and reset budget — each independently reported in `SetDirectorPlan.component_totals`.
+- `measure_set_quality` computes validation facts (energy-arc error, peak-placement error, BPM-jump statistics, consecutive-vocal-heavy count, technique-repetition stats, artist-spacing violations, viable-audition-edge rate, mean selected-audition score, hard-rejection rate) entirely independently of the internal weighted objective, specifically to avoid circular "optimize X, validate with X" reasoning.
+- `compare_to_shuffled_baselines` compares a planned order against many seeded shuffled orderings of the identical track pool on those independent metrics, using a neutral (non-technique-memory-chained) audition context so repeated pairs across shuffles are cache hits.
+- Real-music validation: three set intents (warm-up-to-peak, smooth, open-format) were planned from the same 12-track anonymized real library and each beat 12 seeded shuffled baselines on the majority of independent metrics (see `BENCHMARK.md` for the full table); technique sequences were genuinely varied, not collapsed to one family.
 
 ## TEST RESULTS
-- Dedicated Phase 6 suite: **36 passed in 2.92s**.
-- Broad V2 analysis/recipe/technique/groove/candidate/audition/renderer/provenance/application/model gate: **315 passed in 7.90s**.
-- Complete repository regression: **1062 passed in 25.28s**, with **2 known Typer/Click dependency deprecation warnings** and no asynchronous timeout failures.
-- Four anonymized private real handoffs auditioned **8 / 7 / 3 / 4** candidates; all **22/22 rendered successfully** after the rounding fix.
-- Hard rejections by pair: **0 / 4 / 0 / 2**. Survivors: **8 / 3 / 3 / 2**. Selected families: **loop_shortening / drum_bridge / stem_handoff / stem_handoff**.
-- Survivor score spreads by pair: **0.209766 / 0.057835 / 0.088534 / 0.043897**; rankings did not collapse to identical scores or one universal technique.
-- Exact rerun of one real handoff reproduced candidate IDs, preview bounds/hashes, metrics, hard-rejection decisions, scores, ordering, and winner exactly.
-- Controlled real-preview damage gate: a 100 ms beat shift reduced score **0.783336 -> 0.713880**; severe LF collision reduced it to **0.701851**; clipping, severe discontinuity, catastrophic silence, and excessive FX-tail overgain were hard rejected. `KNOWN BAD < GOOD REFERENCE` passed.
-- Component audit: **120** active real-smoke component values were all in `[0,1]`; no active component lacked a configured weight; the largest observed single active-weight share was **24.44%**.
+- Dedicated Phase 7 suite: **17 passed in ~24s**.
+- Broad targeted gate (analysis/recipe/technique/groove/candidate/audition/set-director/renderer/planner/scorer/model): **326 passed in ~31s**.
+- Complete repository regression: **1079 passed in ~44s**, with **2 known Typer/Click dependency deprecation warnings** and no asynchronous timeout failures.
+- `ruff check` clean on both new files.
+- Real-music gate (12 anonymized tracks, 3 arcs, 12 shuffled baselines each): planned order won or tied on every independent metric in all three arcs, and strictly won on artist spacing and viable-audition-edge rate in all three. Full table in `BENCHMARK.md`.
 
 ## KNOWN LIMITATIONS / TECHNICAL DEBT
-- Audition ranking remains a transparent deterministic heuristic, not human-perceived professional-DJ certification. Blind listening remains authoritative for release quality.
-- The oversampled peak metric is a safety proxy, not standards-compliant true peak.
-- Beat evidence uses a frame-energy onset proxy rather than isolated kick detection.
-- Reliable preview-local harmonic/chroma quality, vocal intelligibility, and stem-bleed metrics are not yet available and remain deferred.
-- Private smoke used four handoffs selected from the existing current-V2 local benchmark subset; it is evidence for Phase 6 behavior, not a statistically representative music corpus.
+- With a small real library, a forced-length path can include a handoff where every audited candidate hard-rejects (0 survivors); Set Director reports this truthfully (`selected_family: None`, `handoff_quality: 0.0`) rather than fabricating a winner, but has no backtracking/path-abandonment mechanism yet to avoid accepting such a forced handoff. Observed once in the SET_B real-music run.
+- `mean_selected_audition_score` is a weaker discriminator of ordering quality specifically when a library's BPM/key/vocal properties are close to uniform (a dedicated synthetic test isolates this on purpose) or when different arc positions steer Phase 5 toward different technique families independent of ordering quality. Reported for transparency; not treated as a hard pass/fail signal on its own.
+- Set Director inherits every Phase 5/6 deferred metric (certified true peak, isolated-kick alignment, overlap-local harmonic quality, vocal intelligibility, stem bleed) since it audits through those same components unchanged.
+- Set Director's automated shuffled-baseline win proves the planned order is measurably more coherent than random on independent, human-interpretable axes. It does **not** prove the set sounds like a professional human DJ performance; that remains for the later blind listening gate.
 
 ## CURRENT BLOCKERS
-None for freezing Phase 6. Phase 7 must remain above handoff-level audition and reason about set-level ordering, pacing, energy arc, continuity/contrast, vocal density, BPM journey, planned resets, repetition avoidance, technique diversity, and local audition outcomes.
+None for freezing Phase 7. Phase 8 - UI V2 must expose set trajectory, waveform structure, transition candidates, preview, performance timeline, creativity controls, and manual locks per the research specification (section 24 / Phase 8 in the roadmap), building on the now-available `SetDirectorPlan` diagnostics.
 
 ## EXACT NEXT ACTION
-Run the Phase 6 privacy/diff gate over the exact tracked/untracked change set. If clean, stage only public-safe Phase 6 source/tests/docs plus the focused one-sample sampler boundary fix; commit as `Add V2 audition lab`; push `origin/v2-professional-autonomous-dj`; verify clean working tree and exact local/remote HEAD equality. Only then begin Phase 7 Set Director V2.
+Run the Phase 7 privacy/diff gate over the exact tracked/untracked change set. If clean, stage only public-safe Phase 7 source/tests/docs; commit as `Add V2 set director`; push `origin/v2-professional-autonomous-dj`; verify clean working tree and exact local/remote HEAD equality. Only then begin Phase 8 UI V2.

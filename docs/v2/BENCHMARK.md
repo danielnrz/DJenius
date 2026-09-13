@@ -126,3 +126,23 @@ The `NO` above is deliberate: reverse sweep/cymbal passed deterministic synthesi
 - The real gate exposed and fixed two defects before freeze: pre-existing source/target context peaks were incorrectly participating in candidate hard peak rejection, and a valid fractional-BPM impact could round one sample past the sample-layer buffer. Candidate safety is now transition-scoped with whole-preview audit fields; the one-sample terminal residue is trimmed and provenance-recorded while larger overruns remain errors.
 - The oversampled/inter-sample peak measure remains a **4x polyphase proxy**, not certified true peak. Reliable overlap-local harmonic quality, isolated-kick alignment, vocal intelligibility, and stem bleed remain explicitly deferred.
 - Privacy boundary: private track identities, raw analyses, source audio/stems, previews, and `/tmp/djenius_phase6_smoke` artifacts remain outside Git.
+
+## Phase 7 - Set Director V2 gate
+- Dedicated Set Director suite: **17 passed in ~24s**.
+- Broad V2 gate (analysis/recipe/technique/groove/candidate/audition/set-director/renderer/planner/scorer/model): **326 passed in ~31s**.
+- Complete repository regression: **1079 passed in ~44s** with the same pre-existing Typer/Click dependency deprecation warnings and no asynchronous timeout failures.
+- `ruff check` on the new production/test files: all checks passed.
+- Real-music gate: a 12-track anonymized library (`TRACK_00`-`TRACK_13` minus 2 files that failed to decode; one ~20-minute non-music outlier excluded by duration) was drawn from the existing private `testMusic/` corpus via the already-frozen Phase 1 analyzer (`djenius/audio/analyzer.py::analyze_track`, cache-hit for all 12). Three arcs were planned from the same pool and each compared against **12** seeded shuffled baselines of the same 12 tracks:
+
+  | Set | Arc | Tracks | Handoffs | Duration vs target | energy_arc_error | peak_placement_error | artist_spacing | viable_audition_edge_rate | mean_selected_audition_score |
+  |---|---|---:|---:|---|:---:|:---:|:---:|:---:|:---:|
+  | SET_A | warmup_to_peak | 5 | 4 | 902s / 900s | **WIN** (0.260 vs 0.265) | **WIN** (0.486 vs 0.617) | **WIN** (0 vs 3.0) | **WIN** (1.00 vs 0.45) | tie (0.658 vs 0.661) |
+  | SET_B | smooth | 6 | 5 | 1053s / 900s | tie (0.265 vs 0.263) | **WIN** (0.136 vs 0.288) | **WIN** (0 vs 3.08) | **WIN** (0.80 vs 0.54) | **WIN** (0.691 vs 0.655) |
+  | SET_C | open_format | 6 | 5 | 993s / 900s | tie (0.201 vs 0.201) | **WIN** (0.136 vs 0.227) | **WIN** (0 vs 2.5) | **WIN** (1.00 vs 0.48) | **WIN** (0.680 vs 0.657) |
+
+  ("WIN" = planned strictly beat the mean of 12 shuffled baselines; "tie" = within noise of the baseline mean.) The planned order won or tied on every independent metric in all three arcs, and strictly won on artist spacing and viable-audition-edge rate in all three.
+- Selected technique sequences were genuinely varied across the three real sets: SET_A used `echo_out, phrase_cut, drum_bridge, riser_impact`; SET_B used `echo_out, loop_shortening, drum_bridge, riser_impact` plus one forced zero-survivor handoff (see limitation below); SET_C used `riser_impact, riser_impact, phrase_cut, drum_bridge, echo_out`. No arc collapsed to one repeated family.
+- Compute-cost control worked as designed: each of the three real plans considered on the order of 128-135 candidate next-track pairs, cheaply shortlisted down to 56-60, generated 207-212 Phase 5 candidates, and rendered/audited only 112-120 of them (2 per shortlisted edge) — end-to-end plan time was 12-13s and the 12-shuffle baseline comparison 16-19s each, on top of one-time cache-hit analysis and a ~1s resample-all-tracks step.
+- Known limitation: SET_B's forced 6-track path included one handoff where every audited candidate hard-rejected (0 survivors out of 2 audited); Set Director reports this truthfully as `selected_family: None`, `handoff_quality: 0.0` rather than fabricating a winner, but has no backtracking/path-abandonment mechanism yet to avoid accepting a forced zero-survivor handoff when a small real library leaves no better local option.
+- `mean_selected_audition_score` tied (rather than won) for SET_A and was closer than the other metrics for SET_B/SET_C; this matches the documented caveat (`DECISIONS.md` D036) that this particular metric is a weaker discriminator of ordering quality specifically, since Phase 5's technique-family choice is also steered by arc-position context, not only by which order is "better."
+- Privacy boundary: private track identities, raw analyses, source/decoded audio, and all `/tmp/djenius_phase7_smoke` artifacts (including the throwaway driver scripts) remain outside Git; only anonymous `TRACK_NN`/`SET_A|B|C` labels and aggregate metrics are recorded here.

@@ -13,7 +13,7 @@ DJenius V2 is a local autonomous DJ performance engine. The architectural target
 | 4 | Groove / sampler layer | beat-aligned, safe added material | PASS |
 | 5 | Candidate composer | 3-8 meaningfully different feasible recipes | PASS |
 | 6 | Audition Lab | known bad candidates rank below good references | PASS |
-| 7 | Set Director V2 | planned sets beat shuffled baselines | PENDING |
+| 7 | Set Director V2 | planned sets beat shuffled baselines | PASS |
 | 8 | UI V2 | inspect/preview/override performance | PENDING |
 | 9 | Personalization | feedback changes selection predictably | PENDING |
 | 10 | Certification | automated + private + blind V1/V2 listening | PENDING |
@@ -89,6 +89,25 @@ Required architecture/gate:
 Every substantial phase: targeted tests, full regression where appropriate, private real-audio validation, Git diff/privacy review, docs update, coherent commit, push branch.
 
 Phase 4 additionally requires synthetic render validation and short private real-audio previews proving percussion synchronization, fill landing, riser/impact landing, bounded loudness, and no repeated-event drift.
+
+## Phase 7 - Set Director V2
+Plan the whole-set journey above individual handoffs: track order, energy arc, BPM journey, technique diversity, artist/vocal pacing, and reset budget, using bounded/cached Phase 5+6 audition rather than exhaustive pairwise rendering.
+
+Required architecture/gate:
+- explicit set arcs (smooth, warm-up-to-peak, peak-time, wave, open-format) with a deterministic per-position target energy curve;
+- combinatorial cost controlled by a fixed pipeline: cheap audio-free shortlist -> Phase 5 candidate generation -> bounded Phase 6 audition (capped candidates per edge, hard compute ceiling) -> cached `HandoffSummary`, so repeated planning or many shuffled baselines do not re-render identical edges;
+- a deterministic beam search over track order with no randomness in ordering decisions (seed only salts Phase 5 candidate-ID hashing), stable lexicographic tie-breaking, and a real (not merely reported) reset-tempo budget that actually gates candidate feasibility once spent;
+- a transparent, decomposed, non-circular objective: handoff quality, energy-arc fit, BPM-journey fit, vocal pacing, groove continuity/contrast, technique diversity, artist spacing, duration fit, and reset budget, each independently inspectable in the plan's `component_totals`;
+- independent validation metrics (`measure_set_quality`) computed without reference to the internal weighted objective, used to compare a planned order against many seeded shuffled baselines of the same track pool on energy-arc error, peak-placement error, BPM-jump statistics, vocal/artist pacing, technique repetition, viable-audition-edge rate, mean selected-audition score, and hard-rejection rate;
+- defining gate: **planned sets beat shuffled baselines** on the majority of these independent metrics, evaluated as many deterministic seeded shuffles rather than one cherry-picked shuffle.
+
+### Phase 7 gate result
+- Dedicated Set Director suite: **17 passed in ~24s**. Broad V2 gate (analysis/recipe/technique/groove/candidate/audition/set-director/renderer/planner/scorer/model): **326 passed in ~31s**. Complete repository regression: **1079 passed in ~44s** with the same pre-existing Typer/Click dependency deprecation warnings and no async timeout failures.
+- The dedicated suite includes a controlled "locally tempting but globally bad path" test: a next track that looks like the best possible pairing on paper (near-identical BPM/key) but is actually over-driven/clipped loses to a slightly less "perfect"-looking pairing that survives real audition, proving the search is driven by actual bounded audition evidence rather than the cheap compatibility shortlist alone.
+- Three anonymized real-track set intents (warm-up-to-peak, smooth, open-format) were planned from a 12-track anonymized real library (`/tmp/djenius_phase7_smoke`, never committed) and each compared against 12 seeded shuffled baselines of the same pool. The planned order beat the shuffled baseline on energy-arc error, peak-placement error, artist spacing, and viable-audition-edge rate in every one of the three arcs; it also beat it on mean selected-audition score for two of three arcs (the third was a near-exact statistical tie, consistent with that metric's documented weak-discriminator caveat below).
+- Known limitation surfaced by the real gate: with only a 12-track library, one arc's forced-length path included a handoff where every audited candidate hard-rejected (0 survivors); Set Director truthfully reports this as `selected_family: None` / `handoff_quality: 0` rather than fabricating a candidate, but currently has no backtracking/path-abandonment escape hatch to avoid such a forced handoff when no better local option remains.
+- `mean_selected_audition_score` is an intentionally weak discriminator whenever a library holds BPM/key/vocal properties roughly constant (as one dedicated synthetic test does on purpose, to isolate energy-arc placement): different arc positions steer Phase 5 toward different technique families with genuinely different intrinsic audition scores, independent of whether the ordering itself is good or bad.
+- Privacy boundary: private track identities, raw analyses, source audio, and `/tmp/djenius_phase7_smoke` artifacts remain outside Git; only anonymous `TRACK_NN` / `SET_A|B|C` labels and aggregate metrics are recorded here.
 
 ## Human listening gate
 No merge to master until serious V2 candidates are rendered locally and the user completes the blind listening gate described in `DJENIUS_V2_RESEARCH_SPEC.md`.
