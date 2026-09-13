@@ -7,7 +7,7 @@ function toast(message, isError = false) { const node = $("toast"); node.textCon
 function switchPanel(id) { document.querySelectorAll(".nav-tab").forEach((button) => button.classList.toggle("active", button.dataset.panel === id)); document.querySelectorAll(".panel").forEach((panel) => panel.classList.toggle("active", panel.id === id)); }
 document.querySelectorAll(".nav-tab").forEach((button) => button.addEventListener("click", () => switchPanel(button.dataset.panel)));
 
-function jobCard(node, job) { node.classList.remove("hidden"); const label = job.type === "lyrics" ? "Song meaning" : job.type === "set_director_planning" ? "Set Director planning" : job.type[0].toUpperCase() + job.type.slice(1); node.innerHTML = `<strong>${esc(label)} ${job.status === "completed" ? "finished" : "in progress"}</strong><div class="progress-track"><div class="progress-bar" style="width:${job.progress}%"></div></div><div class="job-message">${esc(job.message)}</div>`; }
+function jobCard(node, job) { node.classList.remove("hidden"); const label = job.type === "lyrics" ? "Song meaning" : job.type === "set_director_planning" ? "Set Director planning" : job.type === "set_director_render" ? "Set Director mix render" : job.type[0].toUpperCase() + job.type.slice(1); node.innerHTML = `<strong>${esc(label)} ${job.status === "completed" ? "finished" : "in progress"}</strong><div class="progress-track"><div class="progress-bar" style="width:${job.progress}%"></div></div><div class="job-message">${esc(job.message)}</div>`; }
 async function pollJob(jobId, node, onComplete) { while (true) { const job = await api(`/api/jobs/${jobId}`); jobCard(node, job); if (job.status === "completed") { if (onComplete) await onComplete(job.result); return job.result; } if (job.status === "failed") throw new Error(job.error || job.message || "Job failed"); await new Promise((resolve) => setTimeout(resolve, 650)); } }
 
 function renderLibrary(result) { state.library = result; $("track-count").textContent = `${result.track_count} track${result.track_count === 1 ? "" : "s"}`; const semanticReady = result.tracks.filter((track) => track.semantic_status === "ready").length; const semanticUncertain = result.tracks.filter((track) => track.semantic_status === "uncertain").length; const meaning = result.meaning_summary || {}; $("library-summary").textContent = `${result.ready_count} analyzed · ${semanticReady} feeling tagged · ${meaning.ready || 0} meaning ready · ${meaning.low_confidence || 0} low confidence · ${meaning.failed || 0} failed`; $("analyze-button").disabled = result.track_count === 0; $("semantic-button").disabled = result.ready_count < 2 || !state.system?.semantic; $("lyrics-button").disabled = result.track_count === 0; $("retry-lyrics-button").disabled = result.track_count === 0 || !((meaning.missing || 0) + (meaning.failed || 0) + (meaning.low_confidence || 0) + (meaning.unavailable || 0)); $("plan-button").disabled = result.ready_count < 2; $("create-note").textContent = result.ready_count < 2 ? "Analyze at least two tracks to create a set." : "Ready to make a proposal."; const rows = $("library-rows"); rows.innerHTML = result.tracks.length ? result.tracks.map((track) => `<tr><td>${esc(track.title)}<small class="muted">${esc(track.filename)}</small></td><td>${esc(track.artist || "—")}</td><td>${fmt(track.duration_sec)}</td><td>${track.bpm ? Number(track.bpm).toFixed(1) : "—"}</td><td>${esc(track.key || "—")}</td><td>${track.energy ? Number(track.energy).toFixed(2) : "—"}</td><td title="${track.semantic_confidence == null ? "" : `Reliability ${(Number(track.semantic_confidence) * 100).toFixed(0)}% · relative model matches, not probabilities`}">${track.semantic_tags?.length ? track.semantic_tags.map((tag) => `<span class="semantic-tag">${esc(tag.replaceAll("_", " "))}</span>`).join(" ") : track.semantic_status === "uncertain" ? `<span class="muted">semantic uncertain</span>` : `<span class="muted">not analyzed</span>`}</td><td><span class="tag ${track.status === "ready" ? "ready" : ""}">${esc(track.status.replace("_", " "))}</span></td></tr>`).join("") : `<tr><td colspan="8" class="empty">No supported audio files found.</td></tr>`; }
@@ -226,6 +226,17 @@ async function rateHandoff(rating) {
   } catch (error) { toast(error.message, true); }
 }
 window.rateHandoff = rateHandoff;
+
+$("director-render-button").addEventListener("click", async () => {
+  try {
+    const job = await api(`/api/set-director/plans/${state.director.id}/render`, {method: "POST"});
+    await pollJob(job.job_id, $("director-render-job"), (result) => {
+      state.outputs = [{filename: result.filename, duration_sec: result.duration_sec, markers: []}, ...(state.outputs || [])];
+      selectOutput(result.filename, state.outputs[0]);
+    });
+    toast("Full mix rendered");
+  } catch (error) { toast(error.message, true); }
+});
 
 $("inspector-close").addEventListener("click", () => { $("inspector-overlay").classList.add("hidden"); $("inspector-audio").pause(); });
 $("inspector-overlay").addEventListener("click", (event) => { if (event.target.id === "inspector-overlay") { $("inspector-overlay").classList.add("hidden"); $("inspector-audio").pause(); } });

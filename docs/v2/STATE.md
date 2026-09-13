@@ -1,51 +1,56 @@
 # DJenius V2 State
 
 ## CURRENT PHASE
-Phase 9 - Personalization: **COMPLETE / READY TO FREEZE**. Phase 10 - Certification is the exact next implementation phase only after the Phase 9 privacy gate, commit, push, and local/remote HEAD verification.
+Phase 10 - Certification: **AUTONOMOUS PORTION COMPLETE**. The phase's actual
+defining gate -- a blind V1-vs-V2 human listening comparison with a human
+scorecard -- requires the user directly and has not happened. Ready to run
+the privacy/diff gate, commit, and push the autonomous work; V2 is not
+"done" until the human gate completes.
 
 ## CURRENT BRANCH
 `v2-professional-autonomous-dj`
 
 ## PREVIOUS FROZEN COMMIT
-`23a60951acafb32c69d168bb4a875e0931a5f0e9` - `Update handoff state after Phase 8 freeze push` (Phase 8; the actual Phase 8 content commit was `b4e5945`).
+`4f71818e2f2613d14db184c23901f43474ce04fd` - `Add V2 personalization` (Phase 9; a handoff-doc-only follow-up landed at `191dd40`).
 
 ## WORKING TREE STATE
-Phase 9 production code (additive fields on `djenius/core/set_director.py`'s
-`SetDirectorConfig`/`_shortlist_next_tracks`/`_score_edge_components`,
+Phase 10 production code (`djenius/audio/set_director_renderer.py`,
 additions to `djenius/application.py`/`djenius/web/app.py`/
-`djenius/web/static/*`), a new dedicated test file, and durable
-documentation are complete locally and awaiting the final privacy/diff gate,
-coherent commit, push, and local/remote HEAD verification. No private track
-data enters Git; manual real-browser verification used the same real,
-already-gitignored `testMusic/` library and local preference database
-already used in Phase 7/8's verification, and only aggregate/structural
-observations were written to any tracked file.
+`djenius/web/static/*`), dedicated tests, and durable documentation are
+complete locally and awaiting the final privacy/diff gate, coherent commit,
+push, and local/remote HEAD verification. A real full-mix WAV rendered
+during manual verification was delivered directly to the user (not written
+to any tracked path); the private transition-benchmark script and its
+anonymized JSON results live only under `/tmp/djenius_phase10_smoke`.
 
 - Base V1 commit: `efcfcca6d21aeaa595b236306b025b70668106fd`.
 - V1 master remains unchanged.
 
 ## COMPLETED WORK
-- Phases 0-8 are frozen; Phase 8 is pushed at `b4e5945d459c3b86f9927091e7fe3a1739dc1f55` (handoff-doc-only follow-up at `23a6095`).
-- Phase 9 adds structured listening feedback that changes future Set Director technique/track selection predictably, reusing V1's existing `PreferenceProfile` store rather than building a parallel one (D041).
-- `SetDirectorConfig` (Phase 7) gains `technique_preferences: dict[str, float]`, `liked_track_ids`/`disliked_track_ids: frozenset[str]` (all additive, all pure injected data -- `set_director.py` still never touches a database, D043). A new `user_preference` edge component (weight 0.06, other eight rebalanced so the total still sums to 1.0) is now a first-class, independently-inspectable part of the same transparent objective Phase 7 built (D042); liked/disliked tracks also get a matching adjustment in the existing cheap shortlist heuristic, mirroring how artist-spacing already works in both places.
-- `LocalAppService._set_director_learned_preferences()` reads the existing `transition_ratings`/`track_feedback` tables (technique-family feedback shares V1's own free-text `transition_type` column -- no schema migration, D041) and feeds them into every new `start_set_director_plan` call.
-- New `save_set_director_feedback` / `POST /api/set-director/plans/{plan_id}/handoffs/{index}/feedback`, reusing V1's exact rating vocabulary. New "Rate the technique used here" buttons in the Transition Inspector. Liked/disliked-track feedback and the "what have you learned" view needed **no new UI at all** -- both reuse V1's existing `/api/feedback/track` control and the existing Preferences tab verbatim.
+- Phases 0-9 are frozen; Phase 9 is pushed at `4f71818e2f2613d14db184c23901f43474ce04fd` (handoff-doc-only follow-up at `191dd40`).
+- New `djenius/audio/set_director_renderer.py::render_set_director_mix`: the first capability able to render an entire Set-Director-planned set into one continuous mix file, closing the gap Phase 8 explicitly deferred. Reuses the exact proven Phase 6 compile -> apply_transition -> splice pattern, just with full-track "before"/"after" windows instead of a bounded preview window.
+- Discovered and fixed, on real music (not only synthetic fixtures): Phase 5 chooses each edge's anchors independently, so a shared middle track's target-entry point and its own later source-exit point are not guaranteed to land in timeline order. The renderer detects this and shifts the affected transition to start exactly where the previous edge ended, tracked transparently via `anchor_shift_sec` in provenance (D044).
+- `LocalAppService.start_set_director_render` (background job) + `POST /api/set-director/plans/{plan_id}/render`, and a "Render full mix" button in the Set Director UI that hands the result to the existing "Now Playing" player -- no new playback UI needed.
+- Small, directly-motivated hardening fix: `lock_set_director_candidate` now refuses to lock a hard-rejected candidate (D045), a gap the renderer's own guard made obvious.
+- A private difficult-pair transition benchmark (research spec 30.4) classified every real pair in the existing anonymized 12-track library into the specification's 15 categories and ran one representative real pair per populated category through Candidate Composer + Audition Lab; full anonymized results in `BENCHMARK.md`.
+- A real, technically-verified ~4:11 continuous V2 mix from 3 real tracks was rendered through the actual app and delivered directly to the user -- the first real artifact ready for their own blind listening comparison.
 
 ## TEST RESULTS
-- Dedicated Phase 9 suite: **4 passed** (`tests/test_v2_phase9_personalization.py`).
-- Two new/extended `test_app.py` cases: full HTTP feedback flow, and repeated feedback measurably changing `SetDirectorConfig.technique_preferences` for a fresh plan.
-- Complete repository regression: **1085 passed** (1080 at the Phase 8 checkpoint + 5), same 2 pre-existing Typer/Click deprecation warnings, no async timeout failures.
-- `ruff check` clean on every changed file (one pre-existing, unrelated unused-import warning in `application.py` predates this phase, unchanged).
-- Manual real-browser verification: rated a real handoff "great" through the Transition Inspector, confirmed the toast, confirmed `/api/preferences` reflected it, and confirmed the pre-existing Preferences tab rendered it with zero new frontend code. Full narrative in `BENCHMARK.md`; no private track data recorded.
+- Dedicated Phase 10 suite: **6 passed** (`tests/test_v2_phase10_certification.py`).
+- One new `test_app.py` case: full HTTP render flow (plan -> render -> play -> confirm output metadata) plus a 404 check.
+- Complete repository regression: **1092 passed** (1085 at the Phase 9 checkpoint + 7), same 2 pre-existing Typer/Click deprecation warnings, no async timeout failures.
+- `ruff check` clean on every changed file (one pre-existing, unrelated unused-import warning in `application.py` predates this phase).
+- Manual real-browser verification: planned a real 3-track set, rendered it into one continuous WAV through the actual UI, and verified the file directly (finite, -14.8 dBFS RMS, negligible clipping, correct duration). Delivered to the user. Full narrative in `BENCHMARK.md`.
 
 ## KNOWN LIMITATIONS / TECHNICAL DEBT
-- Personalization only covers technique-family preference and liked/disliked tracks. BPM/energy-range preferences, FX-intensity/creativity learning (the Phase 8 creativity knob is a per-session user choice, not yet a *learned* one), stem-use preference, and genre-transition preference from the research spec's section 22 wishlist are not wired into Set Director yet.
-- `min_samples=2` for technique-family preference (vs. V1's own `min_samples=3` default) is a judgment call favoring a faster feedback loop; not validated against real extended usage.
-- A real test-design pitfall was found and documented (`IMPLEMENTATION_PLAN.md`): `TransitionCandidate` ids are content-hashed from track ids, so two near-identical fixtures differing only by id can have a *bounded* audition sample a different candidate subset, producing a real (non-preference) `handoff_quality` difference. Tests must audition the full candidate set (or otherwise control for this) to isolate a preference effect cleanly.
-- All Phase 7/8 known limitations (forced zero-survivor handoffs, `mean_selected_audition_score` as a weak discriminator in some constructions, no full-mix rendering yet, inspection-level-only locks, no waveform/timeline visualization, inherited Phase 5/6 deferred metrics, "beats shuffled baselines is not professional DJ quality") still apply unchanged.
+- **The Phase 10 defining gate is not met.** Everything autonomously achievable is done; the blind V1-vs-V2 human listening comparison with a human scorecard has not happened and cannot happen without the user.
+- A real, specific, actionable gap surfaced by the transition benchmark: for vocal-heavy real pairs, Candidate Composer can currently generate zero surviving candidates (confirmed on two real representative pairs, auditioning every generated candidate). There is no minimal-risk fallback family (e.g. a restrained equal-power crossfade) guaranteed feasible regardless of vocal/loudness conditions. Set Director's own search would generally avoid placing such a pair adjacent when better alternatives exist, but a future phase should consider adding such a fallback family to Phase 5's repertoire.
+- The anchor-shift fix (D044) is a pragmatic, transparent correction, not a full redesign of Phase 5's per-edge anchor independence; a future phase could instead make Set Director's search itself anchor-aware across adjacent edges, at the cost of Phase 7's current edge-caching simplicity.
+- No V1-style baseline mix of the same real library was rendered this phase for a true side-by-side; the existing classic `/api/plans` + `/api/plans/{id}/render` path is unchanged and available whenever the user wants one.
+- All Phase 7/8/9 known limitations (forced zero-survivor handoffs within a plan, `mean_selected_audition_score` as a weak discriminator in some constructions, inspection-level-only locks, no waveform/timeline visualization, inherited Phase 5/6 deferred metrics) still apply unchanged.
 
 ## CURRENT BLOCKERS
-None for freezing Phase 9. Phase 10 - Certification needs: full automated suite (already continuously green), a private real-track transition/set benchmark (much of this already exists from Phases 6/7's real-music gates), multiple full real sets, and -- the one gate no prior phase could satisfy -- a blind V1-vs-V2 human listening comparison with a human scorecard. That last piece requires the user's direct participation and cannot be completed autonomously.
+The single remaining blocker for calling V2 "done" per the research specification: the user's blind V1-vs-V2 listening comparison and scorecard. Nothing else in the roadmap is pending.
 
 ## EXACT NEXT ACTION
-Run the Phase 9 privacy/diff gate over the exact tracked/untracked change set (confirm nothing under `testMusic/`, `*.db`, `/tmp`, `.claude/`, or any real track name entered the tracked set). If clean, stage the Phase 9 files, commit as `Add V2 personalization`, push `origin/v2-professional-autonomous-dj`, and verify clean working tree plus exact local/remote HEAD equality. Only then begin Phase 10 - Certification, and flag clearly to the user that the blind listening gate needs their direct involvement.
+Run the Phase 10 privacy/diff gate over the exact tracked/untracked change set (confirm nothing under `testMusic/`, `*.db`, `/tmp`, `.claude/`, or any real track name entered the tracked set). If clean, stage the Phase 10 files, commit as `Add V2 full mix rendering`, push `origin/v2-professional-autonomous-dj`, and verify clean working tree plus exact local/remote HEAD equality. Then stop and wait for the user: offer to render a V1-style baseline of the same (or any) library and additional V2 mixes on request, but the actual blind comparison and scorecard are theirs to do.

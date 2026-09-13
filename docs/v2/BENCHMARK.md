@@ -170,3 +170,44 @@ The `NO` above is deliberate: reverse sweep/cymbal passed deterministic synthesi
 - No schema migration: technique-family feedback reuses V1's existing `transition_ratings` table (a free-text column, not enum-constrained) rather than introducing a parallel one -- V1's 8 legacy transition types and Set Director's 11 technique families coexist as different string values in the same aggregate with no conflict.
 - Real-world context: this session's local dev preference database (pre-existing, from real prior use of the app, not created for this phase) already had 2 liked tracks and several mix ratings recorded; `_set_director_learned_preferences()` picked these up automatically the first time it ran, confirming the wiring activates on genuinely pre-existing user data, not only freshly-seeded test data. No private track identity is recorded here.
 - No private track title, artist, or filepath appears in this entry or any other tracked file.
+
+## Phase 10 - Certification gate (autonomous portion)
+- Dedicated suite: **6 passed** (`tests/test_v2_phase10_certification.py`), plus **1** new `test_app.py` case for the full HTTP render flow.
+- Complete repository regression: **1092 passed** (1085 at the Phase 9 checkpoint + 7). `ruff check` clean (one pre-existing, unrelated `application.py` warning unchanged).
+- Real full-mix render (new capability this phase, `djenius/audio/set_director_renderer.py`): a genuine continuous mix was planned and rendered from 3 real `testMusic` tracks through the actual running app (smooth arc, target duration 8 min, 2 real handoffs, techniques `riser_impact` then `loop_shortening`). Measured directly on the rendered file:
+
+  | Metric | Value |
+  |---|---:|
+  | Duration | 251.1s (~4:11) |
+  | Sample rate | 22050 Hz stereo |
+  | Finite | 100% |
+  | RMS level | -14.8 dBFS |
+  | Peak | 1.000 |
+  | Clipping fraction (\|x\|>=0.999) | 3.6e-7 (~2 of 5.5M samples) |
+  | Silence fraction (<-55 dBFS) | 1.3% |
+
+  This file was delivered directly to the user as the first real artifact ready for their blind V1-vs-V2 comparison.
+- Building the renderer surfaced a genuine architectural fact, confirmed on this same real plan (not only on synthetic fixtures): Phase 5 chooses each edge's anchors independently of its neighbors, so a shared middle track's target-entry point and its own later source-exit point are not guaranteed to be in timeline order. The renderer now detects and corrects this by shifting the affected transition to start exactly where the previous edge ended (`anchor_shift_sec` in provenance), rather than failing. See `DECISIONS.md` D044.
+- Private difficult-pair transition benchmark (research spec 30.4), built from the same anonymized 12-track library the Phase 7 real-music gate used (`/tmp/djenius_phase10_smoke`, never committed):
+
+  | Category | Real matches in library | Representative pair result |
+  |---|---:|---|
+  | same BPM / same key | 0 | not observed in this library |
+  | same BPM / bad key | 8 | 7 generated, 1 survivor, `drum_bridge` selected (0.575) |
+  | large BPM difference | 60 | 3 generated, 2 survivors, `echo_out` selected (0.785) |
+  | half-time relation | 6 | 3 generated, 2 survivors, `echo_out` selected (0.590) |
+  | vocal-heavy -> vocal-heavy | 72 | 3 generated, **0 survivors** (see below) |
+  | instrumental -> vocal | 9 | 4 generated, **0 survivors** (see below) |
+  | genre change | 0 | no reliable genre signal available to test against |
+  | weak intro | 88 | 4 generated, 3 survivors, `echo_out` selected (0.652) |
+  | weak outro | 22 | 3 generated, 2 survivors, `echo_out` selected (0.584) |
+  | variable tempo | 42 | 4 generated, 3 survivors, `echo_out` selected (0.652) |
+  | stem-friendly | 132 | 4 generated, 3 survivors, `echo_out` selected (0.652) |
+  | stem-poor | 0 | every track in this library has declared stems |
+  | short track | 22 | 4 generated, 3 survivors, `echo_out` selected (0.652) |
+  | long ambient intro | 0 | not observed in this library |
+  | strong double-drop candidate | 0 | not observed in this library |
+
+  The two zero-survivor rows were independently confirmed by auditioning *every* generated candidate for that pair (not a bounded subset): one candidate hard-rejected on the already-documented missing-stems limitation, the others on genuine peak/clipping safety against already-loudly-mastered real vocal material. This is recorded as a real, specific, actionable gap -- Candidate Composer currently has no minimal-risk fallback family (e.g. a restrained equal-power crossfade) guaranteed feasible regardless of vocal/loudness conditions -- not smoothed over or re-sampled until a nicer result appeared.
+- No private track title, artist, or filepath appears in this entry or any other tracked file.
+- **What Phase 10 has not done, and cannot do autonomously**: the blind V1-vs-V2 human listening comparison with a human scorecard, which is the phase's actual defining gate. A real, technically-verified V2 mix has been handed to the user; producing a comparable V1-style bake of the same library and running the actual blind comparison is the explicit next step for the user, not for this session.

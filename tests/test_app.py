@@ -191,10 +191,9 @@ def test_stems_option_fails_gracefully_when_optional_dependency_is_absent(tmp_pa
     assert "not installed" in result["error"]
 
 
-def _set_director_track(path: Path, track_id: str, *, bpm: float = 120.0, artist: str = "") -> TrackProfile:
+def _set_director_track(path: Path, track_id: str, *, bpm: float = 120.0, artist: str = "", duration: float = 24.0) -> TrackProfile:
     from djenius.core.analysis_v2 import build_tempo_hypotheses
 
-    duration = 24.0
     sr = 6000
     n = int(round(duration * sr))
     t = [i / sr for i in range(n)]
@@ -273,8 +272,10 @@ def test_set_director_plan_inspect_lock_and_preview(tmp_path, monkeypatch):
     assert handoff["index"] == 0
     assert isinstance(handoff["candidates"], list)
 
-    if len(handoff["candidates"]) >= 2:
-        alternate = next(item for item in handoff["candidates"] if not item["selected"])
+    alternate = next(
+        (item for item in handoff["candidates"] if not item["selected"] and not item["hard_rejected"]), None,
+    )
+    if alternate is not None:
         locked = client.post(
             f"/api/set-director/plans/{plan_id}/handoffs/0/lock",
             json={"candidate_id": alternate["candidate_id"]},
@@ -338,3 +339,48 @@ def test_set_director_learns_technique_preference_across_plans(tmp_path, monkeyp
 
     config = service._set_director_config("balanced")
     assert config.technique_preferences[family] == pytest.approx(0.0)
+
+
+def test_set_director_full_mix_render_endpoint(tmp_path, monkeypatch):
+    library = tmp_path / "music"
+    library.mkdir()
+    # Longer, more widely spread-out tracks than the other Set Director
+    # fixtures in this file: a full-mix render needs a target-entry anchor
+    # (near a track's start) and a later source-exit anchor (near its end)
+    # to land in non-conflicting order on any shared middle track, which a
+    # very short/sparse fixture cannot reliably guarantee.
+    tracks = [
+        _set_director_track(library / "a.wav", "a", bpm=120.0, artist="Artist A", duration=180.0),
+        _set_director_track(library / "b.wav", "b", bpm=121.0, artist="Artist B", duration=180.0),
+        _set_director_track(library / "c.wav", "c", bpm=119.0, artist="Artist C", duration=180.0),
+    ]
+    service = LocalAppService(data_dir=tmp_path / "data", output_dir=tmp_path / "output")
+    monkeypatch.setattr(service, "_profiles_for_library", lambda path: tracks)
+    client = ApiClient(create_app(service))
+
+    job = client.post("/api/set-director/plans", json={
+        "path": str(library), "arc": "smooth", "duration_minutes": 8.0, "max_tracks": 3,
+    }).json()
+    planned = _wait_long(client, job["job_id"])
+    assert planned["status"] == "completed", planned.get("error")
+    plan_id = planned["result"]["id"]
+    handoff_count = len(planned["result"]["handoffs"])
+    assert handoff_count >= 1
+
+    render_job = client.post(f"/api/set-director/plans/{plan_id}/render", json={}).json()
+    rendered = _wait_long(client, render_job["job_id"])
+    assert rendered["status"] == "completed", rendered.get("error")
+    filename = rendered["result"]["filename"]
+    assert rendered["result"]["duration_sec"] > 0
+
+    played = client.get(f"/api/outputs/{filename}")
+    assert played.status_code == 200
+    assert played.headers["content-type"] in {"audio/wav", "audio/x-wav"}
+
+    outputs = client.get("/api/outputs").json()["outputs"]
+    matching = next(item for item in outputs if item["filename"] == filename)
+    assert matching["set_director"] is True
+    assert matching["arc"] == "smooth"
+    assert len(matching["technique_sequence"]) == handoff_count
+
+    assert client.post("/api/set-director/plans/does-not-exist/render", json={}).status_code == 404

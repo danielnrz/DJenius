@@ -1137,6 +1137,8 @@ class LocalAppService:
         )
         if audition is None or candidate_id not in handoff.candidates:
             raise ValueError("Unknown candidate for this handoff")
+        if audition.hard_rejected:
+            raise ValueError("Cannot select a candidate that audition hard-rejected")
         with self._lock:
             record["overrides"][index] = {"candidate_id": candidate_id, "score": float(audition.final_score)}
         return self.set_director_handoff_view(plan_id, index)
@@ -1190,6 +1192,56 @@ class LocalAppService:
         filename = f"preview-{plan_id[:8]}-{index}-{target_id[:10]}.wav"
         sf.write(str(self.paths.output_dir / filename), preview.audio, preview.sample_rate)
         return filename
+
+    def start_set_director_render(self, plan_id: str) -> str:
+        """Phase 10: render the whole plan into one continuous mix file.
+
+        A background job because a full-length real mix, unlike a single
+        bounded preview, can take a while for a long set.
+        """
+        from djenius.audio.set_director_renderer import (
+            SetDirectorRenderError,
+            render_set_director_mix,
+        )
+
+        record = self._set_director_record(plan_id)
+        plan = record["plan"]
+        profiles = record["profiles"]
+        provider = record["provider"]
+        overrides = dict(record["overrides"])
+        output_name = f"set-director-mix-{plan_id[:10]}-{int(time.time())}.wav"
+        output_path = self.paths.output_dir / output_name
+
+        def action(progress: Callable[[float, str], None]) -> dict[str, Any]:
+            progress(10, "Rendering the full continuous mix")
+            try:
+                mix = render_set_director_mix(plan, profiles, provider, overrides=overrides)
+            except SetDirectorRenderError as exc:
+                raise ValueError(str(exc)) from exc
+            progress(80, "Writing the mix to disk")
+            import soundfile as sf
+
+            sf.write(str(output_path), mix.audio, mix.sample_rate)
+            record_entry = {
+                "filename": output_name,
+                "created_at": time.time(),
+                "duration_sec": mix.total_duration_sec,
+                "plan_id": plan_id,
+                "preset": None,
+                "set_director": True,
+                "arc": plan.arc,
+                "technique_sequence": list(mix.technique_sequence),
+                "markers": [],
+            }
+            with self._lock:
+                self._output_records = [record_entry] + [
+                    item for item in self._output_records if item.get("filename") != output_name
+                ]
+                self._save_json(self.paths.outputs_index_path, self._output_records[:50])
+            progress(100, f"Rendered {mix.total_duration_sec:.0f}s mix")
+            return {"filename": output_name, "duration_sec": mix.total_duration_sec, "markers": []}
+
+        return self.submit_job("set_director_render", action)
 
     # ---- rendering and outputs ----
 

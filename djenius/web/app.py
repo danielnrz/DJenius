@@ -271,6 +271,15 @@ def create_app(service: LocalAppService | None = None) -> FastAPI:
         except ValueError as exc:
             raise fail(exc) from exc
 
+    @app.post("/api/set-director/plans/{plan_id}/render")
+    def render_set_director_plan(plan_id: str) -> dict:
+        try:
+            return {"job_id": service.start_set_director_render(plan_id)}
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise fail(exc) from exc
+
     @app.get("/api/outputs")
     def outputs() -> dict:
         return {"outputs": service.list_outputs()}
