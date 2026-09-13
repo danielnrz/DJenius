@@ -104,6 +104,14 @@ product failure resolved based on the engineering evidence.**
 2026-09-13T18:48:49Z (final private recovery render completed; full 1102-test
 regression and lint/diff checks completed immediately beforehand)
 
+## PERFORMANCE-RECOVERY COMMIT
+The validated production/test/audit checkpoint was committed and pushed as
+`32b2d3d6e679495d0edd7818fd2a787cb512608e` (`Recover V2 DJ performance
+choreography`). This final handoff-status edit follows that production commit;
+use `git log -1` and the remote ref as authority for its own docs-only SHA.
+The only remaining untracked item is the pre-existing `.claude/` directory,
+which was not touched or staged.
+
 ## PRIOR HANDOFF VERIFIED TIME (historical)
 2026-09-13T20:05Z (user is transferring development to a different coding
 agent -- GPT-5.6 Sol -- after this update; this session is stopping per

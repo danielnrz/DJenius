@@ -48,13 +48,13 @@ checkpoint:
 ## CURRENT BRANCH
 `v2-professional-autonomous-dj`
 
-## LATEST PUSHED COMMIT
-`43288c69bff8d3ef7b66a473d63e20bf01138b45` - "Update handoff with V2
-listening-investigation findings and spec audit" (docs only; the four
-production fixes landed one commit earlier at `89bfda5d0265d38cb1247fdb319f0ec1bcebe320`
-- "Fix real V2 planning defects found by human listening comparison").
-Confirmed local HEAD == remote HEAD == this SHA via `git fetch` +
-`git rev-parse` immediately before this update.
+## LATEST PERFORMANCE-RECOVERY COMMIT
+`32b2d3d6e679495d0edd7818fd2a787cb512608e` - "Recover V2 DJ performance
+choreography". It contains the production fixes, regression coverage, durable
+technique audit, and private-package metadata references described above, and
+was pushed to `origin/v2-professional-autonomous-dj`. A docs-only handoff
+finalization may follow it; resolve the current tip from Git rather than this
+historical field.
 
 ## PHASE COMPLETION HISTORY (unchanged, factual record)
 - Phases 0-9: frozen. Phase 9 pushed at `4f71818e2f2613d14db184c23901f43474ce04fd`
