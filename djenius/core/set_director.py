@@ -34,6 +34,7 @@ from djenius.core.audition_lab import (
     rank_auditions,
 )
 from djenius.core.candidate_composer import (
+    FAMILY_ORDER,
     CandidateComposerConfig,
     CandidateSetContext,
     TransitionCandidate,
@@ -192,7 +193,14 @@ AudioProvider = Callable[[TrackProfile], TrackAudio]
 class SetDirectorConfig:
     beam_width: int = 4
     shortlist_width: int = 4
-    max_candidates_audited_per_edge: int = 4
+    # Was 4 (half of Candidate Composer's own 8-candidate cap). Verified
+    # against real music that this silently excluded whole technique
+    # families from ever being auditioned for a handoff -- not because they
+    # were worse, but because `candidate_id` (a content hash) happened to
+    # sort them past the cutoff. Rendering cost is cheap (~0.1s/candidate
+    # measured in the Phase 7 real-music gate), so the honest default is to
+    # audition everything Candidate Composer was willing to generate.
+    max_candidates_audited_per_edge: int = 8
     max_edges_to_audition: int = 400
     max_reset_budget: int = 2
     reset_threshold_pct: float = 12.0
@@ -350,9 +358,42 @@ class SetDirectorComputeStats:
     cache_hits: int = 0
     cache_misses: int = 0
     budget_exhausted_edges: int = 0
+    infeasible_edges_excluded: int = 0
 
     def to_dict(self) -> dict[str, int]:
         return dict(self.__dict__)
+
+
+def _family_diverse_order(candidates: tuple[TransitionCandidate, ...]) -> list[TransitionCandidate]:
+    """Order candidates so a bounded audit budget samples distinct technique
+    families before repeating any one family, instead of an arbitrary
+    candidate-id (content hash) order.
+
+    Confirmed against real music: with the old plain `sorted(by candidate_id)`
+    order and a smaller audit budget than the generated candidate count, this
+    could silently exclude entire families (e.g. every long-blend family)
+    from ever being auditioned for a handoff -- not because they scored
+    worse, but purely because their id happened to hash past the cutoff.
+    """
+    by_family: dict[str, list[TransitionCandidate]] = {}
+    for candidate in sorted(candidates, key=lambda item: item.candidate_id):
+        by_family.setdefault(candidate.technique_family, []).append(candidate)
+    family_priority = [family for family in FAMILY_ORDER if family in by_family]
+    family_priority += sorted(family for family in by_family if family not in FAMILY_ORDER)
+
+    ordered: list[TransitionCandidate] = []
+    round_index = 0
+    while len(ordered) < len(candidates):
+        added_this_round = False
+        for family in family_priority:
+            bucket = by_family[family]
+            if round_index < len(bucket):
+                ordered.append(bucket[round_index])
+                added_this_round = True
+        if not added_this_round:
+            break
+        round_index += 1
+    return ordered
 
 
 def evaluate_edge(
@@ -405,7 +446,7 @@ def evaluate_edge(
         cache.put(key, summary)
         return summary
 
-    ordered_candidates = sorted(composition.candidates, key=lambda item: item.candidate_id)
+    ordered_candidates = _family_diverse_order(composition.candidates)
     to_audit = ordered_candidates[: config.max_candidates_audited_per_edge]
     candidates_by_id = {item.candidate_id: item for item in to_audit}
 
@@ -679,6 +720,7 @@ def plan_set_v2(
             stats.edges_considered += len(remaining)
             stats.edges_shortlisted += len(shortlisted)
 
+            viable_expansions = 0
             for target in shortlisted:
                 energy_goal = arc_energy_target(arc, next_position_fraction) - arc_energy_target(arc, position_fraction)
                 set_context = CandidateSetContext(
@@ -693,6 +735,20 @@ def plan_set_v2(
                     source, target, audio_provider=audio_provider, set_context=set_context,
                     config=config, cache=cache, stats=stats,
                 )
+                if handoff.ranking is not None and handoff.survivor_count == 0:
+                    # Every candidate technique the composer generated for this
+                    # exact pairing was hard-rejected on real audio audition --
+                    # there is no renderable transition here at all (confirmed:
+                    # `render_set_director_mix` raises `SetDirectorRenderError`
+                    # for a handoff with no selected candidate). Treat this as
+                    # an infeasible move, not merely a low-scoring one, so the
+                    # planner can never hand off a plan it cannot actually
+                    # render. (Distinct from `budget_exhausted`, where the edge
+                    # was never auditioned at all -- that keeps its existing
+                    # cheap-heuristic fallback.)
+                    stats.infeasible_edges_excluded += 1
+                    continue
+                viable_expansions += 1
                 components = _score_edge_components(
                     source=source, target=target, handoff=handoff, arc=arc,
                     next_position_fraction=next_position_fraction, artist_history=state.artist_history,
@@ -705,10 +761,44 @@ def plan_set_v2(
                     new_technique_history = (state.technique_history + (handoff.selected_family,))[-4:]
                 new_artist = _artist_key(target)
                 new_artist_history = state.artist_history + ((new_artist,) if new_artist else ())
-                overlap = _estimate_overlap_sec(source, target)
+                selected_candidate = (
+                    handoff.candidates.get(handoff.selected_candidate_id)
+                    if handoff.selected_candidate_id else None
+                )
+                if selected_candidate is not None:
+                    # `state.duration_sec` is always "total mix duration if the
+                    # set ended right here", i.e. it already assumes `source`
+                    # (the current last track) plays solo from wherever it was
+                    # entered through to its own natural end. Undo that
+                    # assumption using the *real* chosen anchors -- source
+                    # really stops at its own source_segment.anchor_sec (not
+                    # its full duration), and target starts contributing from
+                    # its own target_segment.anchor_sec (not from 0) -- then
+                    # re-apply the same "plays to its own end" assumption for
+                    # the new last track. Confirmed against real music that
+                    # the old flat `_estimate_overlap_sec` heuristic (a fixed
+                    # ~16-bar assumption, capped at 50% of each track's
+                    # duration) instead assumed every track contributes close
+                    # to its full length, which overstated a real 4-track
+                    # plan's duration by ~236s (664.0s estimated vs 427.8s
+                    # actually rendered) because real anchors routinely land
+                    # far from a track's start/end.
+                    new_duration = (
+                        state.duration_sec - source.duration_sec
+                        + selected_candidate.source_segment.anchor_sec
+                        + target.duration_sec
+                        - selected_candidate.target_segment.anchor_sec
+                    )
+                else:
+                    # Budget-exhausted edge (last-resort compute guard): no
+                    # candidate was ever auditioned, so there is no real
+                    # anchor to use. Fall back to the coarse bar-count
+                    # heuristic -- this is not the common path.
+                    overlap = _estimate_overlap_sec(source, target)
+                    new_duration = state.duration_sec + target.duration_sec - overlap
                 expanded.append(_BeamState(
                     track_ids=state.track_ids + (target.id,),
-                    duration_sec=state.duration_sec + target.duration_sec - overlap,
+                    duration_sec=new_duration,
                     technique_history=new_technique_history,
                     artist_history=new_artist_history,
                     reset_count=state.reset_count + (1 if relation["is_reset"] else 0),
@@ -718,6 +808,14 @@ def plan_set_v2(
                         _explain_edge(source, target, handoff, components),
                     ),),
                 ))
+            if viable_expansions == 0:
+                # Every shortlisted next track hard-rejected on real audition
+                # from this source -- there is no move this beam can legally
+                # make. Finalize it where it stands instead of silently
+                # dropping it (which would let a smaller, all-viable library
+                # lose beams for the wrong reason) or forcing it through an
+                # edge that cannot be rendered.
+                finished.append(state)
         if not expanded:
             break
         expanded.sort(key=_beam_sort_key)

@@ -494,14 +494,31 @@ def _choose_anchor(track: TrackProfile, *, source: bool, minimum_lead_sec: float
             filtered.append(cue)
     cues = filtered or cues
     if cues:
-        def score(cue: dict[str, Any]) -> tuple[float, float, float]:
+        # `directional` rewards a source-exit cue that is late in the track (so
+        # the track plays out further before handing off) and a target-entry
+        # cue that is early (so the track gets more standalone airtime before
+        # the *next* handoff). It used to be a tuple tie-breaker after
+        # `-time_sec`, which meant it only mattered on an exact score tie --
+        # confirmed against real music to be effectively never, since
+        # confidence/mix/downbeat/drop scores vary continuously. That let
+        # anchors land deep inside a track purely because a mid-track cue
+        # happened to score marginally higher, collapsing that track's own
+        # standalone presence in the final mix (one real handoff left a track
+        # audible for ~15s out of a 209s track). Folding it into the primary
+        # score as a real, bounded term restores a genuine preference for
+        # using more of the track while still letting a meaningfully better
+        # cue (higher confidence/mix/downbeat/drop) win when it matters.
+        directional_weight = 0.35
+
+        def score(cue: dict[str, Any]) -> tuple[float, float]:
             confidence = float(cue.get("confidence", 0.0))
             mix = float(cue.get("mix_out_score" if source else "mix_in_score", 0.0))
             downbeat = 0.15 if int(cue.get("beat_in_bar", 0)) == 1 else 0.0
             drop = 0.20 if (not source and "drop_landing" in cue.get("use_cases", [])) else 0.0
             position = float(cue.get("time_sec", 0.0)) / max(duration, 1e-6)
             directional = position if source else 1.0 - position
-            return (confidence + mix + downbeat + drop, directional, -float(cue.get("time_sec", 0.0)))
+            primary = confidence + mix + downbeat + drop + directional_weight * directional
+            return (primary, -float(cue.get("time_sec", 0.0)))
         return dict(max(cues, key=score))
 
     sections = track.analysis.section_profiles or []

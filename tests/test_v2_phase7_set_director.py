@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 
 from djenius.core.analysis_v2 import build_tempo_hypotheses
+from djenius.audio.set_director_renderer import render_set_director_mix
 from djenius.core.audition_lab import audition_candidate, rank_auditions
 from djenius.core.candidate_composer import CandidateSetContext, compose_transition_candidates
 from djenius.core.models import TrackAnalysis, TrackMetadata, TrackProfile
@@ -14,6 +15,8 @@ from djenius.core.set_director import (
     SetDirectorEdgeChoice,
     SetDirectorComputeStats,
     TrackAudio,
+    _estimate_overlap_sec,
+    _family_diverse_order,
     arc_energy_target,
     bpm_relationship,
     compare_to_shuffled_baselines,
@@ -261,7 +264,7 @@ def test_evaluate_edge_matches_direct_phase5_phase6_call():
     )
 
     composition = compose_transition_candidates(source, target, set_context=context, config=config.composer_config, seed=config.seed)
-    ordered = sorted(composition.candidates, key=lambda item: item.candidate_id)[: config.max_candidates_audited_per_edge]
+    ordered = _family_diverse_order(composition.candidates)[: config.max_candidates_audited_per_edge]
     auditions = [
         audition_candidate(c, _pulse_audio(bpm=120.0), _pulse_audio(bpm=121.0), SR, config=config.audition_config)
         for c in ordered
@@ -472,6 +475,106 @@ def test_locally_tempting_edge_loses_to_globally_better_path():
     # driven, so any avoidance the plan shows is a real audition-driven
     # decision (the search actually rendered and rejected it), not luck.
     assert float(np.max(np.abs(audio(b_tempting).audio))) > 1.0
+
+
+def test_plan_never_selects_a_hard_rejected_edge():
+    """A plan must always be renderable.
+
+    Confirmed as a real defect against this exact fixture: before this fix,
+    the beam search would still score and select an edge whose every audited
+    candidate hard-rejected on audition (e.g. `b_tempting`'s clipped audio
+    against any neighbour), because nothing excluded a zero-survivor edge
+    from `expanded` -- it just contributed a 0.0 handoff-quality component
+    and rode the rest of the score. `render_set_director_mix` then raises
+    `SetDirectorRenderError` for such a handoff, since there is no candidate
+    to render. A plan must never be able to reach that state: every edge it
+    contains must have a real, audition-surviving selected candidate, even
+    when (as here) that means finishing with fewer tracks than the library
+    holds rather than forcing in an unusable one.
+    """
+    a = _track("a_open", bpm=120.0, camelot="8A", mean_energy=0.55)
+    b_tempting = _track("b_tempting", bpm=121.0, camelot="8A", mean_energy=0.50)
+    z_real = _track("z_real", bpm=118.0, camelot="9A", mean_energy=0.50)
+
+    audio = _provider({
+        "a_open": _pulse_audio(bpm=120.0),
+        "b_tempting": _clipped_audio(bpm=121.0),
+        "z_real": _pulse_audio(bpm=118.0),
+    })
+    tracks = [a, b_tempting, z_real]
+    profiles = {t.id: t for t in tracks}
+
+    for beam_width in (1, 2, 3):
+        config = _small_config(beam_width=beam_width, shortlist_width=3)
+        plan = plan_set_v2(tracks, audio_provider=audio, target_duration_sec=100.0, arc=SetArc.OPEN_FORMAT, config=config)
+
+        assert len(plan.edges) >= 1, f"beam_width={beam_width}: plan has no transitions at all"
+        for edge in plan.edges:
+            assert edge.handoff.selected_candidate_id is not None, (
+                f"beam_width={beam_width}: edge {edge.source_track_id}->{edge.target_track_id} "
+                "has no selected candidate and cannot be rendered"
+            )
+            assert edge.handoff.survivor_count > 0, (
+                f"beam_width={beam_width}: edge {edge.source_track_id}->{edge.target_track_id} "
+                "was included despite every candidate hard-rejecting on audition"
+            )
+
+        # The real end-to-end guarantee: rendering the plan must not raise.
+        mix = render_set_director_mix(plan, profiles, audio)
+        assert mix.total_duration_sec > 0.0
+
+
+def test_planned_duration_is_far_closer_to_the_actual_render_than_before():
+    """The beam search's own `total_duration_sec` estimate must actually
+    approximate how long the rendered mix comes out to be, not just be some
+    unrelated number the search happens to compare against its target.
+
+    Confirmed as a real defect against real music: the old `_estimate_overlap_sec`
+    heuristic assumed every track contributes close to its full length once a
+    flat ~16-bar overlap is subtracted, when in reality anchors routinely land
+    deep inside a track -- only the slice between its entry anchor and its own
+    exit anchor ends up playing. On one real 4-track plan this overstated the
+    true duration by ~236s (664.0s planned vs 427.8s actually rendered). The
+    fix derives the running estimate from each edge's own real chosen anchors
+    instead of the flat heuristic.
+
+    This does not make the estimate exact: a middle track's entry anchor (from
+    the edge before it) and its own exit anchor (for the edge after it) are
+    still chosen independently by Candidate Composer, which has no notion of
+    "the edge before" or "the edge after" (see `set_director_renderer.py`'s
+    module docstring). When those two independently-valid anchors conflict,
+    the renderer's `anchor_shift_sec` correction (D044) consumes a few extra
+    real seconds that the plan-time estimate cannot see in advance -- a
+    separate, deeper architectural gap (Candidate Composer has no way to
+    receive "this track is already consumed until X seconds" as an input)
+    that is tracked on its own rather than papered over here.
+    """
+    t1 = _track("t1", bpm=120.0, camelot="8A", mean_energy=0.3, duration=90.0)
+    t2 = _track("t2", bpm=121.0, camelot="8A", mean_energy=0.55, duration=90.0)
+    t3 = _track("t3", bpm=119.0, camelot="9A", mean_energy=0.8, duration=90.0)
+    tracks = [t1, t2, t3]
+    by_id = {t.id: t for t in tracks}
+    audio = _provider({t.id: _pulse_audio(bpm=t.bpm, duration=t.duration_sec) for t in tracks})
+
+    config = _small_config(beam_width=3, shortlist_width=3)
+    plan = plan_set_v2(tracks, audio_provider=audio, target_duration_sec=225.0, arc=SetArc.WARMUP_TO_PEAK, config=config)
+    assert len(plan.track_ids) == 3
+
+    mix = render_set_director_mix(plan, by_id, audio)
+
+    # Reconstruct what the old "every track contributes close to its full
+    # duration" heuristic would have estimated for this exact chosen order.
+    ordered = [by_id[tid] for tid in plan.track_ids]
+    naive_estimate = sum(t.duration_sec for t in ordered) - sum(
+        _estimate_overlap_sec(a, b) for a, b in zip(ordered, ordered[1:])
+    )
+    old_error = abs(naive_estimate - mix.total_duration_sec)
+    new_error = abs(plan.total_duration_sec - mix.total_duration_sec)
+    assert new_error < old_error * 0.5, (
+        f"expected the anchor-based estimate ({plan.total_duration_sec}, error={new_error}) "
+        f"to be far closer to the actual render ({mix.total_duration_sec}) than the old flat "
+        f"heuristic ({naive_estimate}, error={old_error})"
+    )
 
 
 # ---------------------------------------------------------------------------

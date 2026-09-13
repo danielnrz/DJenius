@@ -11,6 +11,7 @@ from djenius.core.candidate_composer import (
     CandidateDiagnostics,
     CandidateSetContext,
     TransitionCandidate,
+    _choose_anchor,
     compose_transition_candidates,
 )
 from djenius.core.models import TrackAnalysis, TrackMetadata, TrackProfile
@@ -572,3 +573,44 @@ def test_candidate_floor_can_remain_unmet_when_hard_feasibility_is_exhausted():
     assert result.diagnostics["candidate_floor_status"] == "candidate_floor_unmet_due_to_hard_feasibility"
     assert set(_families(result)) == {"phrase_cut", "echo_out", "drum_bridge", "bass_swap"}
     assert all(candidate.validate() == [] for candidate in result.candidates)
+
+
+def test_choose_anchor_weighs_position_not_just_a_tiebreak():
+    """`_choose_anchor` used to treat "how far into the track" (`directional`)
+    as a pure tuple tie-breaker after the primary confidence/mix/downbeat/drop
+    sum, which in practice almost never ties on real data -- so position never
+    actually influenced anchor selection. Confirmed against real music: that
+    let a source-exit or target-entry anchor land deep inside a track purely
+    because a mid-track cue scored marginally higher, leaving that track only
+    a few seconds of standalone airtime in the final mix. Folding `directional`
+    into the primary score with a bounded weight (0.35) restores a real, but
+    not absolute, preference for anchors nearer the track boundary.
+    """
+    track = _track("anchor_track", duration=100.0)
+
+    # Source (mix-out) anchor: a marginally lower-quality cue late in the
+    # track now wins over a marginally higher-quality cue near the start,
+    # because the quality gap (0.04) is smaller than the position bonus it
+    # buys (0.35 * 0.8 = 0.28).
+    track.analysis.cue_candidates = [
+        {"time_sec": 10.0, "beat_in_bar": 2, "confidence": 0.5, "mix_out_score": 0.5, "use_cases": ["mix_out"]},
+        {"time_sec": 90.0, "beat_in_bar": 2, "confidence": 0.48, "mix_out_score": 0.48, "use_cases": ["mix_out"]},
+    ]
+    assert _choose_anchor(track, source=True, minimum_lead_sec=0.0)["time_sec"] == pytest.approx(90.0)
+
+    # A genuinely much better cue must still win regardless of position -- the
+    # fix must not let position override real quality.
+    track.analysis.cue_candidates = [
+        {"time_sec": 10.0, "beat_in_bar": 1, "confidence": 0.9, "mix_out_score": 0.9, "use_cases": ["mix_out"]},
+        {"time_sec": 90.0, "beat_in_bar": 2, "confidence": 0.3, "mix_out_score": 0.3, "use_cases": ["mix_out"]},
+    ]
+    assert _choose_anchor(track, source=True, minimum_lead_sec=0.0)["time_sec"] == pytest.approx(10.0)
+
+    # Target (mix-in) anchor direction is reversed: directional rewards
+    # *earlier* cues, so a marginally lower-quality early cue now wins over a
+    # marginally higher-quality late one.
+    track.analysis.cue_candidates = [
+        {"time_sec": 10.0, "beat_in_bar": 2, "confidence": 0.48, "mix_in_score": 0.48, "use_cases": ["mix_in"]},
+        {"time_sec": 90.0, "beat_in_bar": 2, "confidence": 0.5, "mix_in_score": 0.5, "use_cases": ["mix_in"]},
+    ]
+    assert _choose_anchor(track, source=False, minimum_lead_sec=0.0)["time_sec"] == pytest.approx(10.0)
