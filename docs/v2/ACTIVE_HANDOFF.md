@@ -1,40 +1,33 @@
 # DJenius V2 Active Handoff
 
 ## LAST VERIFIED TIME
-2026-09-13T16:20Z (updated after real full-mix delivery and all durable-doc updates for Phase 10)
+2026-09-13T16:35Z (updated immediately after the Phase 10 freeze commit was pushed and verified)
 
 ## CURRENT PHASE
-Phase 10 - Certification: **autonomous portion complete**. Ready to run the
-privacy/diff gate, commit, and push. The phase's actual defining gate (blind
-V1-vs-V2 human listening) is NOT done and cannot be done without the user.
+Phase 10 - Certification: **autonomous portion FROZEN AND PUSHED**. The
+phase's actual defining gate (blind V1-vs-V2 human listening) is NOT done
+and cannot be done without the user. There is no Phase 11 in the roadmap --
+this is the last phase, pending that human gate.
 
 ## CURRENT BRANCH
 `v2-professional-autonomous-dj`
 
 ## LAST PUSHED COMMIT
-`191dd40a2df2856cd77d52ea432978010e6ca7f7` - "Update handoff state after Phase 9 freeze push". Nothing has been pushed yet for Phase 10.
+`844d4162c164d244edf8aca2c28ffa501bd388c3` - "Add V2 full mix rendering" (Phase 10 freeze).
 
 ## LOCAL HEAD
-`191dd40a2df2856cd77d52ea432978010e6ca7f7` (no commits made yet for Phase 10; all Phase 10 work is currently uncommitted).
+`844d4162c164d244edf8aca2c28ffa501bd388c3` (matches last pushed commit).
 
 ## REMOTE HEAD
-`191dd40a2df2856cd77d52ea432978010e6ca7f7` (`origin/v2-professional-autonomous-dj`, matches local HEAD; no push yet this phase).
+`844d4162c164d244edf8aca2c28ffa501bd388c3` (`origin/v2-professional-autonomous-dj`, confirmed equal to local HEAD via `git fetch` immediately after push).
 
 ## WORKING TREE
-Not clean: Phase 10 changes are unstaged. `git status --short` currently shows:
-```
- M djenius/application.py
- M djenius/web/app.py
- M djenius/web/static/app.js
- M djenius/web/static/index.html
- M tests/test_app.py
-?? .claude/                                          <- DO NOT COMMIT (session tooling)
-?? djenius/audio/set_director_renderer.py
-?? tests/test_v2_phase10_certification.py
-```
-No frozen Phase 0-9 core logic was rewritten. `djenius/core/set_director.py`
-was NOT touched this phase (the anchor-shift fix lives entirely in the new
-renderer module, not in Set Director itself).
+Clean immediately after the freeze commit, aside from the untracked
+`.claude/` session-tooling directory (not part of the product, never
+staged). Re-run `git status --short` before trusting this if any time has
+passed. No frozen Phase 0-9 core logic was rewritten.
+`djenius/core/set_director.py` was NOT touched this phase (the anchor-shift
+fix lives entirely in the new renderer module, not in Set Director itself).
 
 ## CURRENT IMPLEMENTATION STATE
 - New `djenius/audio/set_director_renderer.py`: `render_set_director_mix(plan,
@@ -66,8 +59,8 @@ renderer module, not in Set Director itself).
   would otherwise make that assertion flaky).
 
 ## UNCOMMITTED FILES
-See the `git status --short` block above. `.claude/` is session-local
-Browser-preview tooling -- **never `git add` it**.
+None (all 12 Phase 10 files are committed at `844d416` and pushed).
+`.claude/` is session-local Browser-preview tooling -- **never `git add` it**.
 
 ## TESTS COMPLETED
 - Dedicated Phase 10 suite: **6 passed**
@@ -152,24 +145,24 @@ hard-rejected candidate is now explicitly refused.
   claim Phase 10 or V2 is "done" -- that gate belongs to the user.
 
 ## EXACT NEXT ACTION
-Run the Phase 10 privacy/diff gate (`git status`, `git diff` review --
-confirm nothing under `testMusic/`, `*.db`, `/tmp`, `.claude/`, or any real
-track name entered the tracked set). If clean, stage exactly the 7 files
-listed under "Uncommitted files" (NOT `.claude/`), commit as
-`Add V2 full mix rendering`, push `origin/v2-professional-autonomous-dj`,
-and verify clean working tree plus exact local/remote HEAD equality. Then
-**stop and report to the user**: everything autonomously achievable in the
-roadmap is complete; offer to render more mixes (other arcs, other
-libraries, a V1-style baseline for comparison) on request, but do not
-proceed past this point pretending the human listening gate is optional.
+Phase 10's autonomous portion is fully frozen and pushed. There is nothing
+further in the roadmap to implement. The next agent (or this session, if
+still live) should: (1) verify this handoff's HEAD SHAs against live
+`git fetch`/`git log` output, (2) **not** start inventing new phases or
+work, (3) offer to render more mixes (other arcs, other libraries, a
+V1-style baseline of the same library for a true side-by-side) if the user
+asks, and (4) wait for the user to actually do the blind listening
+comparison and report back -- their judgment is the one thing left, and it
+determines whether V2 is actually done, regardless of how green the
+automated suite is.
 
 ## SAFE RECOVERY NOTES
-- Every file change this session is additive to an existing file or a new
-  file; no frozen Phase 0-9 behavior was rewritten.
+- Phase 10 is a clean, frozen, pushed checkpoint -- there is no in-progress
+  work to lose. A fresh agent can safely treat `844d416` as ground truth.
 - If you are a fresh agent picking this up: re-run `git fetch && git status
   --short && git log -1 --format='%H %s'` and compare against the HEAD SHAs
   recorded above before trusting this file. Then run `python -m pytest -q`
-  to confirm the full regression still passes before committing. If the
-  user has since done their blind listening comparison, read what they
-  report before assuming anything about V2's quality -- automated evidence
-  in this repo was never meant to substitute for that judgment.
+  to confirm the full 1092-test regression still passes. If the user has
+  since done their blind listening comparison, read what they report before
+  assuming anything about V2's quality -- automated evidence in this repo
+  was never meant to substitute for that judgment.
