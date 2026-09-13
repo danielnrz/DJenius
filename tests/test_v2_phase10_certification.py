@@ -87,6 +87,22 @@ def _provider(audio_by_id: dict[str, np.ndarray]):
     return provide
 
 
+def _stem_provider(audio_by_id: dict[str, np.ndarray]):
+    def provide(track: TrackProfile) -> TrackAudio:
+        audio = audio_by_id[track.id]
+        return TrackAudio(
+            audio=audio,
+            sample_rate=SR,
+            stems={
+                "vocals": audio * 0.30,
+                "drums": audio * 0.35,
+                "bass": audio * 0.20,
+                "other": audio * 0.15,
+            },
+        )
+    return provide
+
+
 def _small_config(**overrides) -> SetDirectorConfig:
     base = dict(beam_width=2, shortlist_width=3, max_candidates_audited_per_edge=3)
     base.update(overrides)
@@ -200,12 +216,55 @@ def test_render_full_mix_rejects_stem_requiring_candidate():
         render_set_director_mix(plan, profiles, audio)
 
 
-def test_render_full_mix_shifts_a_conflicting_anchor_instead_of_failing():
-    # Candidate anchors are chosen per edge in isolation, so a middle
-    # track's target-entry point (edge 0) and its own later source-exit
-    # point (edge 1) are not guaranteed to land in timeline order -- this
-    # short/sparsely-cued fixture reliably reproduces exactly the conflict
-    # first found (and fixed) against real music in this phase.
+def test_render_full_mix_executes_selected_stem_handoff_when_provider_supplies_stems():
+    source = _track("stem_live_source", bpm=120.0, vocal=0.8, stems=True)
+    target = _track("stem_live_target", bpm=121.0, vocal=0.7, stems=True)
+    composition = compose_transition_candidates(
+        source,
+        target,
+        set_context=CandidateSetContext(avoid_recent_repeats=False),
+        config=SetDirectorConfig().composer_config,
+        seed=0,
+    )
+    candidate = next(item for item in composition.candidates if item.technique_family == "stem_handoff")
+    handoff = HandoffSummary(
+        source_track_id=source.id,
+        target_track_id=target.id,
+        context_key="stem-live",
+        candidate_count=1,
+        rejected_count=0,
+        audited_count=1,
+        survivor_count=1,
+        hard_rejected_count=0,
+        selected_candidate_id=candidate.candidate_id,
+        selected_family=candidate.technique_family,
+        selected_score=0.8,
+        candidates={candidate.candidate_id: candidate},
+    )
+    plan = SetDirectorPlan(
+        arc=SetArc.SMOOTH,
+        track_ids=(source.id, target.id),
+        edges=(SetDirectorEdgeChoice(source.id, target.id, handoff, {}),),
+    )
+    profiles = {source.id: source, target.id: target}
+    provider = _stem_provider({
+        source.id: _pulse_audio(bpm=source.bpm),
+        target.id: _pulse_audio(bpm=target.bpm),
+    })
+
+    mix = render_set_director_mix(plan, profiles, provider)
+
+    assert mix.technique_sequence == ("stem_handoff",)
+    assert mix.provenance[0]["required_stems_rendered"] is True
+    assert np.isfinite(mix.audio).all()
+
+
+def test_planned_full_mix_needs_no_renderer_anchor_shift():
+    # This fixture used to reproduce the per-edge anchor conflict reliably.
+    # Set Director now carries the middle track's entry/establishment envelope
+    # into Candidate Composer, so a newly planned set must be coherent before
+    # it reaches this renderer. The renderer keeps its shift fallback only for
+    # old/deserialized or manually assembled plans.
     short = 60.0
     tracks = [
         _track("short_a", bpm=120.0, duration=short),
@@ -223,9 +282,7 @@ def test_render_full_mix_shifts_a_conflicting_anchor_instead_of_failing():
     mix = render_set_director_mix(plan, profiles, audio)
     assert np.isfinite(mix.audio).all()
     shifts = [item["anchor_shift_sec"] for item in mix.provenance]
-    assert any(shift > 0 for shift in shifts), "expected this fixture to reproduce a real anchor conflict"
-    # The shifted transition must still start exactly where its predecessor
-    # ended -- no gap, no overlap -- even though its natural anchor was earlier.
+    assert shifts == [0.0] * len(shifts)
     for i in range(1, len(mix.provenance)):
         assert mix.provenance[i]["output_start_sample"] >= (
             mix.provenance[i - 1]["output_start_sample"] + mix.provenance[i - 1]["output_transition_samples"]

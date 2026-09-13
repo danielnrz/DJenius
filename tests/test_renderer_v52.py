@@ -6,7 +6,6 @@ import json
 from unittest import mock
 
 import numpy as np
-import pytest
 
 from djenius.audio.provenance import audit_source_provenance
 from djenius.audio.renderer import render_mix
@@ -188,11 +187,15 @@ def test_loop_blend_repeats_one_beat_not_old_half_overlap():
 
 
 def test_echo_taps_decay_instead_of_replaying_at_equal_strength():
-    source = np.zeros(2500, dtype=np.float32)
-    source[0] = 1.0
+    source = np.zeros(10000, dtype=np.float32)
+    # Echo-out now captures the beat immediately preceding its phrase release
+    # at 75%, rather than replaying the transition's opening sample. Put the
+    # impulse at the start of that captured beat and inspect the post-fader
+    # taps at the release boundary.
+    source[7000] = 1.0
     target = np.zeros_like(source)
     result = _echo_out(source, target, SR, source_bpm=120.0)
-    tap_levels = [abs(float(result[index])) for index in (0, 500, 1000, 1500)]
+    tap_levels = [abs(float(result[index])) for index in (7500, 8000, 8500, 9000)]
     assert tap_levels[0] > tap_levels[1] > tap_levels[2] > tap_levels[3] > 0
     assert tap_levels[1] < tap_levels[0] * 0.5
 

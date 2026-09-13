@@ -211,3 +211,27 @@ The `NO` above is deliberate: reverse sweep/cymbal passed deterministic synthesi
   The two zero-survivor rows were independently confirmed by auditioning *every* generated candidate for that pair (not a bounded subset): one candidate hard-rejected on the already-documented missing-stems limitation, the others on genuine peak/clipping safety against already-loudly-mastered real vocal material. This is recorded as a real, specific, actionable gap -- Candidate Composer currently has no minimal-risk fallback family (e.g. a restrained equal-power crossfade) guaranteed feasible regardless of vocal/loudness conditions -- not smoothed over or re-sampled until a nicer result appeared.
 - No private track title, artist, or filepath appears in this entry or any other tracked file.
 - **What Phase 10 has not done, and cannot do autonomously**: the blind V1-vs-V2 human listening comparison with a human scorecard, which is the phase's actual defining gate. A real, technically-verified V2 mix has been handed to the user; producing a comparable V1-style bake of the same library and running the actual blind comparison is the explicit next step for the user, not for this session.
+
+## Post-Phase-10 performance-recovery checkpoint
+
+- Full regression: **1102 passed**; focused recovery gate: **110 passed**;
+  touched-file `ruff check` and `git diff --check`: clean.
+- Controlled private real-audio lab: one anonymous compatible pair, fixed
+  anchors, 4 bars, plain crossfade plus 12 renderer families, cached stems.
+  The audit exposed the old riser/impact output at `0.999954` correlation to
+  crossfade; after two-deck build/landing choreography it is `0.853096`.
+  Loop shortening is `0.724441`; phrase cut `0.556573`; echo release
+  `0.849827`. These distances diagnose execution but do not prove quality.
+- Final private set: five anonymous tracks, four handoffs, planned/rendered
+  **661.228s / 661.228s**, final **-14.0 LUFS**, peak **-5.52 dBFS**,
+  `echo_out / loop_shortening / drum_bridge / riser_impact`.
+- Appearance coherence: all four renderer `anchor_shift_sec` values are 0.0;
+  middle-track independent airtime is **33.599 / 130.888 / 191.989s** against
+  protected establishment windows of roughly 14.9–16.3s.
+- Determinism: three complete real-library recovery runs selected the same
+  order/families/duration/appearance plan, including runs before and after the
+  family-aware Audition spectral correction.
+- Private review package:
+  `/tmp/djenius_performance_lab/listening_checkpoint/`. Human acceptance is
+  explicitly pending; the twice-failed DJ-likeness verdict remains authoritative
+  until the user listens to this checkpoint.

@@ -24,7 +24,7 @@ from typing import Any, Callable
 import numpy as np
 
 from djenius.audio.groove_sampler import render_performance_sample_layer
-from djenius.audio.transitions import apply_transition
+from djenius.audio.transitions import apply_transition, target_cursor_advance_samples
 from djenius.core.candidate_composer import TransitionCandidate
 from djenius.core.performance_recipe import compile_performance_recipe
 from djenius.core.set_director import SetDirectorPlan, TrackAudio
@@ -77,18 +77,66 @@ def render_set_director_mix(
     overrides = overrides or {}
 
     sample_rate: int | None = None
-    audio_by_track_id: dict[str, np.ndarray] = {}
+    bundle_by_track_id: dict[str, TrackAudio] = {}
 
-    def audio_for(track_id: str) -> np.ndarray:
+    def bundle_for(track_id: str) -> TrackAudio:
         nonlocal sample_rate
-        if track_id not in audio_by_track_id:
+        if track_id not in bundle_by_track_id:
             bundle = audio_provider(profiles[track_id])
             if sample_rate is None:
                 sample_rate = bundle.sample_rate
             elif bundle.sample_rate != sample_rate:
                 raise SetDirectorRenderError("All tracks in a mix must share one sample rate")
-            audio_by_track_id[track_id] = np.asarray(bundle.audio, dtype=np.float32)
-        return audio_by_track_id[track_id]
+            bundle_by_track_id[track_id] = TrackAudio(
+                audio=np.asarray(bundle.audio, dtype=np.float32),
+                sample_rate=bundle.sample_rate,
+                stems=bundle.stems,
+            )
+        return bundle_by_track_id[track_id]
+
+    def audio_for(track_id: str) -> np.ndarray:
+        return np.asarray(bundle_for(track_id).audio, dtype=np.float32)
+
+    def sliced_stems(
+        track_id: str,
+        *,
+        start: int,
+        end: int,
+        required: set[str],
+        handoff_index: int,
+        role: str,
+    ) -> dict[str, np.ndarray] | None:
+        stems = bundle_for(track_id).stems
+        if required and not stems:
+            raise SetDirectorRenderError(
+                f"Handoff {handoff_index}'s selected candidate requires stems for {role}, "
+                "but the audio provider did not supply them"
+            )
+        if not stems:
+            return None
+        missing = sorted(required - set(stems))
+        if missing:
+            raise SetDirectorRenderError(
+                f"Handoff {handoff_index}'s {role} stems are missing: {','.join(missing)}"
+            )
+        result: dict[str, np.ndarray] = {}
+        for name, raw in stems.items():
+            values = np.asarray(raw, dtype=np.float32)
+            if values.ndim not in {1, 2} or end > len(values):
+                if name in required:
+                    raise SetDirectorRenderError(
+                        f"Handoff {handoff_index}'s {role} stem {name} does not cover its source range"
+                    )
+                continue
+            region = values[start:end]
+            if not np.isfinite(region).all() or (name in required and not region.size):
+                if name in required:
+                    raise SetDirectorRenderError(
+                        f"Handoff {handoff_index}'s {role} stem {name} is invalid"
+                    )
+                continue
+            result[name] = region
+        return result or None
 
     segments: list[np.ndarray] = []
     provenance: list[dict[str, Any]] = []
@@ -111,18 +159,21 @@ def render_set_director_mix(
         source_transition_start = int(round(compiled.source_start_sec * sr))
         source_transition_end = int(round(compiled.source_end_sec * sr))
         target_transition_start = int(round(compiled.target_start_sec * sr))
-        target_consumed_end = int(round((compiled.target_start_sec + compiled.target_consumed_duration_sec) * sr))
         overlap_samples = int(round(compiled.overlap_duration_sec * sr))
+        target_advance_samples = target_cursor_advance_samples(
+            compiled.transition_type,
+            overlap_samples,
+            sr,
+            candidate.source_bpm,
+            candidate.target_bpm,
+            compiled.requires_stretch,
+        )
+        target_consumed_end = target_transition_start + target_advance_samples
 
-        # Candidate anchors are chosen per edge in isolation (Phase 5): a
-        # middle track's target-entry point (edge i-1) and its own
-        # source-exit point (edge i) can therefore land in the "wrong" order
-        # in the full timeline even though each is independently valid.
-        # Rather than fail the whole mix over what is usually a few seconds
-        # of anchor disagreement, shift this transition to start exactly
-        # where the previous edge left off, preserving the technique's
-        # overlap duration and DSP untouched -- only its absolute position
-        # in this track moves.
+        # Set Director 7.1 prevents this conflict upstream with a typed track
+        # appearance envelope. Keep this bounded correction only for old
+        # serialized plans and manually assembled plans that predate those
+        # constraints; newly planned sets are regression-tested at zero shift.
         anchor_shift_sec = 0.0
         if source_transition_start < cursor_start_sample:
             anchor_shift_sec = (cursor_start_sample - source_transition_start) / sr
@@ -141,11 +192,32 @@ def render_set_director_mix(
         source_exit = source_transition_start - cursor_start_sample
         target_work = target_audio[target_transition_start:len(target_audio)]
 
-        if candidate.stem_requirements:
-            raise SetDirectorRenderError(
-                f"Handoff {index}'s selected candidate ({candidate.technique_family}) requires stems, "
-                "which this renderer does not supply; lock a non-stem alternative instead"
-            )
+        required_source = {
+            item.split(":", 1)[1]
+            for item in candidate.stem_requirements
+            if item.startswith("source:")
+        }
+        required_target = {
+            item.split(":", 1)[1]
+            for item in candidate.stem_requirements
+            if item.startswith("target:")
+        }
+        source_stems = sliced_stems(
+            edge.source_track_id,
+            start=cursor_start_sample,
+            end=source_transition_end,
+            required=required_source,
+            handoff_index=index,
+            role="source",
+        )
+        target_stems = sliced_stems(
+            edge.target_track_id,
+            start=target_transition_start,
+            end=len(target_audio),
+            required=required_target,
+            handoff_index=index,
+            role="target",
+        )
 
         transition_audio = apply_transition(
             source_audio=source_work,
@@ -161,6 +233,8 @@ def render_set_director_mix(
             source_mid_energy=float(candidate.source_segment.energy),
             target_low_energy=float(candidate.target_segment.energy),
             target_mid_energy=float(candidate.target_segment.energy),
+            source_stems=source_stems,
+            target_stems=target_stems,
             use_time_stretch=compiled.requires_stretch,
             technique_operations=[dict(item) for item in compiled.technique_operations],
         )
@@ -189,6 +263,11 @@ def render_set_director_mix(
             "output_start_sample": sum(len(item) for item in segments[:-1]),
             "output_transition_samples": len(transition_audio),
             "sample_layer_event_count": len(sample_layer_provenance),
+            "required_stems_rendered": bool(
+                (not required_source or required_source <= set(source_stems or {}))
+                and (not required_target or required_target <= set(target_stems or {}))
+            ),
+            "actual_target_cursor_advance_sec": round(target_advance_samples / sr, 9),
             "anchor_shift_sec": round(anchor_shift_sec, 6),
         })
         cursor_start_sample = target_consumed_end

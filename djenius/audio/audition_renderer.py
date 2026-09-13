@@ -8,13 +8,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import hashlib
-import json
 from typing import Any
 
 import numpy as np
 
 from djenius.audio.groove_sampler import render_performance_sample_layer
-from djenius.audio.transitions import apply_transition
+from djenius.audio.transitions import apply_transition, target_cursor_advance_samples
 from djenius.core.candidate_composer import TransitionCandidate
 from djenius.core.performance_recipe import compile_performance_recipe
 
@@ -219,8 +218,16 @@ def render_candidate_preview(
     source_transition_start = int(round(compiled.source_start_sec * sr))
     source_transition_end = int(round(compiled.source_end_sec * sr))
     target_transition_start = int(round(compiled.target_start_sec * sr))
-    target_consumed_end = int(round((compiled.target_start_sec + compiled.target_consumed_duration_sec) * sr))
     overlap_samples = int(round(compiled.overlap_duration_sec * sr))
+    target_advance_samples = target_cursor_advance_samples(
+        compiled.transition_type,
+        overlap_samples,
+        sr,
+        candidate.source_bpm,
+        candidate.target_bpm,
+        compiled.requires_stretch,
+    )
+    target_consumed_end = target_transition_start + target_advance_samples
     if source_transition_start < 0 or source_transition_end > len(source):
         raise ValueError("compiled audition source transition is outside supplied audio")
     if target_transition_start < 0 or target_consumed_end > len(target):
@@ -232,8 +239,13 @@ def render_candidate_preview(
     after_requested = int(round(config.after_context_sec * sr))
     source_context_start = max(0, source_transition_start - before_requested)
     target_context_end = min(len(target), target_consumed_end + after_requested)
+    target_render_input_end = min(
+        len(target),
+        target_transition_start + int(round(compiled.target_consumed_duration_sec * sr)),
+    )
+    target_work_end = max(target_context_end, target_render_input_end)
     source_work = source[source_context_start:source_transition_end]
-    target_work = target[target_transition_start:target_context_end]
+    target_work = target[target_transition_start:target_work_end]
     source_exit = source_transition_start - source_context_start
 
     sliced_source_stems, sliced_target_stems, stem_provenance = _slice_required_stems(
@@ -241,7 +253,7 @@ def render_candidate_preview(
         source_work_start=source_context_start,
         source_work_end=source_transition_end,
         target_work_start=target_transition_start,
-        target_work_end=target_context_end,
+        target_work_end=target_work_end,
         channels=config.channels,
     )
 
@@ -302,6 +314,7 @@ def render_candidate_preview(
         "requires_stretch": compiled.requires_stretch,
         "time_stretch_ratio": round(float(stretch_ratio), 9),
         "target_consumed_duration_sec": compiled.target_consumed_duration_sec,
+        "actual_target_cursor_advance_sec": round(target_advance_samples / sr, 9),
         "source_context_truncated": source_context_start == 0 and source_transition_start < before_requested,
         "target_context_truncated": target_context_end == len(target) and len(target) - target_consumed_end < after_requested,
         "mastering_applied": False,

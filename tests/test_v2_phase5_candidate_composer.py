@@ -10,6 +10,7 @@ from djenius.core.candidate_composer import (
     CandidateComposition,
     CandidateDiagnostics,
     CandidateSetContext,
+    SourceAppearanceConstraint,
     TransitionCandidate,
     _choose_anchor,
     compose_transition_candidates,
@@ -145,6 +146,54 @@ def test_every_emitted_candidate_compiles_and_stays_in_bounds():
         assert compiled.source_end_sec <= candidate.source_segment.end_sec + 1e-6
         assert compiled.target_start_sec >= candidate.target_segment.start_sec - 1e-6
         assert compiled.target_end_sec <= candidate.target_segment.end_sec + 1e-6
+
+
+def test_source_appearance_envelope_protects_establishment_before_next_handoff():
+    source = _track("appearance_source", bpm=120.0, duration=96.0)
+    target = _track("appearance_target", bpm=120.0, duration=96.0)
+    envelope = SourceAppearanceConstraint(
+        track_id=source.id,
+        entry_anchor_sec=37.0,
+        entry_consumed_end_sec=45.0,
+        minimum_establishment_sec=10.0,
+    )
+    result = compose_transition_candidates(
+        source,
+        target,
+        set_context=CandidateSetContext(
+            avoid_recent_repeats=False,
+            source_appearance_constraint=envelope,
+        ),
+        config=CandidateComposerConfig(min_candidates=1, max_candidates=8),
+        seed=3,
+    )
+
+    assert result.candidates
+    for candidate in result.candidates:
+        compiled = compile_performance_recipe(candidate.recipe, candidate.compile_context())
+        assert compiled.source_start_sec >= envelope.earliest_transition_start_sec - 1e-6
+    assert max(candidate.duration_bars for candidate in result.candidates) <= 4
+    assert result.diagnostics["source_appearance_constraint"][
+        "earliest_transition_start_sec"
+    ] == pytest.approx(55.0)
+
+
+def test_phase5_build_recipes_compile_to_real_mix_choreography_and_downbeat_landing():
+    result = compose_transition_candidates(
+        _track("build_source", bpm=120.0),
+        _track("build_target", bpm=120.0),
+        set_context=CandidateSetContext(avoid_recent_repeats=False),
+        seed=11,
+    )
+    riser = next(item for item in result.candidates if item.technique_family == "riser_impact")
+    compiled = compile_performance_recipe(riser.recipe, riser.compile_context())
+
+    assert {item["type"] for item in compiled.technique_operations} == {"mix_choreography"}
+    riser_action = next(item for item in compiled.action_schedule if item["action"] == "riser")
+    impact_action = next(item for item in compiled.action_schedule if item["action"] == "impact")
+    assert riser_action["end_time_sec"] == pytest.approx(impact_action["time_sec"])
+    assert impact_action["position"]["beat"] == 1
+    assert impact_action["time_sec"] == pytest.approx(compiled.overlap_duration_sec * 0.75)
 
 
 def test_invalid_candidate_identity_and_feasibility_fail_closed():

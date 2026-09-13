@@ -334,6 +334,34 @@ def test_plan_duration_handling_and_stopping():
     assert plan.compute_stats["candidates_rendered"] > 0
 
 
+def test_plan_carries_coherent_track_appearances_without_cross_edge_anchor_repairs():
+    tracks, audio = _library(4)
+    provider = _provider(audio)
+    config = _small_config(
+        beam_width=3,
+        shortlist_width=4,
+        minimum_track_establishment_bars=8,
+    )
+    plan = plan_set_v2(
+        tracks,
+        audio_provider=provider,
+        target_duration_sec=220.0,
+        arc=SetArc.SMOOTH,
+        config=config,
+        max_tracks=4,
+    )
+
+    assert len(plan.appearances) == len(plan.track_ids)
+    assert [item.track_id for item in plan.appearances] == list(plan.track_ids)
+    for appearance in plan.appearances[:-1]:
+        assert appearance.exit_transition_start_sec is not None
+        assert appearance.independent_airtime_sec is not None
+        assert appearance.independent_airtime_sec >= appearance.minimum_establishment_sec - 1e-6
+
+    mix = render_set_director_mix(plan, {track.id: track for track in tracks}, provider)
+    assert all(item["anchor_shift_sec"] == 0.0 for item in mix.provenance)
+
+
 def test_stable_tie_breaking_on_identical_openers():
     tied_a = _track("z_tied", bpm=120.0, mean_energy=0.5)
     tied_b = _track("a_tied", bpm=120.0, mean_energy=0.5)
@@ -538,16 +566,10 @@ def test_planned_duration_is_far_closer_to_the_actual_render_than_before():
     fix derives the running estimate from each edge's own real chosen anchors
     instead of the flat heuristic.
 
-    This does not make the estimate exact: a middle track's entry anchor (from
-    the edge before it) and its own exit anchor (for the edge after it) are
-    still chosen independently by Candidate Composer, which has no notion of
-    "the edge before" or "the edge after" (see `set_director_renderer.py`'s
-    module docstring). When those two independently-valid anchors conflict,
-    the renderer's `anchor_shift_sec` correction (D044) consumes a few extra
-    real seconds that the plan-time estimate cannot see in advance -- a
-    separate, deeper architectural gap (Candidate Composer has no way to
-    receive "this track is already consumed until X seconds" as an input)
-    that is tracked on its own rather than papered over here.
+    Set Director now carries the prior edge's consumed target point into a
+    typed appearance envelope, so newly planned sets need no render-time
+    anchor shift and this duration estimate should match the actual splice to
+    sample-rounding tolerance.
     """
     t1 = _track("t1", bpm=120.0, camelot="8A", mean_energy=0.3, duration=90.0)
     t2 = _track("t2", bpm=121.0, camelot="8A", mean_energy=0.55, duration=90.0)
@@ -575,6 +597,7 @@ def test_planned_duration_is_far_closer_to_the_actual_render_than_before():
         f"to be far closer to the actual render ({mix.total_duration_sec}) than the old flat "
         f"heuristic ({naive_estimate}, error={old_error})"
     )
+    assert new_error <= 2.0 / SR
 
 
 # ---------------------------------------------------------------------------

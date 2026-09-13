@@ -381,7 +381,10 @@ def _beat_metrics(preview: RenderedCandidatePreview, candidate: TransitionCandid
     }
 
 
-def _spectral_metrics(preview: RenderedCandidatePreview) -> dict[str, Any]:
+def _spectral_metrics(
+    preview: RenderedCandidatePreview,
+    candidate: TransitionCandidate,
+) -> dict[str, Any]:
     before = _band_profile(_region(preview, "before"), preview.sample_rate)
     transition = _band_profile(_region(preview, "transition"), preview.sample_rate)
     after = _band_profile(_region(preview, "after"), preview.sample_rate)
@@ -390,7 +393,31 @@ def _spectral_metrics(preview: RenderedCandidatePreview) -> dict[str, Any]:
     mud_excess = max(0.0, transition["mud_ratio"] - max(before["mud_ratio"], after["mud_ratio"]))
     hf_excess = max(0.0, transition["high_ratio"] - max(before["high_ratio"], after["high_ratio"]))
     continuity_distance = sum(abs(transition[name] - context[name]) for name in context)
-    continuity = _clip01(1.0 - continuity_distance / 1.5)
+    # Some techniques deliberately restructure frequency ownership. A small,
+    # bounded allowance prevents that expected movement from being scored as
+    # if it were accidental spectral damage; collision, mud, holes and excess
+    # beyond the allowance remain fully penalized.
+    family = candidate.technique_family
+    continuity_allowance = {
+        "bass_swap": 0.12,
+        "filter_blend": 0.14,
+        "phrase_cut": 0.18,
+        "echo_out": 0.10,
+        "loop_shortening": 0.10,
+        "drum_bridge": 0.10,
+        "riser_impact": 0.14,
+        "tempo_reset": 0.18,
+        "stem_handoff": 0.14,
+    }.get(family, 0.0)
+    intentional_hf_allowance = {
+        "filter_blend": 0.02,
+        "echo_out": 0.02,
+        "drum_bridge": 0.04,
+        "riser_impact": 0.10,
+    }.get(family, 0.0)
+    continuity = _clip01(
+        1.0 - max(0.0, continuity_distance - continuity_allowance) / 1.5
+    )
     before_db = _rms_db(_region(preview, "before"))
     transition_db = _rms_db(_region(preview, "transition"))
     after_db = _rms_db(_region(preview, "after"))
@@ -399,7 +426,8 @@ def _spectral_metrics(preview: RenderedCandidatePreview) -> dict[str, Any]:
     bass_masking_proxy = _clip01(lf_excess / 0.45)
     lf_score = _clip01(1.0 - lf_excess / 0.45)
     mud_score = _clip01(1.0 - mud_excess / 0.30)
-    hf_score = _clip01(1.0 - hf_excess / 0.28)
+    penalized_hf_excess = max(0.0, hf_excess - intentional_hf_allowance)
+    hf_score = _clip01(1.0 - penalized_hf_excess / 0.28)
     score = _clip01(0.30 * lf_score + 0.20 * mud_score + 0.12 * hf_score + 0.23 * continuity + 0.15 * hole_score)
     return {
         "applicable": True,
@@ -408,7 +436,12 @@ def _spectral_metrics(preview: RenderedCandidatePreview) -> dict[str, Any]:
         "low_mid_mud_excess_ratio": round(mud_excess, 6),
         "spectral_hole_depth_db": round(spectral_hole_db, 3),
         "high_frequency_buildup_excess_ratio": round(hf_excess, 6),
+        "penalized_high_frequency_excess_ratio": round(penalized_hf_excess, 6),
         "spectral_continuity_proxy": round(continuity, 6),
+        "raw_spectral_continuity_distance": round(continuity_distance, 6),
+        "intentional_spectral_transform": continuity_allowance > 0.0,
+        "continuity_distance_allowance": round(continuity_allowance, 6),
+        "intentional_high_frequency_allowance": round(intentional_hf_allowance, 6),
         "before_profile": {k: round(v, 6) for k, v in before.items()},
         "transition_profile": {k: round(v, 6) for k, v in transition.items()},
         "after_profile": {k: round(v, 6) for k, v in after.items()},
@@ -654,7 +687,7 @@ def evaluate_candidate_preview(
     technical, technical_failures = _technical_metrics(preview, config)
     failures.extend(technical_failures)
     beat = _beat_metrics(preview, candidate, config)
-    spectral = _spectral_metrics(preview)
+    spectral = _spectral_metrics(preview, candidate)
     vocal = _vocal_metrics(candidate)
     energy = _energy_metrics(preview, candidate)
     fx = _fx_metrics(preview, candidate)

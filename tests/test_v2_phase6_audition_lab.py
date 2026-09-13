@@ -10,8 +10,8 @@ from djenius.audio.audition_renderer import (
     RenderedCandidatePreview,
     render_candidate_preview,
 )
+from djenius.audio.transitions import phrase_cut_seam_samples
 from djenius.core.audition_lab import (
-    AuditionConfig,
     AuditionRanking,
     CandidateAudition,
     audition_candidate,
@@ -197,6 +197,51 @@ def _shifted_transition(preview: RenderedCandidatePreview, offset_ms: float) -> 
     return np.column_stack([mono, mono]).astype(np.float32)
 
 
+def test_phrase_cut_splice_consumes_only_the_click_safe_target_seam():
+    candidate = _candidate("phrase_cut")
+    preview = _render(candidate)
+    overlap = preview.transition_end_sample - preview.transition_start_sample
+    seam = phrase_cut_seam_samples(SR, overlap)
+
+    actual_advance = (
+        preview.target_consumed_end_sec - preview.target_transition_start_sec
+    ) * SR
+    assert actual_advance == pytest.approx(seam, abs=1e-5)
+    assert preview.renderer_provenance["actual_target_cursor_advance_sec"] == pytest.approx(
+        seam / SR
+    )
+    assert seam < overlap * 0.01, "phrase cut must not silently skip a multi-bar target phrase"
+
+
+def test_phase5_riser_mix_choreography_is_not_crossfade_plus_tiny_fx():
+    candidate = _candidate("riser_impact")
+    performed = _render(candidate)
+
+    # Retain the same typed riser/impact events and exact anchors, but lower
+    # the metadata phase so only the historical crossfade foundation remains.
+    # This isolates the new two-deck build/landing choreography from merely
+    # making the generated effects louder.
+    baseline_recipe = replace(
+        candidate.recipe,
+        recipe_id="",
+        metadata={**candidate.recipe.metadata, "phase": 4},
+    ).with_deterministic_ids()
+    baseline_candidate = replace(
+        candidate,
+        candidate_id="",
+        recipe=baseline_recipe,
+    ).with_deterministic_id()
+    baseline = _render(baseline_candidate)
+
+    a = performed.audio[performed.transition_start_sample:performed.transition_end_sample]
+    b = baseline.audio[baseline.transition_start_sample:baseline.transition_end_sample]
+    difference_rms = float(np.sqrt(np.mean((a.astype(np.float64) - b.astype(np.float64)) ** 2)))
+    baseline_rms = float(np.sqrt(np.mean(b.astype(np.float64) ** 2)))
+    correlation = float(np.corrcoef(a.reshape(-1), b.reshape(-1))[0, 1])
+    assert difference_rms > baseline_rms * 0.20
+    assert correlation < 0.995
+
+
 @pytest.fixture(scope="module")
 def eq_candidate() -> TransitionCandidate:
     return _candidate("eq_blend")
@@ -275,7 +320,11 @@ def test_riser_preview_tolerates_one_sample_boundary_rounding_at_fractional_bpm(
     audio = np.zeros((int(round(DURATION * fractional_sr)), 2), dtype=np.float32)
     preview = render_candidate_preview(candidate, audio, audio, fractional_sr)
     assert preview.sample_layer_provenance
-    assert any(item.get("rounding_trim_samples") == 1 for item in preview.sample_layer_provenance)
+    # The impact now lands on the final bar's downbeat rather than being
+    # scheduled at the transition's last beat/end boundary, so this exact
+    # recipe no longer needs the historical one-sample trim. The generic
+    # bounded rounding safeguard remains covered by Phase 4 tests.
+    assert all(item.get("rounding_trim_samples", 0) <= 1 for item in preview.sample_layer_provenance)
     assert preview.transition_end_sample <= len(preview.audio)
 
 
@@ -468,7 +517,6 @@ def test_vocal_collision_proxy_is_contextual_and_stem_handoff_allows_intentional
 def test_energy_dip_allowance_is_technique_aware(eq_preview):
     eq = _candidate("eq_blend")
     echo = _candidate("echo_out")
-    length = eq_preview.transition_end_sample - eq_preview.transition_start_sample
     quiet = _shifted_transition(eq_preview, 0.0) * 0.08
     eq_bad = evaluate_candidate_preview(eq, _replace_transition(eq_preview, quiet))
     echo_preview = replace(
@@ -481,6 +529,38 @@ def test_energy_dip_allowance_is_technique_aware(eq_preview):
     assert eq_bad.metrics.energy["deliberate_release_dip_allowance"] is False
     assert echo_audition.metrics.energy["deliberate_release_dip_allowance"] is True
     assert echo_audition.metrics.energy["score"] >= eq_bad.metrics.energy["score"]
+
+
+def test_spectral_metrics_distinguish_intentional_riser_change_from_damage(eq_preview):
+    length = eq_preview.transition_end_sample - eq_preview.transition_start_sample
+    t = np.arange(length, dtype=np.float64) / SR
+    bright_layer = 0.025 * np.sin(2 * np.pi * 3200.0 * t)
+    bright_layer = np.column_stack([bright_layer, bright_layer]).astype(np.float32)
+    bright = (
+        eq_preview.audio[eq_preview.transition_start_sample:eq_preview.transition_end_sample]
+        + bright_layer
+    )
+
+    eq = _candidate("eq_blend")
+    eq_result = evaluate_candidate_preview(eq, _replace_transition(eq_preview, bright))
+    riser = _candidate("riser_impact")
+    riser_preview = replace(
+        _replace_transition(eq_preview, bright),
+        candidate_id=riser.candidate_id,
+        recipe_id=riser.recipe.recipe_id,
+        renderer_provenance={
+            **eq_preview.renderer_provenance,
+            "candidate_id": riser.candidate_id,
+            "recipe_id": riser.recipe.recipe_id,
+        },
+    )
+    riser_result = evaluate_candidate_preview(riser, riser_preview)
+
+    assert eq_result.metrics.spectral["intentional_spectral_transform"] is False
+    assert riser_result.metrics.spectral["intentional_spectral_transform"] is True
+    assert riser_result.metrics.spectral["intentional_high_frequency_allowance"] == pytest.approx(0.10)
+    assert riser_result.metrics.spectral["continuity_distance_allowance"] == pytest.approx(0.14)
+    assert riser_result.metrics.spectral["score"] > eq_result.metrics.spectral["score"]
 
 
 def test_fx_metrics_are_family_specific(eq_candidate, eq_preview):

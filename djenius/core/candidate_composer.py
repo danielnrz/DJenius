@@ -23,7 +23,6 @@ from djenius.core.performance_recipe import (
     TrackRole,
     compile_performance_recipe,
     phase3_recipe,
-    validate_performance_recipe,
 )
 
 CANDIDATE_SCHEMA_VERSION = "5.0"
@@ -352,6 +351,51 @@ class TransitionCandidate:
         )
 
 @dataclass(frozen=True)
+class SourceAppearanceConstraint:
+    """Path-dependent lower bound for the current track's next handoff.
+
+    ``entry_consumed_end_sec`` is where the previous transition finished
+    consuming this track. ``minimum_establishment_sec`` is protected solo
+    airtime before another transition may begin. The composer still chooses a
+    musical cue, but candidates whose source window starts before the envelope
+    opens are infeasible rather than repaired later by the full-set renderer.
+    """
+
+    track_id: str
+    entry_anchor_sec: float
+    entry_consumed_end_sec: float
+    minimum_establishment_sec: float
+
+    @property
+    def earliest_transition_start_sec(self) -> float:
+        return self.entry_consumed_end_sec + self.minimum_establishment_sec
+
+    def validate(self, expected_track_id: str, duration_sec: float) -> None:
+        if self.track_id != expected_track_id:
+            raise ValueError("source appearance constraint track does not match source")
+        values = (
+            self.entry_anchor_sec,
+            self.entry_consumed_end_sec,
+            self.minimum_establishment_sec,
+        )
+        if any(value < 0.0 for value in values):
+            raise ValueError("source appearance constraint values must be non-negative")
+        if self.entry_anchor_sec > self.entry_consumed_end_sec + 1e-6:
+            raise ValueError("source appearance consumed end cannot precede its entry anchor")
+        if self.entry_consumed_end_sec > duration_sec + 1e-6:
+            raise ValueError("source appearance consumed end exceeds track duration")
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "track_id": self.track_id,
+            "entry_anchor_sec": round(self.entry_anchor_sec, 6),
+            "entry_consumed_end_sec": round(self.entry_consumed_end_sec, 6),
+            "minimum_establishment_sec": round(self.minimum_establishment_sec, 6),
+            "earliest_transition_start_sec": round(self.earliest_transition_start_sec, 6),
+        }
+
+
+@dataclass(frozen=True)
 class CandidateSetContext:
     set_phase: str = "DEVELOP"
     transition_role: str = "CONTINUE"
@@ -360,6 +404,7 @@ class CandidateSetContext:
     previous_technique_families: tuple[str, ...] = ()
     avoid_recent_repeats: bool = True
     allow_tempo_reset: bool = True
+    source_appearance_constraint: SourceAppearanceConstraint | None = None
 
 
 @dataclass(frozen=True)
@@ -483,7 +528,13 @@ def _detected_bars_in_window(track: TrackProfile, start_sec: float, end_sec: flo
     return len({bar_index for _, bar_index in downbeats})
 
 
-def _choose_anchor(track: TrackProfile, *, source: bool, minimum_lead_sec: float) -> dict[str, Any]:
+def _choose_anchor(
+    track: TrackProfile,
+    *,
+    source: bool,
+    minimum_lead_sec: float,
+    minimum_time_sec: float = 0.0,
+) -> dict[str, Any]:
     duration = float(track.duration_sec)
     cues = _cue_candidates(track, source=source)
     filtered = []
@@ -493,6 +544,11 @@ def _choose_anchor(track: TrackProfile, *, source: bool, minimum_lead_sec: float
         if room + 1e-6 >= minimum_lead_sec:
             filtered.append(cue)
     cues = filtered or cues
+    if source and minimum_time_sec > 0.0:
+        # Unlike the ordinary lead-time preference above, this is a real
+        # path constraint: falling back to an earlier cue would recreate the
+        # cross-edge conflict the Set Director is asking us to prevent.
+        cues = [cue for cue in cues if float(cue.get("time_sec", 0.0)) + 1e-6 >= minimum_time_sec]
     if cues:
         # `directional` rewards a source-exit cue that is late in the track (so
         # the track plays out further before handing off) and a target-entry
@@ -524,7 +580,14 @@ def _choose_anchor(track: TrackProfile, *, source: bool, minimum_lead_sec: float
     sections = track.analysis.section_profiles or []
     if sections:
         if source:
-            section = max(sections, key=lambda x: (float(x.get("mix_out_score", 0)), float(x.get("end_sec", 0))))
+            eligible_sections = [
+                section
+                for section in sections
+                if float(section.get("end_sec", 0.0)) + 1e-6 >= minimum_time_sec
+            ]
+            if not eligible_sections:
+                eligible_sections = sections
+            section = max(eligible_sections, key=lambda x: (float(x.get("mix_out_score", 0)), float(x.get("end_sec", 0))))
             time_sec = min(duration, float(section.get("end_sec", duration)))
         else:
             section = max(sections, key=lambda x: (float(x.get("mix_in_score", 0)) + 0.25 * float(x.get("landing_strength", 0)), -float(x.get("start_sec", 0))))
@@ -555,7 +618,8 @@ def _tempo_hypothesis_delta(source: TrackProfile, target: TrackProfile) -> tuple
     best = (float("inf"), "primary-primary", 0.0)
     for a in source_h:
         for b in target_h:
-            av = float(a.get("bpm", 0.0)); bv = float(b.get("bpm", 0.0))
+            av = float(a.get("bpm", 0.0))
+            bv = float(b.get("bpm", 0.0))
             if av <= 0 or bv <= 0:
                 continue
             delta = abs(av - bv) / av * 100.0
@@ -592,9 +656,9 @@ def _drum_bridge_recipe(source_id: str, target_id: str, *, bars: int, seed: int)
             "pattern_name": "percussion_bridge",
             "repetitions": bars,
             "seed": seed,
-            "gain_db": -4.0,
-            "level": 0.025,
-            "velocity": 0.78,
+            "gain_db": -2.0,
+            "level": 0.036,
+            "velocity": 0.86,
         },
         duration_beats=0.0,
         quantization=Quantization.BAR,
@@ -622,8 +686,27 @@ def compose_transition_candidates(
     if not 40.0 <= source.bpm <= 220.0 or not 40.0 <= target.bpm <= 220.0:
         raise ValueError("Candidate Composer requires BPM in [40, 220]")
 
+    appearance_constraint = set_context.source_appearance_constraint
+    if appearance_constraint is not None:
+        appearance_constraint.validate(source.id, source.duration_sec)
+
     max_window_sec = 16 * 4 * 60.0 / source.bpm
-    source_anchor = _choose_anchor(source, source=True, minimum_lead_sec=min(max_window_sec, source.duration_sec * 0.25))
+    # Anchor preselection only needs to reserve the shortest supported
+    # transition. Candidate-specific compilation below enforces the exact
+    # start for every 2/4/8/16-bar recipe independently.
+    minimum_source_anchor_sec = 0.0
+    if appearance_constraint is not None:
+        shortest_transition_sec = 2 * 4 * 60.0 / source.bpm
+        minimum_source_anchor_sec = (
+            appearance_constraint.earliest_transition_start_sec
+            + shortest_transition_sec
+        )
+    source_anchor = _choose_anchor(
+        source,
+        source=True,
+        minimum_lead_sec=min(max_window_sec, source.duration_sec * 0.25),
+        minimum_time_sec=minimum_source_anchor_sec,
+    )
     target_anchor = _choose_anchor(target, source=False, minimum_lead_sec=min(max_window_sec, target.duration_sec * 0.25))
     source_anchor_sec = float(source_anchor.get("time_sec", source.duration_sec))
     target_anchor_sec = float(target_anchor.get("time_sec", 0.0))
@@ -650,7 +733,8 @@ def compose_transition_candidates(
         str(target_section.get("label", target_anchor.get("section", "unknown"))), target_phrase_conf,
         target_vocal, target_energy, target_landing, int(target_anchor.get("beat_in_bar", 0)),
     )
-    source_stems = _declared_stems(source); target_stems = _declared_stems(target)
+    source_stems = _declared_stems(source)
+    target_stems = _declared_stems(target)
     raw_tempo_delta = abs(source.bpm - target.bpm) / source.bpm * 100.0
     hypothesis_delta, hypothesis_relation, hypothesis_confidence = _tempo_hypothesis_delta(source, target)
     half_double_supported = (
@@ -697,6 +781,9 @@ def compose_transition_candidates(
         "target_groove_confidence": round(target_groove_conf, 4),
         "groove_syncopation_delta": round(syncopation_delta, 4),
         "groove_swing_delta": round(swing_delta, 4), "groove_compatible": groove_compatible,
+        "source_appearance_constraint": (
+            appearance_constraint.to_dict() if appearance_constraint is not None else None
+        ),
     }
     intent = CandidateIntent(
         transition_role=set_context.transition_role,
@@ -715,8 +802,14 @@ def compose_transition_candidates(
 
     def choose_bars(maximum: int, minimum: int) -> int:
         for bars in (16, 8, 4, 2, 1):
-            if minimum <= bars <= maximum and bars <= available_bars:
+            if not (minimum <= bars <= maximum and bars <= available_bars):
+                continue
+            if appearance_constraint is not None:
+                candidate_start = source_anchor_sec - bars * 4.0 * 60.0 / source.bpm
+                if candidate_start + 1e-6 < appearance_constraint.earliest_transition_start_sec:
+                    continue
                 return bars
+            return bars
         return 0
 
     def add_candidate(
@@ -763,6 +856,19 @@ def compose_transition_candidates(
         if errors:
             reject(family, "compile_or_candidate_validation_failed", detail="; ".join(errors))
             return
+        if appearance_constraint is not None:
+            compiled = compile_performance_recipe(candidate.recipe, candidate.compile_context())
+            if compiled.source_start_sec + 1e-6 < appearance_constraint.earliest_transition_start_sec:
+                reject(
+                    family,
+                    "appearance_establishment_window_too_short",
+                    detail=(
+                        f"{family} would begin at {compiled.source_start_sec:.3f}s before "
+                        f"the appearance envelope opens at "
+                        f"{appearance_constraint.earliest_transition_start_sec:.3f}s"
+                    ),
+                )
+                return
         if family in recent:
             deferred_recent_candidates.append(candidate)
         else:
@@ -915,7 +1021,8 @@ def compose_transition_candidates(
             "Four-bar percussion bridge is feasible and uses the deterministic Phase 4 groove layer.",
             groove_requirements=("percussion_bridge",))
 
-    required_source = ("vocals",); required_target = ("drums", "bass", "other")
+    required_source = ("vocals",)
+    required_target = ("drums", "bass", "other")
     if available_bars < 4:
         reject("stem_handoff", "insufficient_overlap_bars")
     elif not beat_confident:
@@ -958,7 +1065,9 @@ def compose_transition_candidates(
     elif vocal_overlap >= config.vocal_heavy_threshold:
         family_priority = ["phrase_cut", "echo_out", "stem_handoff", "riser_impact", "loop_shortening", "drum_bridge", "bass_swap", "filter_blend", "eq_blend", "loop_transition", "tempo_reset"]
     priority = {name: i for i, name in enumerate(family_priority)}
-    order_key = lambda item: (priority.get(item.technique_family, 999), item.candidate_id)
+    def order_key(item: TransitionCandidate) -> tuple[int, str]:
+        return (priority.get(item.technique_family, 999), item.candidate_id)
+
     candidates = sorted(candidates, key=order_key)
     deferred_recent_candidates = sorted(deferred_recent_candidates, key=order_key)
     memory_reintroduced: list[str] = []

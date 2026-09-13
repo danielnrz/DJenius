@@ -25,6 +25,26 @@ interpret the phase-completion history below as contradicting this: the
 phases built the right machinery; the machinery is not yet producing an
 audibly convincing autonomous DJ performance.
 
+## PERFORMANCE-RECOVERY CHECKPOINT (HUMAN GATE PENDING)
+
+The two leading root causes above have now been corrected in a validated local
+checkpoint:
+
+- Set Director schema 7.1 plans a typed, path-dependent `TrackAppearance` and
+  protects an explicit establishment window before the next transition. The
+  real recovery set rendered with zero anchor shifts; its middle tracks had
+  33.599–191.989 seconds of independent airtime.
+- Phrase-cut target-cursor semantics, full-set stem delivery, Phase-5
+  EQ/build/landing choreography, riser/impact musical placement, post-fader
+  echo release, and family-aware Audition spectral damage modeling were fixed
+  through the actual production path.
+- The private fixed-anchor family audit and full V1/previous-V2/recovery-V2
+  listening package are at `/tmp/djenius_performance_lab/`; the durable matrix
+  is `docs/v2/PERFORMANCE_QUALITY_AUDIT.md`.
+- Focused recovery tests pass at 110; complete regression passes at **1102
+  passed**. This evidence protects implementation only. It does **not** close
+  the twice-failed human DJ-quality gate.
+
 ## CURRENT BRANCH
 `v2-professional-autonomous-dj`
 
@@ -97,9 +117,8 @@ performance.** Two deeper findings, confirmed but deliberately not fixed
   noticeable but not transformative" verdict.
 
 ## TEST RESULTS
-- Complete repository regression: **1095 passed** (was 1092 at the Phase 10
-  checkpoint; +3 from the investigation's new regression tests), reverified
-  immediately before this handoff update.
+- Complete repository regression: **1102 passed** (was 1095 at the prior
+  investigation checkpoint), reverified after the performance-recovery fixes.
 - All phase-specific suites (Phase 5 candidate composer: 41, Phase 7 set
   director: 18, Phase 10 certification: 6, etc.) pass.
 - Passing tests are **not** evidence the DJ-likeness gate is met -- see
@@ -110,13 +129,10 @@ performance.** Two deeper findings, confirmed but deliberately not fixed
 - **The core product gate is not met, on two separate real listens.** This
   supersedes the older "Phase 10 gate not met" framing below -- it is now
   the single most important open item in the whole project.
-- Cross-edge anchor consistency (above) -- designed fix documented in
-  `ACTIVE_HANDOFF.md`, not implemented (would require extending
-  `compose_transition_candidates`'s signature, a heavily-tested Phase 5
-  module).
-- `riser_impact`/`loop_shortening` compiling to plain crossfade DSP
-  (above) -- not fixed; whether/how to give these (or other) families a
-  more structurally distinct execution is open.
+- Cross-edge appearance consistency is now implemented upstream and tested;
+  the renderer's old shift remains only as a legacy/manual-plan guard.
+- Phase-5 `riser_impact` and `loop_shortening` now compile and execute a
+  source-held build/target-landing choreography rather than plain crossfade.
 - No creativity-budget system exists (research spec section 35) --
   confirmed absent, not yet proven to matter on short comparisons.
 - For vocal-heavy real pairs, Candidate Composer can generate zero
@@ -139,11 +155,9 @@ this as closeable by more automated verification alone -- closing it
 requires actual audible/behavioral improvement, then a third human listen.
 
 ## EXACT NEXT ACTION
-Do **not** start Phase 8 UI or any new roadmap phase. The next agent's
-mandate (set by the user, recorded in full in `ACTIVE_HANDOFF.md`) is to
-investigate and improve actual DJ-like behavior across the full pipeline
-(Set Director -> anchors -> Candidate Composer -> Audition Lab ->
-PerformanceRecipe -> technique compiler -> renderer -> mastering),
-prioritizing the two open findings above, without resorting to making
-effects louder/flashier as a substitute for genuine musical intent. See
-`ACTIVE_HANDOFF.md` for the complete, detailed brief.
+Do **not** start UI or broad feature work. Human-listen to the new private
+checkpoint against V1 and previous V2. If recognizable intent/taste still does
+not clear the gate, use the contextual and controlled clips to identify which
+specific move fails (especially bass swap or drum bridge) and continue the
+smallest production-path correction. Do not close the project from tests or
+distance metrics alone.

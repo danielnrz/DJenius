@@ -27,6 +27,7 @@ from typing import Any, Callable, Optional
 
 import numpy as np
 
+from djenius.audio.transitions import target_cursor_advance_samples
 from djenius.core.audition_lab import (
     AuditionConfig,
     AuditionRanking,
@@ -37,13 +38,15 @@ from djenius.core.candidate_composer import (
     FAMILY_ORDER,
     CandidateComposerConfig,
     CandidateSetContext,
+    SourceAppearanceConstraint,
     TransitionCandidate,
     compose_transition_candidates,
 )
 from djenius.core.models import TrackProfile
+from djenius.core.performance_recipe import compile_performance_recipe
 from djenius.core.scorer import score_compatibility
 
-SET_DIRECTOR_SCHEMA_VERSION = "7.0"
+SET_DIRECTOR_SCHEMA_VERSION = "7.1"
 
 
 def _clip01(value: float) -> float:
@@ -206,6 +209,7 @@ class SetDirectorConfig:
     reset_threshold_pct: float = 12.0
     artist_spacing_min_tracks: int = 3
     vocal_heavy_threshold: float = 0.55
+    minimum_track_establishment_bars: int = 8
     weights: dict[str, float] = field(default_factory=lambda: {
         "handoff_quality": 0.26,
         "energy_arc_fit": 0.16,
@@ -248,6 +252,8 @@ class SetDirectorConfig:
             raise ValueError("max_edges_to_audition must be >= 1")
         if self.artist_spacing_min_tracks < 1:
             raise ValueError("artist_spacing_min_tracks must be >= 1")
+        if not 0 <= self.minimum_track_establishment_bars <= 32:
+            raise ValueError("minimum_track_establishment_bars must be in [0, 32]")
         needed = set(self.EDGE_COMPONENTS) | set(self.PATH_COMPONENTS)
         if not needed.issubset(self.weights):
             raise ValueError(f"weights must define: {sorted(needed)}")
@@ -331,6 +337,7 @@ def edge_cache_key(
     composer_config: CandidateComposerConfig,
     audition_config: AuditionConfig,
     seed: int,
+    source_appearance_constraint: SourceAppearanceConstraint | None = None,
 ) -> str:
     from dataclasses import asdict
 
@@ -344,6 +351,10 @@ def edge_cache_key(
         "composer_config": asdict(composer_config),
         "audition_config": asdict(audition_config),
         "seed": seed,
+        "source_appearance_constraint": (
+            source_appearance_constraint.to_dict()
+            if source_appearance_constraint is not None else None
+        ),
     }
     encoded = json.dumps(_canonicalize(payload), sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()[:24]
@@ -412,6 +423,7 @@ def evaluate_edge(
         transition_role=set_context.transition_role, set_phase=set_context.set_phase,
         energy_goal=set_context.energy_goal, recent_families=set_context.previous_technique_families,
         composer_config=config.composer_config, audition_config=config.audition_config, seed=config.seed,
+        source_appearance_constraint=set_context.source_appearance_constraint,
     )
     cached = cache.get(key)
     if cached is not None:
@@ -608,6 +620,7 @@ class _BeamState:
     reset_count: int
     edge_total: float
     edges: tuple[SetDirectorEdgeChoice, ...]
+    appearances: tuple["TrackAppearance", ...]
 
 
 def _avg_edge_score(state: _BeamState) -> float:
@@ -619,10 +632,84 @@ def _beam_sort_key(state: _BeamState):
 
 
 @dataclass(frozen=True)
+class TrackAppearance:
+    """One coherent entry -> establishment -> exit plan for a set track."""
+
+    track_id: str
+    entry_anchor_sec: float
+    entry_consumed_end_sec: float
+    minimum_establishment_sec: float
+    earliest_exit_start_sec: float
+    exit_transition_start_sec: float | None = None
+    exit_anchor_sec: float | None = None
+    entry_role: str = "full_mix"
+    featured_section: str = "unknown"
+    exit_role: str = "set_end"
+    energy_purpose: str = "CONTINUE"
+
+    @property
+    def independent_airtime_sec(self) -> float | None:
+        if self.exit_transition_start_sec is None:
+            return None
+        return max(0.0, self.exit_transition_start_sec - self.entry_consumed_end_sec)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "track_id": self.track_id,
+            "entry_anchor_sec": round(self.entry_anchor_sec, 6),
+            "entry_consumed_end_sec": round(self.entry_consumed_end_sec, 6),
+            "minimum_establishment_sec": round(self.minimum_establishment_sec, 6),
+            "earliest_exit_start_sec": round(self.earliest_exit_start_sec, 6),
+            "exit_transition_start_sec": (
+                round(self.exit_transition_start_sec, 6)
+                if self.exit_transition_start_sec is not None else None
+            ),
+            "exit_anchor_sec": (
+                round(self.exit_anchor_sec, 6) if self.exit_anchor_sec is not None else None
+            ),
+            "independent_airtime_sec": (
+                round(self.independent_airtime_sec, 6)
+                if self.independent_airtime_sec is not None else None
+            ),
+            "entry_role": self.entry_role,
+            "featured_section": self.featured_section,
+            "exit_role": self.exit_role,
+            "energy_purpose": self.energy_purpose,
+        }
+
+
+def _minimum_establishment_sec(track: TrackProfile, config: SetDirectorConfig) -> float:
+    requested = config.minimum_track_establishment_bars * 4.0 * 60.0 / track.bpm
+    return min(requested, track.duration_sec * 0.25)
+
+
+def _open_appearance(
+    track: TrackProfile,
+    config: SetDirectorConfig,
+    *,
+    entry_anchor_sec: float,
+    entry_consumed_end_sec: float,
+    entry_role: str,
+    energy_purpose: str,
+) -> TrackAppearance:
+    establishment = _minimum_establishment_sec(track, config)
+    return TrackAppearance(
+        track_id=track.id,
+        entry_anchor_sec=entry_anchor_sec,
+        entry_consumed_end_sec=entry_consumed_end_sec,
+        minimum_establishment_sec=establishment,
+        earliest_exit_start_sec=entry_consumed_end_sec + establishment,
+        entry_role=entry_role,
+        energy_purpose=energy_purpose,
+    )
+
+
+@dataclass(frozen=True)
 class SetDirectorPlan:
     arc: str = SetArc.SMOOTH
     track_ids: tuple[str, ...] = ()
     edges: tuple[SetDirectorEdgeChoice, ...] = ()
+    appearances: tuple[TrackAppearance, ...] = ()
     total_score: float = 0.0
     component_totals: dict[str, float] = field(default_factory=dict)
     total_duration_sec: float = 0.0
@@ -636,6 +723,7 @@ class SetDirectorPlan:
             "arc": self.arc,
             "track_ids": list(self.track_ids),
             "edges": [item.to_dict() for item in self.edges],
+            "appearances": [item.to_dict() for item in self.appearances],
             "total_score": round(float(self.total_score), 9),
             "component_totals": {k: round(float(v), 6) for k, v in self.component_totals.items()},
             "total_duration_sec": round(float(self.total_duration_sec), 3),
@@ -669,6 +757,17 @@ def plan_set_v2(
         return SetDirectorPlan(
             arc=arc,
             track_ids=tuple(track.id for track in tracks),
+            appearances=tuple(
+                _open_appearance(
+                    track,
+                    config,
+                    entry_anchor_sec=0.0,
+                    entry_consumed_end_sec=0.0,
+                    entry_role="opener",
+                    energy_purpose="OPEN",
+                )
+                for track in tracks
+            ),
             total_duration_sec=sum(track.duration_sec for track in tracks),
             compute_stats=stats.to_dict(),
             human_readable_reasons=("Fewer than two tracks are available; there are no transitions to plan.",),
@@ -694,6 +793,16 @@ def plan_set_v2(
             reset_count=0,
             edge_total=0.0,
             edges=(),
+            appearances=(
+                _open_appearance(
+                    track,
+                    config,
+                    entry_anchor_sec=0.0,
+                    entry_consumed_end_sec=0.0,
+                    entry_role="opener",
+                    energy_purpose="OPEN",
+                ),
+            ),
         )
         for track in opener_pool
     ]
@@ -730,12 +839,19 @@ def plan_set_v2(
                     previous_technique_families=state.technique_history,
                     avoid_recent_repeats=True,
                     allow_tempo_reset=state.reset_count < config.effective_max_reset_budget(arc),
+                    source_appearance_constraint=SourceAppearanceConstraint(
+                        track_id=source.id,
+                        entry_anchor_sec=state.appearances[-1].entry_anchor_sec,
+                        entry_consumed_end_sec=state.appearances[-1].entry_consumed_end_sec,
+                        minimum_establishment_sec=state.appearances[-1].minimum_establishment_sec,
+                    ),
                 )
                 handoff = evaluate_edge(
                     source, target, audio_provider=audio_provider, set_context=set_context,
                     config=config, cache=cache, stats=stats,
                 )
-                if handoff.ranking is not None and handoff.survivor_count == 0:
+                budget_exhausted = bool(handoff.composition_diagnostics.get("budget_exhausted", False))
+                if handoff.selected_candidate_id is None and not budget_exhausted:
                     # Every candidate technique the composer generated for this
                     # exact pairing was hard-rejected on real audio audition --
                     # there is no renderable transition here at all (confirmed:
@@ -766,28 +882,49 @@ def plan_set_v2(
                     if handoff.selected_candidate_id else None
                 )
                 if selected_candidate is not None:
-                    # `state.duration_sec` is always "total mix duration if the
-                    # set ended right here", i.e. it already assumes `source`
-                    # (the current last track) plays solo from wherever it was
-                    # entered through to its own natural end. Undo that
-                    # assumption using the *real* chosen anchors -- source
-                    # really stops at its own source_segment.anchor_sec (not
-                    # its full duration), and target starts contributing from
-                    # its own target_segment.anchor_sec (not from 0) -- then
-                    # re-apply the same "plays to its own end" assumption for
-                    # the new last track. Confirmed against real music that
-                    # the old flat `_estimate_overlap_sec` heuristic (a fixed
-                    # ~16-bar assumption, capped at 50% of each track's
-                    # duration) instead assumed every track contributes close
-                    # to its full length, which overstated a real 4-track
-                    # plan's duration by ~236s (664.0s estimated vs 427.8s
-                    # actually rendered) because real anchors routinely land
-                    # far from a track's start/end.
+                    compiled = compile_performance_recipe(
+                        selected_candidate.recipe,
+                        selected_candidate.compile_context(),
+                    )
+                    sample_rate = audio_provider(target).sample_rate
+                    overlap_samples = int(round(compiled.overlap_duration_sec * sample_rate))
+                    target_advance_samples = target_cursor_advance_samples(
+                        compiled.transition_type,
+                        overlap_samples,
+                        sample_rate,
+                        selected_candidate.source_bpm,
+                        selected_candidate.target_bpm,
+                        compiled.requires_stretch,
+                    )
+                    target_consumed_end = (
+                        compiled.target_start_sec + target_advance_samples / sample_rate
+                    )
+                    # This is now the exact splice equation used by the full
+                    # renderer, including phrase-cut seam-only consumption.
                     new_duration = (
                         state.duration_sec - source.duration_sec
-                        + selected_candidate.source_segment.anchor_sec
+                        + compiled.source_end_sec
                         + target.duration_sec
-                        - selected_candidate.target_segment.anchor_sec
+                        - target_consumed_end
+                    )
+                    finalized_source_appearance = replace(
+                        state.appearances[-1],
+                        exit_transition_start_sec=compiled.source_start_sec,
+                        exit_anchor_sec=compiled.source_end_sec,
+                        featured_section=selected_candidate.source_segment.section,
+                        exit_role=selected_candidate.technique_family,
+                    )
+                    target_appearance = _open_appearance(
+                        target,
+                        config,
+                        entry_anchor_sec=compiled.target_start_sec,
+                        entry_consumed_end_sec=target_consumed_end,
+                        entry_role=selected_candidate.technique_family,
+                        energy_purpose=set_context.transition_role,
+                    )
+                    new_appearances = (
+                        state.appearances[:-1]
+                        + (finalized_source_appearance, target_appearance)
                     )
                 else:
                     # Budget-exhausted edge (last-resort compute guard): no
@@ -796,6 +933,16 @@ def plan_set_v2(
                     # heuristic -- this is not the common path.
                     overlap = _estimate_overlap_sec(source, target)
                     new_duration = state.duration_sec + target.duration_sec - overlap
+                    new_appearances = state.appearances + (
+                        _open_appearance(
+                            target,
+                            config,
+                            entry_anchor_sec=0.0,
+                            entry_consumed_end_sec=overlap,
+                            entry_role="budget_exhausted_unknown",
+                            energy_purpose=set_context.transition_role,
+                        ),
+                    )
                 expanded.append(_BeamState(
                     track_ids=state.track_ids + (target.id,),
                     duration_sec=new_duration,
@@ -807,6 +954,7 @@ def plan_set_v2(
                         source.id, target.id, handoff, components,
                         _explain_edge(source, target, handoff, components),
                     ),),
+                    appearances=new_appearances,
                 ))
             if viable_expansions == 0:
                 # Every shortlisted next track hard-rejected on real audition
@@ -827,6 +975,16 @@ def plan_set_v2(
         finished = beams or [_BeamState(
             track_ids=(opener_pool[0].id,), duration_sec=opener_pool[0].duration_sec,
             technique_history=(), artist_history=(), reset_count=0, edge_total=0.0, edges=(),
+            appearances=(
+                _open_appearance(
+                    opener_pool[0],
+                    config,
+                    entry_anchor_sec=0.0,
+                    entry_consumed_end_sec=0.0,
+                    entry_role="opener",
+                    energy_purpose="OPEN",
+                ),
+            ),
         )]
 
     def final_key(state: _BeamState):
@@ -880,6 +1038,7 @@ def plan_set_v2(
         arc=arc,
         track_ids=best.track_ids,
         edges=best.edges,
+        appearances=best.appearances,
         total_score=total_score,
         component_totals=component_totals,
         total_duration_sec=best.duration_sec,

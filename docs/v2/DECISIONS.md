@@ -197,3 +197,25 @@
 **Decision:** `lock_set_director_candidate` (Phase 8) now raises `ValueError` if the requested candidate's audition was hard-rejected, instead of accepting any candidate id present in the handoff.
 **Why:** building the full-mix renderer's own hard-rejection guard made it obvious the existing lock endpoint had no equivalent check -- a user could lock a candidate the renderer would then correctly refuse to render, an avoidable dead end. Small, directly motivated by Phase 10 work already touching this exact code path; not a speculative hardening pass.
 **Rejected:** leaving the gap and only handling it at render time (the user would discover the mistake later, at render, instead of immediately when locking).
+
+## D046 - Track appearances are path-dependent Set Director state
+**Decision:** Set Director schema 7.1 carries a typed `TrackAppearance` for each track and passes its entry-consumption point plus minimum establishment window to Candidate Composer as a `SourceAppearanceConstraint`. The constraint participates in the edge-cache key, and candidate anchors/durations that would start the next transition too early are rejected during composition. The renderer's D044 anchor shift remains only for backward compatibility with legacy or manually assembled plans.
+**Why:** independently valid A→B and B→C handoffs do not imply a coherent appearance for B. The previous render-time shift could prevent overlap corruption but could not plan establishment, useful independent airtime, or a musically ordered entry→feature→exit story.
+**Supersedes:** D044 as the policy for newly planned sets; D044 remains the compatibility behavior at the renderer boundary.
+
+## D047 - Phase-5 expressive families compile two-deck choreography, not labels over legacy fades
+**Decision:** Phase-5 EQ blend, drum bridge, loop shortening, and riser/impact recipes compile an explicit `mix_choreography` operation. The renderer executes deliberate bass ownership, build holds, arrangement pockets, and phrase landings; Phase-2/3 behavior remains frozen for backward compatibility.
+**Why:** the controlled real-audio lab proved that the old riser/impact output was almost identical to plain crossfade despite correct names/actions. Typed actions are only meaningful if the final two-deck envelope embodies the move.
+**Rejected:** globally increasing FX gain or changing frozen recipe behavior.
+
+## D048 - Target cursor advance follows audible splice semantics
+**Decision:** preview, Set Director duration planning, and full-set rendering share `target_cursor_advance_samples`. Phrase cut advances only past its click-safe seam; ordinary overlaps advance by their rendered target consumption, including time-stretch semantics.
+**Why:** the former phrase-cut path rendered mostly outgoing audio but skipped an entire multi-bar interval of the incoming track afterward, contradicting the declared landing and corrupting duration/appearance bookkeeping.
+
+## D049 - Required stems remain attached through the production full-set path
+**Decision:** the application provider loads available cached stems into `TrackAudio`; full-set rendering slices and validates the source/target stem windows and passes them into transition DSP. Required-stem absence is an explicit render error, never a silent sophisticated-family-to-crossfade downgrade.
+**Why:** a stem handoff that only works in an isolated lab but cannot receive stems from the application is not a production implementation.
+
+## D050 - Audition damage metrics are bounded by declared technique intent
+**Decision:** Audition Lab's spectral metric retains universal collision/mud/hole protection but applies small family-specific allowances to continuity movement and expected high-frequency buildup for techniques that deliberately restructure frequency space. Excess beyond those bounds is still penalized, and no score-only creativity bonus is added.
+**Why:** a riser, filter move, phrase cut, bass handoff, or stem mashup should not lose solely because it performed its declared safe transformation. The evaluator must distinguish intended behavior from the same change appearing in a family that did not declare it.

@@ -18,7 +18,7 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any, Callable
 
 from djenius.audio.scanner import extract_metadata, scan_directory
 from djenius.core.explanations import explain_transition
@@ -1005,7 +1005,17 @@ class LocalAppService:
             def provider(track: TrackProfile) -> TrackAudio:
                 if track.id not in audio_cache:
                     raw, sr = load_track_audio(track.filepath, target_sr=target_sr)
-                    audio_cache[track.id] = TrackAudio(audio=raw, sample_rate=sr)
+                    stems = None
+                    if track.analysis.stems:
+                        try:
+                            from djenius.audio.stems import load_stems
+
+                            stem_dir = str(Path(next(iter(track.analysis.stems.values()))).parent)
+                            loaded = load_stems(track.filepath, sr=sr, stem_dir=stem_dir)
+                            stems = loaded or None
+                        except Exception as exc:
+                            logger.debug("Could not load optional Set Director stems for %s: %s", track.id, exc)
+                    audio_cache[track.id] = TrackAudio(audio=raw, sample_rate=sr, stems=stems)
                 return audio_cache[track.id]
 
             progress(20, f"Planning a {arc.replace('_', ' ')} journey (renders bounded previews)")

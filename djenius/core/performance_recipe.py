@@ -14,7 +14,6 @@ from typing import Any
 
 from djenius.core.groove import (
     GroovePattern,
-    MusicalSubdivision,
     PerformanceSampleEvent,
     SUPPORTED_PROCEDURAL_GENERATORS,
     builtin_groove_pattern,
@@ -786,6 +785,20 @@ def compile_performance_recipe(recipe: PerformanceRecipe, context: RecipeCompile
     elif recipe.technique == "tempo_reset":
         technique_operations.append({"type": "tape_stop", "strength": 0.72})
 
+    # Phase 5 candidates need their typed action intent to affect the actual
+    # two-deck mix envelope, not merely survive as an inspection schedule on
+    # top of a legacy fade. Keep Phase 2/3 frozen behavior unchanged; the
+    # Candidate Composer marks its recipes with phase=5 and candidate_family.
+    candidate_family = str(recipe.metadata.get("candidate_family", ""))
+    if int(recipe.metadata.get("phase", 2)) >= 5 and candidate_family in {
+        "eq_blend", "drum_bridge", "loop_shortening", "riser_impact",
+    }:
+        technique_operations.append({
+            "type": "mix_choreography",
+            "family": candidate_family,
+            "landing_fraction": 0.75 if candidate_family in {"loop_shortening", "riser_impact"} else 0.5,
+        })
+
     requires_stretch = (
         transition_type == "beatmatched_blend"
         and abs(context.source_bpm - context.target_bpm) > 0.5
@@ -962,10 +975,14 @@ def phase3_recipe(technique: str, source_track_id: str, target_track_id: str, *,
             _action(ActionType.RELEASE, last, 4, TrackRole.SOURCE),
         )
     elif technique == "riser_impact":
+        riser_bar = max(1, last - 1)
         actions = (
             _action(ActionType.START, 1, 1, TrackRole.TARGET, gain_db=-10.0),
-            _action(ActionType.RISER, mid, 1, TrackRole.GENERATED, level=0.018, duration_beats=4.0),
-            _action(ActionType.IMPACT, last, 4, TrackRole.GENERATED, level=0.02),
+            # Build through the penultimate bar and mark the actual target
+            # landing on beat 1 of the final bar. The previous beat-4 impact
+            # happened one beat after the musical landing choreography needed.
+            _action(ActionType.RISER, riser_bar, 1, TrackRole.GENERATED, level=0.026, duration_beats=4.0),
+            _action(ActionType.IMPACT, last, 1, TrackRole.GENERATED, level=0.032),
             _action(ActionType.RELEASE, last, 4, TrackRole.SOURCE, order=1),
         )
     elif technique == "tempo_reset":

@@ -177,6 +177,34 @@ def phrase_cut_seam_samples(sample_rate: int, overlap_samples: int) -> int:
     return min(overlap_samples, max(2, min(256, overlap_samples // 4)))
 
 
+def target_cursor_advance_samples(
+    transition_type: str,
+    overlap_samples: int,
+    sample_rate: int,
+    source_bpm: float,
+    target_bpm: float,
+    use_time_stretch: bool = True,
+) -> int:
+    """Return target samples that a rendered splice actually consumes.
+
+    Most transition families consume the target region used to make the
+    overlap. A phrase cut is intentionally different: its multi-bar output
+    stays on the outgoing phrase until a tiny click-safe seam at the end, so
+    only that seam may be skipped before the target body is appended. Keeping
+    this separate from :func:`target_consumed_samples` preserves the DSP input
+    sizing contract while making the set/preview splice semantically correct.
+    """
+    if transition_type == "phrase_cut":
+        return phrase_cut_seam_samples(sample_rate, overlap_samples)
+    return target_consumed_samples(
+        transition_type,
+        overlap_samples,
+        source_bpm,
+        target_bpm,
+        use_time_stretch,
+    )
+
+
 def source_consumed_samples(
     transition_type: str,
     overlap_samples: int,
@@ -247,7 +275,20 @@ def _apply_transition_mono(
     # interval. They remain shape-preserving so the existing V5.3 timing and
     # provenance contract stays authoritative.
     generated_fx: list[dict] = []
-    if technique_operations:
+    choreography = next(
+        (
+            operation
+            for operation in (technique_operations or [])
+            if operation.get("type") == "mix_choreography"
+        ),
+        None,
+    )
+    source_operations = [
+        operation
+        for operation in (technique_operations or [])
+        if operation.get("type") != "mix_choreography"
+    ]
+    if source_operations:
         from djenius.audio.creative_fx import apply_creative_operations
 
         source_region, generated_fx = apply_creative_operations(
@@ -255,7 +296,7 @@ def _apply_transition_mono(
             np.zeros_like(source_region),
             sample_rate=sr,
             source_bpm=source_bpm,
-            operations=technique_operations,
+            operations=source_operations,
         )
 
     # Apply bass/EQ management for transitions that mix both tracks
@@ -291,7 +332,16 @@ def _apply_transition_mono(
             seam_samples=phrase_cut_seam_samples(sr, len(source_region)),
         )
     elif transition_type == "crossfade":
-        result = _crossfade(source_region, target_region)
+        if choreography and choreography.get("family") in {"loop_shortening", "riser_impact"}:
+            result = _build_and_land(
+                source_region,
+                target_region,
+                sr,
+                source_bpm=source_bpm,
+                landing_fraction=float(choreography.get("landing_fraction", 0.75)),
+            )
+        else:
+            result = _crossfade(source_region, target_region)
     elif transition_type == "beatmatched_blend":
         result = _beatmatched_blend(
             source_region, target_region, sr,
@@ -301,6 +351,7 @@ def _apply_transition_mono(
             source_mid_energy=source_mid_energy,
             target_low_energy=target_low_energy,
             target_mid_energy=target_mid_energy,
+            choreography_family=(str(choreography.get("family")) if choreography else ""),
         )
     elif transition_type == "bass_swap":
         # Prefer stem-based bass swap when stem data is available
@@ -410,6 +461,134 @@ def _crossfade(source: np.ndarray, target: np.ndarray) -> np.ndarray:
     return (source * fade_out + target * fade_in).astype(np.float32)
 
 
+def _build_and_land(
+    source: np.ndarray,
+    target: np.ndarray,
+    sr: int,
+    *,
+    source_bpm: float,
+    landing_fraction: float = 0.75,
+) -> np.ndarray:
+    """Hold a build, clear space, then make a recognisable target landing.
+
+    Loop-shortening and riser/impact are arrangement moves, not fade presets.
+    The outgoing deck therefore remains the clear foreground during the build,
+    while a high-passed target tease avoids premature bass competition. At the
+    phrase landing the source releases over a short click-safe window and the
+    full target takes ownership for the remainder of the transition.
+    """
+    from scipy import signal as scipy_signal
+
+    n = min(len(source), len(target))
+    if n < 8:
+        return _crossfade(source[:n], target[:n])
+    source = np.asarray(source[:n], dtype=np.float32)
+    target = np.asarray(target[:n], dtype=np.float32)
+    landing = max(2, min(n - 2, int(round(n * float(np.clip(landing_fraction, 0.5, 0.9))))))
+    beat_samples = int(round(sr * 60.0 / source_bpm)) if source_bpm > 0 else int(round(sr * 0.5))
+    handoff = max(16, min(beat_samples // 4, int(round(sr * 0.12)), landing, n - landing))
+    left = max(0, landing - handoff)
+    right = min(n, landing + handoff)
+
+    # Tease only the rhythmic/bright target content before the landing. This
+    # makes the next groove perceptible without allowing two bass lines to own
+    # the same space during the build.
+    target_tease = target
+    try:
+        cutoff = min(260.0, sr * 0.20)
+        b, a = scipy_signal.butter(3, cutoff / (sr / 2.0), btype="high")
+        target_tease = scipy_signal.filtfilt(b, a, target).astype(np.float32)
+    except Exception:
+        target_tease = target
+
+    shape = (n, 1) if source.ndim == 2 else (n,)
+    source_gain = np.ones(shape, dtype=np.float32) * 0.96
+    target_full_gain = np.zeros(shape, dtype=np.float32)
+    tease_gain = np.zeros(shape, dtype=np.float32)
+    if left > 0:
+        tease_curve = np.linspace(0.05, 0.18, left, dtype=np.float32)
+        tease_gain[:left] = tease_curve[:, None] if source.ndim == 2 else tease_curve
+    if right > left:
+        fade_out, fade_in = equal_power_crossfade(right - left)
+        if source.ndim == 2:
+            fade_out = fade_out[:, None]
+            fade_in = fade_in[:, None]
+        source_gain[left:right] = fade_out * 0.96
+        target_full_gain[left:right] = fade_in * 0.96
+    if right < n:
+        source_gain[right:] = 0.0
+        target_full_gain[right:] = 0.96
+
+    result = source * source_gain + target_tease * tease_gain + target * target_full_gain
+    return result.astype(np.float32)
+
+
+def _eq_blend_mix(
+    source: np.ndarray,
+    target: np.ndarray,
+    sr: int,
+    *,
+    source_bpm: float,
+    bridge_space: bool = False,
+) -> np.ndarray:
+    """Three-band DJ-style blend with one deliberate bass owner."""
+    from scipy import signal as scipy_signal
+
+    n = min(len(source), len(target))
+    source = np.asarray(source[:n], dtype=np.float32)
+    target = np.asarray(target[:n], dtype=np.float32)
+    if n < 32 or sr <= 1000:
+        return _crossfade(source, target)
+    try:
+        b, a = scipy_signal.butter(4, min(150.0 / (sr / 2.0), 0.8), btype="low")
+        source_low = scipy_signal.filtfilt(b, a, source).astype(np.float32)
+        target_low = scipy_signal.filtfilt(b, a, target).astype(np.float32)
+    except Exception:
+        return _crossfade(source, target)
+    source_upper = source - source_low
+    target_upper = target - target_low
+
+    progress = np.linspace(0.0, 1.0, n, dtype=np.float32)
+    # Incoming mids/highs establish first; outgoing musical material does not
+    # disappear until the second half.
+    source_upper_gain = np.cos(np.clip((progress - 0.35) / 0.65, 0.0, 1.0) * np.pi / 2.0)
+    target_upper_gain = np.sin(np.clip(progress / 0.65, 0.0, 1.0) * np.pi / 2.0)
+
+    midpoint = n // 2
+    beat_samples = int(round(sr * 60.0 / source_bpm)) if source_bpm > 0 else int(round(sr * 0.5))
+    swap = max(16, min(beat_samples // 2, n // 8))
+    swap_left = max(0, midpoint - swap // 2)
+    swap_right = min(n, swap_left + swap)
+    source_low_gain = np.ones(n, dtype=np.float32)
+    target_low_gain = np.zeros(n, dtype=np.float32)
+    low_out, low_in = equal_power_crossfade(max(1, swap_right - swap_left))
+    source_low_gain[swap_left:swap_right] = low_out
+    source_low_gain[swap_right:] = 0.0
+    target_low_gain[swap_left:swap_right] = low_in
+    target_low_gain[swap_right:] = 1.0
+
+    if bridge_space:
+        # Create a shallow, bounded pocket for the explicit percussion layer
+        # during the middle of a drum bridge; the groove is foregrounded by
+        # arrangement rather than by an arbitrary large gain boost.
+        pocket = 1.0 - 0.22 * np.sin(np.pi * progress) ** 2
+        source_upper_gain *= pocket
+        target_upper_gain *= pocket
+
+    if source.ndim == 2:
+        source_upper_gain = source_upper_gain[:, None]
+        target_upper_gain = target_upper_gain[:, None]
+        source_low_gain = source_low_gain[:, None]
+        target_low_gain = target_low_gain[:, None]
+    result = (
+        source_upper * source_upper_gain
+        + target_upper * target_upper_gain
+        + source_low * source_low_gain
+        + target_low * target_low_gain
+    )
+    return np.asarray(result * 0.92, dtype=np.float32)
+
+
 def _stabilize_transition_level(
     audio: np.ndarray,
     source_context: np.ndarray,
@@ -467,6 +646,7 @@ def _beatmatched_blend(
     source_mid_energy: float = 0.0,
     target_low_energy: float = 0.0,
     target_mid_energy: float = 0.0,
+    choreography_family: str = "",
 ) -> np.ndarray:
     """Beatmatched blend with real time-stretching and beat phase alignment.
 
@@ -542,6 +722,15 @@ def _beatmatched_blend(
 
     phase_shift = calculate_phase_shift(source, stretched_target, sr, bpm=source_bpm)
     aligned_target = apply_phase_shift(stretched_target, phase_shift)
+
+    if choreography_family in {"eq_blend", "drum_bridge"}:
+        return _eq_blend_mix(
+            source,
+            aligned_target,
+            sr,
+            source_bpm=source_bpm,
+            bridge_space=choreography_family == "drum_bridge",
+        )
 
     has_bass_risk = (
         source_low_energy > 0.25 or target_low_energy > 0.25
@@ -894,43 +1083,42 @@ def _echo_out(
     sr: int,
     source_bpm: float = 120.0,
 ) -> np.ndarray:
-    """Echo/delay tail on the outgoing track.
+    """Post-fader source echo release into a clear target phrase.
 
-    Creates a musical echo effect on the source while fading in the target.
+    The dry source stays authoritative through the setup. At the final-bar
+    release it exits quickly, its immediately preceding beat feeds a bounded
+    beat-synchronised echo, and the target receives the cleared space. This is
+    intentionally an arrangement change, not an echo laid over a full fade.
     """
     n = len(source)
-    fade_out, fade_in = equal_power_crossfade(n)
-
-    # Reshape for stereo broadcasting
-    if source.ndim == 2:
-        fade_out = fade_out[:, np.newaxis]
-        fade_in = fade_in[:, np.newaxis]
-
-    # Create echo effect
+    if n < 16:
+        return _crossfade(source, target)
     delay_sec = 60.0 / source_bpm if source_bpm > 0 else 0.5
-    delay_samples = seconds_to_samples(delay_sec, sr)
+    delay_samples = max(8, seconds_to_samples(delay_sec, sr))
+    release = max(4, min(n - 4, int(round(n * 0.75))))
+    guard = max(8, min(int(round(sr * 0.08)), delay_samples // 4, n - release))
 
-    echo = np.zeros_like(source)
+    source_gain = np.ones(n, dtype=np.float32) * 0.95
+    target_gain = np.zeros(n, dtype=np.float32)
+    target_gain[:release] = np.linspace(0.04, 0.16, release, dtype=np.float32)
+    fade_out, fade_in = equal_power_crossfade(guard)
+    source_gain[release:release + guard] = fade_out * 0.95
+    source_gain[release + guard:] = 0.0
+    target_gain[release:release + guard] = fade_in * 0.92
+    target_gain[release + guard:] = 0.92
 
-    # Add multiple echo taps with decay
-    decay = 0.5
-    for tap in range(4):
-        offset = delay_samples * tap
-        gain = decay ** tap
-        if offset >= n:
-            break
-        echo[offset:] += source[:n - offset] * gain * fade_out[offset:]
-
-    # Apply additional decay envelope to echo
-    echo_envelope = np.exp(-np.linspace(0, 3, n)).astype(np.float32)
-    if source.ndim == 2:
-        echo_envelope = echo_envelope[:, np.newaxis]
-    echo *= echo_envelope
-
-    # Mix echo tail with incoming target
-    result = echo + target * fade_in
-
-    return result.astype(np.float32)
+    echo = np.zeros(n, dtype=np.float32)
+    captured = np.asarray(source[max(0, release - delay_samples):release], dtype=np.float32)
+    if len(captured):
+        for tap, gain in enumerate((0.48, 0.22, 0.11, 0.055)):
+            start = release + tap * delay_samples
+            if start >= n:
+                break
+            count = min(len(captured), n - start)
+            echo[start:start + count] += captured[:count] * gain
+    tail = max(1, n - release)
+    echo[release:] *= np.linspace(1.0, 0.15, tail, dtype=np.float32)
+    return (source * source_gain + target * target_gain + echo).astype(np.float32)
 
 
 def _loop_blend(

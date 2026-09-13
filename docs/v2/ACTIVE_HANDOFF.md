@@ -1,6 +1,110 @@
 # DJenius V2 Active Handoff
 
-## LAST VERIFIED TIME
+## RESUMED PERFORMANCE-RECOVERY SESSION
+2026-09-13T17:59:57Z (Codex/GPT-5.6 Sol). Recovered the repository in the
+required authority order, read the complete research specification, and
+verified that the original Downloads copy is byte-identical (SHA-256
+`de2605fe29f41594ff035c3333fcbc151576e06584119b4f712e59da3e8a224f`).
+After `git fetch origin`, local HEAD and
+`origin/v2-professional-autonomous-dj` both equal
+`bf224162444cfaf410392899153c0a7660fc52da`; the only pre-existing working
+tree item is untracked `.claude/`, which remains untouched. The prior
+handoff's private listening package is present under
+`/tmp/djenius_v1_v2_listening/`. Active work is limited to the two mandated
+questions: coherent cross-edge track appearances and technique-family
+behavior through the actual recipe/compiler/renderer/audio path. At this
+initial recovery instant, no production change had been made yet; the completed
+checkpoint is recorded directly below.
+
+### First resumed-session findings (recorded before production edits)
+- Built the required private same-anchor real-audio lab at
+  `/tmp/djenius_performance_lab/` (one anonymous compatible pair, 4 bars,
+  plain crossfade plus all 12 Phase-3 techniques, cached real stems where
+  available). The manifest records compiler actions/operations and aligned
+  difference diagnostics; numeric distance is diagnostic only, never the
+  human-audibility gate.
+- `riser_impact` is confirmed to be almost literally the plain crossfade in
+  the production output (`correlation=0.999954`, difference RMS only 0.00956
+  of the crossfade RMS). Its generated riser/impact layer exists, but the
+  recipe schedules the one-bar riser too early and the impact on beat 4 of
+  the final bar rather than the drop downbeat; the base mix remains a
+  gradual crossfade.
+- `bass_swap` is also extremely close in full-band output on this real pair
+  (`correlation=0.998385`, difference RMS ratio 0.056825), even with real
+  stems supplied. This does not by itself prove the low-band ownership move
+  is inaudible, but it makes a dedicated low-band/ownership audit necessary.
+- `drum_bridge` compiles as the same `beatmatched_blend` used by `eq_blend`
+  plus 32 procedural events. Its difference from a plain crossfade is
+  dominated by the shared beatmatch/EQ path, so a direct drum-bridge-vs-EQ
+  isolation comparison is required before claiming the added groove matters.
+- The recipe compiler preserves typed action schedules as diagnostics but
+  does not execute most action envelopes. It reduces selection primarily to
+  one legacy transition type plus a small set of hard-coded operations.
+- `phrase_cut` has a V2 splice-semantics defect: DSP uses only a tiny target
+  seam at the end of the buffer, but both V2 preview and full-set renderers
+  advance the target cursor by the entire multi-bar overlap. That skips the
+  target material immediately after the declared landing anchor.
+- `stem_handoff` is audibly distinct when the private lab supplies real
+  stems (`correlation=0.926739` vs crossfade), but it is unreachable in the
+  actual application path: the Set Director provider never loads cached
+  stems, and `render_set_director_mix` unconditionally refuses every
+  stem-requiring candidate even though `TrackAudio` already has a `stems`
+  field.
+
+### Performance-recovery implementation checkpoint
+Production changes are now in the working tree and documented in
+`docs/v2/PERFORMANCE_QUALITY_AUDIT.md`:
+
+- Set Director schema 7.1 carries typed, path-dependent track appearances.
+  Candidate Composer receives an entry/consumed-end/minimum-establishment
+  envelope and rejects anchors or transition lengths that would squeeze the
+  track before it has established. Appearance state participates in the edge
+  cache key. The old renderer shift remains only as a legacy/manual-plan
+  compatibility guard.
+- Phrase-cut preview/full-set splicing and duration planning now advance the
+  target cursor by the actual click-safe seam rather than silently skipping
+  the whole nominal overlap.
+- Cached stems now flow from the real application provider through full-set
+  segment slicing/validation into renderer DSP. Missing required stems fail
+  explicitly; they do not masquerade as a stem handoff over crossfade.
+- Phase-5 EQ blend/drum bridge/build families compile a renderer-executed
+  `mix_choreography` directive. EQ stages incoming upper frequencies before a
+  deliberate bass switch; loop shortening and riser/impact hold the source
+  build and land the full target at 75%; drum bridge creates bounded space for
+  its generated groove. The riser is scheduled in the penultimate bar and its
+  impact is now on beat 1 of the landing bar.
+- Echo release now captures the preceding source beat into a bounded
+  post-fader tail, removes the dry source quickly, and gives the target clear
+  space instead of adding echo over an ordinary long fade.
+- Audition Lab's generic spectral metric now has bounded family-specific
+  intent allowances. Collision, mud, holes, and excess beyond the allowance
+  remain penalized; this corrects the damage model rather than adding a
+  creative bonus.
+
+Validation is complete for this checkpoint: focused recovery coverage passes
+at **110 passed**; the complete repository regression passes at **1102 passed**
+with only the two pre-existing Typer/Click deprecation warnings. `ruff check`
+on every touched production/test file and `git diff --check` are clean.
+
+The final real recovery render produced exact plan/render duration agreement at
+**661.228s**, zero anchor shifts, and the sequence `echo_out /
+loop_shortening / drum_bridge / riser_impact`. Its three middle tracks received
+**33.599 / 130.888 / 191.989s** of independent airtime. The identical plan was
+selected on three complete deterministic runs, including before and after the
+bounded Audition spectral-intent correction. The finalized private package is:
+
+`/tmp/djenius_performance_lab/listening_checkpoint/`
+
+It contains full `V1 / previous V2 / recovery V2` links, controlled fixed-anchor
+family comparisons, contextual clips for all four selected recovery handoffs,
+and an anonymized manifest. **Human gate remains pending; do not call this
+product failure resolved based on the engineering evidence.**
+
+## LATEST VERIFIED TIME
+2026-09-13T18:48:49Z (final private recovery render completed; full 1102-test
+regression and lint/diff checks completed immediately beforehand)
+
+## PRIOR HANDOFF VERIFIED TIME (historical)
 2026-09-13T20:05Z (user is transferring development to a different coding
 agent -- GPT-5.6 Sol -- after this update; this session is stopping per
 explicit instruction, not because work is finished)
