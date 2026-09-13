@@ -188,3 +188,111 @@ def test_stems_option_fails_gracefully_when_optional_dependency_is_absent(tmp_pa
     result = _wait(client, started.json()["job_id"])
     assert result["status"] == "failed"
     assert "not installed" in result["error"]
+
+
+def _set_director_track(path: Path, track_id: str, *, bpm: float = 120.0, artist: str = "") -> TrackProfile:
+    from djenius.core.analysis_v2 import build_tempo_hypotheses
+
+    duration = 24.0
+    sr = 6000
+    n = int(round(duration * sr))
+    t = [i / sr for i in range(n)]
+    beat = 60.0 / bpm
+    mono = [0.03 * ((-1) ** int(x / beat)) for x in t]
+    sf.write(path, [[v, v] for v in mono], sr)
+    third = duration / 3.0
+    sections = [
+        {"start_sec": 0.0, "end_sec": third, "label": "intro", "boundary_confidence": 0.9,
+         "mix_in_score": 0.9, "mix_out_score": 0.35, "landing_strength": 0.3, "bass_density": 0.55, "energy_mean": 0.5},
+        {"start_sec": third, "end_sec": 2 * third, "label": "drop", "boundary_confidence": 0.9,
+         "mix_in_score": 0.88, "mix_out_score": 0.78, "landing_strength": 0.8, "bass_density": 0.65, "energy_mean": 0.75},
+        {"start_sec": 2 * third, "end_sec": duration, "label": "outro", "boundary_confidence": 0.9,
+         "mix_in_score": 0.3, "mix_out_score": 0.96, "landing_strength": 0.25, "bass_density": 0.5, "energy_mean": 0.5},
+    ]
+    cues = [
+        {"time_sec": 0.0, "bar_index": 1, "beat_in_bar": 1, "confidence": 0.9, "section": "intro",
+         "use_cases": ["mix_in"], "mix_in_score": 0.9, "mix_out_score": 0.2},
+        {"time_sec": third, "bar_index": 17, "beat_in_bar": 1, "confidence": 0.9, "section": "drop",
+         "use_cases": ["mix_in", "phrase_cut", "drop_landing"], "mix_in_score": 0.88, "mix_out_score": 0.78},
+        {"time_sec": 2 * third, "bar_index": 33, "beat_in_bar": 1, "confidence": 0.9, "section": "outro",
+         "use_cases": ["mix_out", "phrase_cut"], "mix_in_score": 0.3, "mix_out_score": 0.96},
+    ]
+    analysis = TrackAnalysis(
+        bpm=bpm, bpm_confidence=0.97, camelot="8A", analysis_confidence=0.95,
+        tempo_hypotheses=build_tempo_hypotheses(bpm, 0.97),
+        section_profiles=sections, cue_candidates=cues,
+        vocal_activity_curve=[0.08] * int(duration), energy_curve=[0.6] * int(duration),
+        mean_energy=0.6, low_energy=0.55,
+        groove_profile={"confidence": 0.9, "syncopation_index": 0.25, "swing_ratio": 1.0, "percussion_density_mean": 0.55},
+    )
+    return TrackProfile(
+        id=track_id,
+        metadata=TrackMetadata(filepath=str(path), title=track_id, artist=artist, duration_sec=duration, sample_rate=sr, channels=2),
+        analysis=analysis,
+    )
+
+
+def _wait_long(client: ApiClient, job_id: str) -> dict:
+    for _ in range(3000):
+        result = client.get(f"/api/jobs/{job_id}").json()
+        if result["status"] in {"completed", "failed"}:
+            return result
+        time.sleep(0.01)
+    raise AssertionError("job did not finish")
+
+
+def test_set_director_plan_inspect_lock_and_preview(tmp_path, monkeypatch):
+    library = tmp_path / "music"
+    library.mkdir()
+    tracks = [
+        _set_director_track(library / "a.wav", "a", bpm=120.0, artist="Artist A"),
+        _set_director_track(library / "b.wav", "b", bpm=121.0, artist="Artist B"),
+        _set_director_track(library / "c.wav", "c", bpm=119.0, artist="Artist C"),
+    ]
+    service = LocalAppService(data_dir=tmp_path / "data", output_dir=tmp_path / "output")
+    monkeypatch.setattr(service, "_profiles_for_library", lambda path: tracks)
+    client = ApiClient(create_app(service))
+
+    job = client.post("/api/set-director/plans", json={
+        "path": str(library), "arc": "smooth", "duration_minutes": 1.0, "max_tracks": 3,
+    }).json()
+    result = _wait_long(client, job["job_id"])
+    assert result["status"] == "completed", result.get("error")
+    plan = result["result"]
+    plan_id = plan["id"]
+    assert plan["arc"] == "smooth"
+    assert len(plan["tracks"]) >= 2
+    assert len(plan["handoffs"]) == len(plan["tracks"]) - 1
+
+    fetched = client.get(f"/api/set-director/plans/{plan_id}").json()
+    assert fetched["id"] == plan_id
+    assert fetched["tracks"] == plan["tracks"]
+
+    handoff = client.get(f"/api/set-director/plans/{plan_id}/handoffs/0").json()
+    assert handoff["index"] == 0
+    assert isinstance(handoff["candidates"], list)
+
+    if len(handoff["candidates"]) >= 2:
+        alternate = next(item for item in handoff["candidates"] if not item["selected"])
+        locked = client.post(
+            f"/api/set-director/plans/{plan_id}/handoffs/0/lock",
+            json={"candidate_id": alternate["candidate_id"]},
+        ).json()
+        assert locked["user_locked"] is True
+        assert locked["selected_candidate_id"] == alternate["candidate_id"]
+        updated_plan = client.get(f"/api/set-director/plans/{plan_id}").json()
+        assert updated_plan["handoffs"][0]["user_locked"] is True
+        assert updated_plan["handoffs"][0]["candidate_id"] == alternate["candidate_id"]
+
+    bad_index = client.get(f"/api/set-director/plans/{plan_id}/handoffs/99")
+    assert bad_index.status_code == 400
+
+    preview = client.post(f"/api/set-director/plans/{plan_id}/handoffs/0/preview", json={})
+    if handoff["candidates"] and any(not item["hard_rejected"] for item in handoff["candidates"]):
+        assert preview.status_code == 200
+        filename = preview.json()["filename"]
+        played = client.get(f"/api/outputs/{filename}")
+        assert played.status_code == 200
+        assert played.headers["content-type"] in {"audio/wav", "audio/x-wav"}
+
+    assert client.get("/api/set-director/plans/does-not-exist").status_code == 404

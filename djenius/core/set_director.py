@@ -36,6 +36,7 @@ from djenius.core.audition_lab import (
 from djenius.core.candidate_composer import (
     CandidateComposerConfig,
     CandidateSetContext,
+    TransitionCandidate,
     compose_transition_candidates,
 )
 from djenius.core.models import TrackProfile
@@ -264,6 +265,7 @@ class HandoffSummary:
     selected_score: float
     ranking: AuditionRanking | None = None
     composition_diagnostics: dict[str, Any] = field(default_factory=dict)
+    candidates: dict[str, TransitionCandidate] = field(default_factory=dict)
     cache_hit: bool = False
 
     def to_dict(self) -> dict[str, Any]:
@@ -395,7 +397,7 @@ def evaluate_edge(
 
     ordered_candidates = sorted(composition.candidates, key=lambda item: item.candidate_id)
     to_audit = ordered_candidates[: config.max_candidates_audited_per_edge]
-    family_by_id = {item.candidate_id: item.technique_family for item in to_audit}
+    candidates_by_id = {item.candidate_id: item for item in to_audit}
 
     source_bundle = audio_provider(source)
     target_bundle = audio_provider(target)
@@ -418,10 +420,11 @@ def evaluate_edge(
         audited_count=len(auditions), survivor_count=ranking.survivor_count,
         hard_rejected_count=ranking.rejected_count,
         selected_candidate_id=selected.candidate_id if selected else None,
-        selected_family=family_by_id.get(selected.candidate_id) if selected else None,
+        selected_family=candidates_by_id[selected.candidate_id].technique_family if selected else None,
         selected_score=float(selected.final_score) if selected else 0.0,
         ranking=ranking,
         composition_diagnostics=dict(composition.diagnostics),
+        candidates=candidates_by_id,
     )
     cache.put(key, summary)
     return summary

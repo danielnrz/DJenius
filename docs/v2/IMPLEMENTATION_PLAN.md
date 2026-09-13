@@ -14,7 +14,7 @@ DJenius V2 is a local autonomous DJ performance engine. The architectural target
 | 5 | Candidate composer | 3-8 meaningfully different feasible recipes | PASS |
 | 6 | Audition Lab | known bad candidates rank below good references | PASS |
 | 7 | Set Director V2 | planned sets beat shuffled baselines | PASS |
-| 8 | UI V2 | inspect/preview/override performance | PENDING |
+| 8 | UI V2 | inspect/preview/override performance | PASS (core slice; see notes) |
 | 9 | Personalization | feedback changes selection predictably | PENDING |
 | 10 | Certification | automated + private + blind V1/V2 listening | PENDING |
 
@@ -108,6 +108,27 @@ Required architecture/gate:
 - Known limitation surfaced by the real gate: with only a 12-track library, one arc's forced-length path included a handoff where every audited candidate hard-rejected (0 survivors); Set Director truthfully reports this as `selected_family: None` / `handoff_quality: 0` rather than fabricating a candidate, but currently has no backtracking/path-abandonment escape hatch to avoid such a forced handoff when no better local option remains.
 - `mean_selected_audition_score` is an intentionally weak discriminator whenever a library holds BPM/key/vocal properties roughly constant (as one dedicated synthetic test does on purpose, to isolate energy-arc placement): different arc positions steer Phase 5 toward different technique families with genuinely different intrinsic audition scores, independent of whether the ordering itself is good or bad.
 - Privacy boundary: private track identities, raw analyses, source audio, and `/tmp/djenius_phase7_smoke` artifacts remain outside Git; only anonymous `TRACK_NN` / `SET_A|B|C` labels and aggregate metrics are recorded here.
+
+## Phase 8 - UI V2 (Set Director inspection slice)
+Bridge Set Director (Phase 7) into the running local application and UI, since through Phase 7 nothing in the actual app ever called `plan_set_v2`/Candidate Composer/Audition Lab -- only the legacy `plan_set` planner was reachable from the CLI/web app.
+
+Delivered this phase:
+- `djenius/audio/track_audio.py`: shared robust stereo decode (soundfile -> librosa -> ffmpeg fallback tiers, matching the analyzer's strategy) for feeding Set Director's `AudioProvider`.
+- `LocalAppService` (`djenius/application.py`) gains a Set Director bridge: `start_set_director_plan` (a background job that loads real analyzed library tracks, decodes real audio, and runs `plan_set_v2`), `set_director_plan_view` (trajectory + handoffs + component-total diagnostics), `set_director_handoff_view` (the Transition Inspector: every audited candidate with score/rank/hard-rejection reason), `lock_set_director_candidate` (manual override, honored by later views), and `render_set_director_preview` (renders one candidate's real bounded preview to a WAV served through the existing `/api/outputs/{filename}` path).
+- New `/api/set-director/...` endpoints in `djenius/web/app.py`.
+- A new "Set Director" panel in the existing local web UI: set-arc selector, target duration, a creativity control (safe/balanced/creative, mapped to `SetDirectorConfig` overrides), a track-trajectory view (BPM/key/energy per position), a component-totals breakdown (the same transparent objective components Phase 7 exposes), a handoffs list, and a Transition Inspector modal per handoff showing every audited candidate (family, score, rank, or hard-rejection reason), an in-browser audio preview player, and a "use this instead" lock control.
+- Incidental fix: `djenius/web/static/app.js` had a pre-existing dead-code bug (`renderPerformancePlan` referenced but never defined) that threw a `ReferenceError` on every page load and silently prevented the V9/segment-performance appearance-reorder buttons (`moveAppearance`/`removeAppearance`) from ever being attached. Fixed by rebinding the wrapper onto the actual `renderPlan` symbol callers use. Also added a `Cache-Control: no-store` header to the `/` route and version query strings on the static asset tags, since the app's lack of any cache-busting made this exact class of "my JS change isn't showing up" bug easy to reintroduce.
+
+Explicitly deferred (not fabricated as done):
+- Full end-to-end rendering of a complete, continuous Set-Director-planned mix (stitching every handoff's chosen recipe into one final output file). Only bounded per-handoff *preview* rendering is wired this phase; `HandoffSummary.candidates` now retains the actual `TransitionCandidate` (including its `PerformanceRecipe`) so a future phase can build a full-mix renderer on top of exactly this data without redesigning Phase 7.
+- Graphical waveform visualization and a bar/action-level performance-timeline widget (research spec section 24.2/24.5). The Transition Inspector's `generation_reason` text and the plan's `human_readable_reasons` cover explainability; visual waveform/timeline rendering is left for a future UI pass.
+- Stem-dependent candidates (e.g. `stem_handoff`) correctly hard-reject in the Transition Inspector with an honest reason ("candidate requires stems but audition render did not receive them") rather than crashing, since this phase's bridge does not load/decode separated stems -- consistent with stems remaining optional/gated elsewhere in the app.
+
+### Phase 8 gate result
+- Dedicated backend suite: **1 new test** (`tests/test_app.py::test_set_director_plan_inspect_lock_and_preview`) exercising the full HTTP flow (create plan -> poll job -> fetch plan view -> fetch handoff/inspector view -> lock an alternate candidate -> confirm the lock is reflected in both views -> render and serve a preview WAV -> 404 on an unknown plan/out-of-range handoff) against real (tiny synthetic) audio through the real FastAPI app. Complete repository regression: **1080 passed** (was 1079 before this test).
+- `ruff check` clean on every new/changed Python file (one pre-existing, unrelated unused-import warning in `application.py` predates this phase and was left alone).
+- Manual end-to-end verification via an actual browser against the real local app and the real anonymized `testMusic` library (not just the automated test): scanned and analyzed the real library, planned a smooth-arc Set Director set, confirmed the trajectory/component/handoff views rendered real BPM/key/energy/technique/score data, opened the Transition Inspector for one real handoff and confirmed it listed a ranked survivor, a second survivor, and two candidates correctly hard-rejected (one on clipping safety, one on the undelivered-stems limitation above) with human-readable reasons, played a real rendered bounded-preview WAV of the runner-up candidate in-browser, locked it as the selection, and confirmed both the inspector and the trajectory/handoffs view updated to reflect the override without a page reload. Also verified the pre-existing classic (non-V2) plan-creation and rendering UI path still works after the shared `renderPlan` bugfix.
+- No private track title/artist/filepath is recorded here or in any tracked file; the manual verification above is described only in aggregate/structural terms.
 
 ## Human listening gate
 No merge to master until serious V2 candidates are rendered locally and the user completes the blind listening gate described in `DJENIUS_V2_RESEARCH_SPEC.md`.

@@ -146,3 +146,18 @@ The `NO` above is deliberate: reverse sweep/cymbal passed deterministic synthesi
 - Known limitation: SET_B's forced 6-track path included one handoff where every audited candidate hard-rejected (0 survivors out of 2 audited); Set Director reports this truthfully as `selected_family: None`, `handoff_quality: 0.0` rather than fabricating a winner, but has no backtracking/path-abandonment mechanism yet to avoid accepting a forced zero-survivor handoff when a small real library leaves no better local option.
 - `mean_selected_audition_score` tied (rather than won) for SET_A and was closer than the other metrics for SET_B/SET_C; this matches the documented caveat (`DECISIONS.md` D036) that this particular metric is a weaker discriminator of ordering quality specifically, since Phase 5's technique-family choice is also steered by arc-position context, not only by which order is "better."
 - Privacy boundary: private track identities, raw analyses, source/decoded audio, and all `/tmp/djenius_phase7_smoke` artifacts (including the throwaway driver scripts) remain outside Git; only anonymous `TRACK_NN`/`SET_A|B|C` labels and aggregate metrics are recorded here.
+
+## Phase 8 - UI V2 (Set Director inspection slice) gate
+- New backend test: **1 passed** (`test_set_director_plan_inspect_lock_and_preview`), exercising create-plan/poll/inspect/lock/preview/404 through the real FastAPI app with real (tiny synthetic) audio.
+- Complete repository regression: **1080 passed** (1079 at the Phase 7 checkpoint + 1). `ruff check` clean on every new/changed file except one pre-existing, unrelated unused-import warning in `application.py` that predates this phase.
+- Manual real-browser verification against the actual local app and the real anonymized `testMusic` library (12+ tracks, same corpus as the Phase 7 real-music gate): scanned/analyzed the real library through the existing UI, planned a Set Director journey (smooth arc, 4 real tracks selected to fit a 10-minute target), and confirmed:
+  - the trajectory view showed real per-track BPM/key/energy;
+  - the component-totals breakdown rendered all nine Phase 7 objective components as bars;
+  - the handoffs list showed a real selected technique family and score per handoff;
+  - opening the Transition Inspector on one real handoff listed 4 real audited candidates: 2 survivors (ranked, with real scores ~0.70 and ~0.70) and 2 correctly hard-rejected with honest reasons (one on preview clipping/peak safety, one on the undelivered-stems limitation documented in `IMPLEMENTATION_PLAN.md`);
+  - clicking "Preview" on the runner-up candidate rendered a real bounded-preview WAV and played it in-browser (`<audio>` element advanced through real playback time);
+  - clicking "Use this" locked that candidate; both the inspector modal and the underlying handoffs list updated immediately (no page reload) to show the new technique/score and a "locked" indicator;
+  - re-fetching the plan view via the API independently confirmed the override was persisted server-side, not just rendered client-side.
+  - a fresh classic (non-Set-Director) plan-creation request through the pre-existing UI still rendered correctly after the shared `renderPlan` bugfix, confirming no regression to the legacy path.
+- No private track title, artist, or filepath appears in this entry or any other tracked file; the verification above is reported only in structural/aggregate terms.
+- Known limitation carried forward (not a defect): full continuous full-mix rendering of a Set-Director-planned set is not wired this phase; only bounded per-handoff preview rendering is exposed. `HandoffSummary.candidates` (added this phase) retains the real `TransitionCandidate`/`PerformanceRecipe` needed for a future full-mix renderer.

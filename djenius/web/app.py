@@ -51,6 +51,23 @@ class RenderRequest(BaseModel):
     use_stems: bool = False
 
 
+class SetDirectorPlanRequest(BaseModel):
+    path: Optional[str] = None
+    arc: str = "smooth"
+    duration_minutes: Optional[float] = Field(default=30.0, gt=0, le=24 * 60)
+    max_tracks: Optional[int] = Field(default=None, ge=2, le=60)
+    creativity: str = "balanced"
+    seed: int = 0
+
+
+class SetDirectorLockRequest(BaseModel):
+    candidate_id: str = Field(min_length=1)
+
+
+class SetDirectorPreviewRequest(BaseModel):
+    candidate_id: Optional[str] = None
+
+
 class MixFeedbackRequest(BaseModel):
     plan_id: str = Field(min_length=1)
     rating: int = Field(ge=1, le=5)
@@ -87,7 +104,10 @@ def create_app(service: LocalAppService | None = None) -> FastAPI:
 
     @app.get("/", response_class=HTMLResponse)
     def index() -> FileResponse:
-        return FileResponse(STATIC_DIR / "index.html")
+        return FileResponse(
+            STATIC_DIR / "index.html",
+            headers={"Cache-Control": "no-store"},
+        )
 
     @app.get("/favicon.ico")
     def favicon() -> FileResponse:
@@ -186,6 +206,56 @@ def create_app(service: LocalAppService | None = None) -> FastAPI:
         try:
             return {"job_id": service.start_render(plan_id, request.target_lufs, request.use_stems)}
         except (KeyError, ValueError) as exc:
+            raise fail(exc) from exc
+
+    @app.post("/api/set-director/plans")
+    def create_set_director_plan(request: SetDirectorPlanRequest) -> dict:
+        try:
+            return {
+                "job_id": service.start_set_director_plan(
+                    library_path=request.path,
+                    arc=request.arc,
+                    duration_minutes=request.duration_minutes,
+                    max_tracks=request.max_tracks,
+                    creativity=request.creativity,
+                    seed=request.seed,
+                )
+            }
+        except (FileNotFoundError, ValueError) as exc:
+            raise fail(exc) from exc
+
+    @app.get("/api/set-director/plans/{plan_id}")
+    def get_set_director_plan(plan_id: str) -> dict:
+        try:
+            return service.set_director_plan_view(plan_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.get("/api/set-director/plans/{plan_id}/handoffs/{index}")
+    def get_set_director_handoff(plan_id: str, index: int) -> dict:
+        try:
+            return service.set_director_handoff_view(plan_id, index)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise fail(exc) from exc
+
+    @app.post("/api/set-director/plans/{plan_id}/handoffs/{index}/lock")
+    def lock_set_director_handoff(plan_id: str, index: int, request: SetDirectorLockRequest) -> dict:
+        try:
+            return service.lock_set_director_candidate(plan_id, index, request.candidate_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise fail(exc) from exc
+
+    @app.post("/api/set-director/plans/{plan_id}/handoffs/{index}/preview")
+    def preview_set_director_handoff(plan_id: str, index: int, request: SetDirectorPreviewRequest) -> dict:
+        try:
+            return {"filename": service.render_set_director_preview(plan_id, index, request.candidate_id)}
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ValueError as exc:
             raise fail(exc) from exc
 
     @app.get("/api/outputs")

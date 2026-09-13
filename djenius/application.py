@@ -106,6 +106,7 @@ class LocalAppService:
         self._jobs: dict[str, dict[str, Any]] = {}
         self._plans: dict[str, SetPlan] = {}
         self._plan_libraries: dict[str, str] = {}
+        self._set_director_plans: dict[str, dict[str, Any]] = {}
         self._analysis_failures: dict[str, str] = {}
         self._state = self._load_json(self.paths.state_path, {})
         self._output_records = self._load_json(self.paths.outputs_index_path, [])
@@ -926,6 +927,223 @@ class LocalAppService:
         with self._lock:
             self._plans[plan_id] = updated
         return self.plan_view(plan_id, updated)
+
+    # ---- Set Director (V2 Phase 7/8): plan inspection, candidates, preview ----
+
+    def _set_director_config(self, creativity: str):
+        from dataclasses import replace as _replace
+
+        from djenius.core.set_director import SetDirectorConfig
+
+        level = (creativity or "balanced").strip().lower()
+        if level not in {"safe", "balanced", "creative"}:
+            raise ValueError("Unknown creativity level")
+        base = SetDirectorConfig()
+        if level == "safe":
+            return _replace(
+                base,
+                max_reset_budget=max(0, base.max_reset_budget - 1),
+                composer_config=_replace(base.composer_config, max_candidates=5),
+            )
+        if level == "creative":
+            return _replace(
+                base,
+                max_reset_budget=base.max_reset_budget + 2,
+                shortlist_width=base.shortlist_width + 1,
+                max_candidates_audited_per_edge=base.max_candidates_audited_per_edge + 1,
+            )
+        return base
+
+    def start_set_director_plan(
+        self,
+        library_path: str | None = None,
+        arc: str = "smooth",
+        duration_minutes: float | None = None,
+        max_tracks: int | None = None,
+        creativity: str = "balanced",
+        seed: int = 0,
+    ) -> str:
+        from djenius.audio.track_audio import load_track_audio
+        from djenius.core.set_director import EdgeAuditionCache, SetArc, TrackAudio, plan_set_v2
+
+        path = self.resolve_library(library_path)
+        if arc not in SetArc.ALL:
+            raise ValueError(f"Unknown set arc; choose one of {', '.join(SetArc.ALL)}")
+        self._remember_state(
+            set_director_library_path=str(path),
+            set_director_arc=arc,
+            set_director_creativity=creativity,
+            set_director_duration_minutes=duration_minutes,
+        )
+        config = self._set_director_config(creativity)
+
+        def action(progress: Callable[[float, str], None]) -> dict[str, Any]:
+            progress(5, "Loading analyzed tracks")
+            profiles = self._profiles_for_library(path)
+            audio_cache: dict[str, TrackAudio] = {}
+            target_sr = 22050
+
+            def provider(track: TrackProfile) -> TrackAudio:
+                if track.id not in audio_cache:
+                    raw, sr = load_track_audio(track.filepath, target_sr=target_sr)
+                    audio_cache[track.id] = TrackAudio(audio=raw, sample_rate=sr)
+                return audio_cache[track.id]
+
+            progress(20, f"Planning a {arc.replace('_', ' ')} journey (renders bounded previews)")
+            duration_sec = (duration_minutes or 30.0) * 60.0
+            cache = EdgeAuditionCache()
+            plan = plan_set_v2(
+                profiles, audio_provider=provider, target_duration_sec=duration_sec,
+                arc=arc, config=config, cache=cache, max_tracks=max_tracks,
+            )
+            plan_id = uuid.uuid4().hex
+            with self._lock:
+                self._set_director_plans[plan_id] = {
+                    "plan": plan,
+                    "profiles": {profile.id: profile for profile in profiles},
+                    "provider": provider,
+                    "library_path": str(path),
+                    "overrides": {},
+                }
+            progress(100, f"Planned {len(plan.track_ids)} tracks, {len(plan.edges)} handoffs")
+            return self.set_director_plan_view(plan_id)
+
+        return self.submit_job("set_director_planning", action)
+
+    def _set_director_record(self, plan_id: str) -> dict[str, Any]:
+        with self._lock:
+            try:
+                return self._set_director_plans[plan_id]
+            except KeyError as exc:
+                raise KeyError("Set Director plan has expired; create it again") from exc
+
+    def set_director_plan_view(self, plan_id: str) -> dict[str, Any]:
+        record = self._set_director_record(plan_id)
+        plan = record["plan"]
+        profiles = record["profiles"]
+        overrides = record["overrides"]
+
+        tracks_view = []
+        for index, track_id in enumerate(plan.track_ids):
+            track = profiles[track_id]
+            tracks_view.append({
+                "position": index + 1,
+                "id": track.id,
+                "title": track.title,
+                "artist": track.metadata.artist,
+                "bpm": round(track.bpm, 1) if track.bpm else None,
+                "camelot": track.camelot or None,
+                "energy": round(track.mean_energy, 3),
+                "duration_sec": track.duration_sec,
+            })
+
+        handoffs_view = []
+        for index, edge in enumerate(plan.edges):
+            handoff = edge.handoff
+            override = overrides.get(index)
+            candidate_id = override["candidate_id"] if override else handoff.selected_candidate_id
+            family = handoff.candidates[candidate_id].technique_family if override and candidate_id in handoff.candidates else handoff.selected_family
+            score = override["score"] if override else handoff.selected_score
+            handoffs_view.append({
+                "index": index,
+                "source_track_id": edge.source_track_id,
+                "target_track_id": edge.target_track_id,
+                "technique_family": family,
+                "score": round(float(score), 3),
+                "candidate_id": candidate_id,
+                "survivor_count": handoff.survivor_count,
+                "audited_count": handoff.audited_count,
+                "user_locked": override is not None,
+                "component_scores": {key: round(float(value), 3) for key, value in edge.component_scores.items()},
+                "explanation": edge.explanation,
+            })
+
+        return {
+            "id": plan_id,
+            "arc": plan.arc,
+            "tracks": tracks_view,
+            "handoffs": handoffs_view,
+            "total_score": round(float(plan.total_score), 3),
+            "component_totals": {key: round(float(value), 3) for key, value in plan.component_totals.items()},
+            "total_duration_sec": round(float(plan.total_duration_sec), 1),
+            "compute_stats": dict(plan.compute_stats),
+            "human_readable_reasons": list(plan.human_readable_reasons),
+        }
+
+    def _set_director_edge(self, plan_id: str, index: int):
+        record = self._set_director_record(plan_id)
+        plan = record["plan"]
+        if not 0 <= index < len(plan.edges):
+            raise ValueError("Handoff index out of range")
+        return record, plan.edges[index]
+
+    def set_director_handoff_view(self, plan_id: str, index: int) -> dict[str, Any]:
+        record, edge = self._set_director_edge(plan_id, index)
+        handoff = edge.handoff
+        override = record["overrides"].get(index)
+        selected_id = override["candidate_id"] if override else handoff.selected_candidate_id
+
+        candidates_view = []
+        if handoff.ranking:
+            for audition in handoff.ranking.auditions:
+                candidate = handoff.candidates.get(audition.candidate_id)
+                candidates_view.append({
+                    "candidate_id": audition.candidate_id,
+                    "technique_family": candidate.technique_family if candidate else None,
+                    "intended_role": candidate.intended_role.value if candidate else None,
+                    "duration_bars": candidate.duration_bars if candidate else None,
+                    "generation_reason": candidate.generation_reason if candidate else "",
+                    "score": round(float(audition.final_score), 3),
+                    "rank": audition.rank,
+                    "hard_rejected": audition.hard_rejected,
+                    "failures": [failure.message for failure in audition.failures],
+                    "selected": audition.candidate_id == selected_id,
+                })
+
+        return {
+            "index": index,
+            "source_track_id": edge.source_track_id,
+            "target_track_id": edge.target_track_id,
+            "candidates": candidates_view,
+            "user_locked": override is not None,
+            "selected_candidate_id": selected_id,
+        }
+
+    def lock_set_director_candidate(self, plan_id: str, index: int, candidate_id: str) -> dict[str, Any]:
+        record, edge = self._set_director_edge(plan_id, index)
+        handoff = edge.handoff
+        audition = next(
+            (item for item in (handoff.ranking.auditions if handoff.ranking else ()) if item.candidate_id == candidate_id),
+            None,
+        )
+        if audition is None or candidate_id not in handoff.candidates:
+            raise ValueError("Unknown candidate for this handoff")
+        with self._lock:
+            record["overrides"][index] = {"candidate_id": candidate_id, "score": float(audition.final_score)}
+        return self.set_director_handoff_view(plan_id, index)
+
+    def render_set_director_preview(self, plan_id: str, index: int, candidate_id: str | None = None) -> str:
+        import soundfile as sf
+
+        from djenius.audio.audition_renderer import render_candidate_preview
+
+        record, edge = self._set_director_edge(plan_id, index)
+        handoff = edge.handoff
+        target_id = candidate_id or handoff.selected_candidate_id
+        if not target_id or target_id not in handoff.candidates:
+            raise ValueError("No renderable candidate for this handoff")
+        candidate = handoff.candidates[target_id]
+        profiles = record["profiles"]
+        provider = record["provider"]
+        source_bundle = provider(profiles[edge.source_track_id])
+        target_bundle = provider(profiles[edge.target_track_id])
+        preview = render_candidate_preview(
+            candidate, source_bundle.audio, target_bundle.audio, source_bundle.sample_rate,
+            source_stems=source_bundle.stems, target_stems=target_bundle.stems,
+        )
+        filename = f"preview-{plan_id[:8]}-{index}-{target_id[:10]}.wav"
+        sf.write(str(self.paths.output_dir / filename), preview.audio, preview.sample_rate)
+        return filename
 
     # ---- rendering and outputs ----
 

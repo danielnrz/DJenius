@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>DJenius - Local DJ</title>
   <link rel="icon" href="/favicon.ico">
-  <link rel="stylesheet" href="/static/styles.css">
+  <link rel="stylesheet" href="/static/styles.css?v=phase8-2">
 </head>
 <body>
   <header class="topbar">
@@ -18,6 +18,7 @@
       <button class="nav-tab active" data-panel="library-panel">Library</button>
       <button class="nav-tab" data-panel="create-panel">Create mix</button>
       <button class="nav-tab" data-panel="plan-panel">Set plan</button>
+      <button class="nav-tab" data-panel="director-panel">Set Director</button>
       <button class="nav-tab" data-panel="listen-panel">Now playing</button>
       <button class="nav-tab" data-panel="preferences-panel">Preferences</button>
       <button class="nav-tab" data-panel="system-panel">System</button>
@@ -54,6 +55,33 @@
       <div id="render-job" class="job-card hidden"></div>
     </section>
 
+    <section id="director-panel" class="panel">
+      <div class="section-heading"><div><p class="eyebrow">EXPERIMENTAL · V2</p><h1>Set Director</h1><p class="muted">Plans a whole-set journey with real bounded audition per handoff, not just track order.</p></div></div>
+      <div class="create-grid">
+        <div class="form-card"><label for="director-arc">Set arc</label><select id="director-arc"><option value="smooth">Smooth journey</option><option value="warmup_to_peak">Warm-up to peak</option><option value="peak_time">Peak time</option><option value="wave">Wave</option><option value="open_format">Open format</option></select><p class="field-note">Shapes the target energy curve across the set.</p></div>
+        <div class="form-card"><label for="director-duration">Target duration <span class="unit">minutes</span></label><input id="director-duration" type="number" min="1" max="180" step="1" value="20"></div>
+        <div class="form-card"><label for="director-creativity">Creativity</label><select id="director-creativity"><option value="safe">Safe</option><option value="balanced" selected>Balanced</option><option value="creative">Creative</option></select><p class="field-note">Affects candidate diversity and how many tempo resets are allowed.</p></div>
+      </div>
+      <div class="action-row"><button id="director-plan-button" class="button primary large">Plan the set</button><span class="muted">Renders real bounded previews per handoff; larger libraries take longer.</span></div>
+      <div id="director-job" class="job-card hidden"></div>
+      <div id="director-empty" class="empty-state"><div class="empty-icon">♫</div><h2>No journey planned yet</h2><p>Scan a library on the Library tab, then plan a set here to see its trajectory and inspect each handoff.</p></div>
+      <div id="director-content" class="hidden">
+        <div id="director-summary" class="plan-summary"></div>
+        <div id="director-reasons" class="reason-row"></div>
+        <h2 class="subheading">Track trajectory</h2>
+        <div id="director-tracks"></div>
+        <h2 class="subheading">Handoffs</h2>
+        <div id="director-handoffs"></div>
+      </div>
+      <div id="inspector-overlay" class="inspector-overlay hidden">
+        <div class="inspector-card">
+          <div class="inspector-header"><h2 id="inspector-title">Transition inspector</h2><button id="inspector-close" class="icon-button">×</button></div>
+          <audio id="inspector-audio" controls preload="none"></audio>
+          <div id="inspector-candidates"></div>
+        </div>
+      </div>
+    </section>
+
     <section id="listen-panel" class="panel">
       <div class="section-heading"><div><p class="eyebrow">LISTEN BACK</p><h1>Now playing</h1><p class="muted">Rendered mixes stay in your local output folder.</p></div></div>
       <div id="player-card" class="player-card"><div class="player-art">DJ</div><div class="player-main"><div class="now-label">READY WHEN YOU ARE</div><div id="player-title" class="player-title">No rendered mix selected</div><audio id="audio-player" controls preload="metadata"></audio><div id="markers" class="markers"></div></div></div>
@@ -65,6 +93,6 @@
 
     <section id="system-panel" class="panel"><div class="section-heading"><div><p class="eyebrow">LOCAL STATUS</p><h1>System</h1><p class="muted">Optional tools improve certain workflows but are never required for standard mixes.</p></div><button id="refresh-system" class="button ghost">Refresh</button></div><div id="system-content" class="system-grid"></div><div class="privacy-note"><span>◎</span><div><strong>Private by default</strong><p>DJenius binds to localhost. Your music, analysis, renders, and feedback stay on this machine.</p></div></div></section>
   </main>
-  <script src="/static/app.js"></script>
+  <script src="/static/app.js?v=phase8-2"></script>
 </body>
 </html>

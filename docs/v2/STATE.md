@@ -1,52 +1,52 @@
 # DJenius V2 State
 
 ## CURRENT PHASE
-Phase 7 - Set Director V2: **COMPLETE / READY TO FREEZE**. Phase 8 - UI V2 is the exact next implementation phase only after the Phase 7 privacy gate, commit, push, and local/remote HEAD verification.
+Phase 8 - UI V2 (Set Director inspection slice): **COMPLETE / READY TO FREEZE**. Phase 9 - Personalization is the exact next implementation phase only after the Phase 8 privacy gate, commit, push, and local/remote HEAD verification.
 
 ## CURRENT BRANCH
 `v2-professional-autonomous-dj`
 
 ## PREVIOUS FROZEN COMMIT
-`c55b760b5cd9439f99f312fc47c8398334df5928` - `Add V2 audition lab` (Phase 6).
+`4fd29e6e63486e4b15c50167279bdeb03377a83a` - `Add V2 set director` (Phase 7; a small `026d2a4` handoff-doc-only commit followed it, still Phase 7).
 
 ## WORKING TREE STATE
-Phase 7 production code (`djenius/core/set_director.py`), dedicated tests
-(`tests/test_v2_phase7_set_director.py`), and durable documentation are
-complete locally and awaiting the final privacy/diff gate, coherent commit,
-push, and local/remote HEAD verification. Private real-audio validation
-artifacts remain only under `/tmp/djenius_phase7_smoke` and must not enter
-Git.
+Phase 8 production code (`djenius/audio/track_audio.py`, additions to
+`djenius/application.py`/`djenius/web/app.py`/`djenius/web/static/*`, and one
+additive field on `djenius/core/set_director.py`'s `HandoffSummary`), a
+dedicated backend test, and durable documentation are complete locally and
+awaiting the final privacy/diff gate, coherent commit, push, and
+local/remote HEAD verification. No private track data enters Git; manual
+real-browser verification used the same real, already-gitignored `testMusic/`
+library the Phase 7 real-music gate used, and only aggregate/structural
+observations were written to any tracked file.
 
 - Base V1 commit: `efcfcca6d21aeaa595b236306b025b70668106fd`.
 - V1 master remains unchanged.
 
 ## COMPLETED WORK
-- Phases 0-6 are frozen; Phase 6 is pushed at `c55b760b5cd9439f99f312fc47c8398334df5928`.
-- Phase 7 adds `djenius/core/set_director.py`: a deterministic, additive whole-set journey planner sitting above Phase 5 (Candidate Composer) and Phase 6 (Audition Lab), while leaving `djenius/core/planner.py` (the classic beam-search planner) completely untouched.
-- Five explicit set arcs (smooth, warm-up-to-peak, peak-time, wave, open-format) each define a deterministic per-position target energy curve (`arc_energy_target`).
-- Combinatorial audition cost is controlled by a fixed pipeline: a cheap, audio-free compatibility+arc-fit shortlist narrows next-track candidates before Phase 5 runs at all; only a configurable bounded number of the resulting Phase 5 candidates are ever rendered/audited by Phase 6; every `(source, target, context)` outcome is cached (`EdgeAuditionCache`); a hard compute ceiling falls back to a cheap-compatibility-only summary once hit.
-- The beam search over track order is fully deterministic — no randomness is used for ordering decisions, only Phase 5's `seed` salts candidate-ID hashing, and every tie breaks on the track-id tuple lexicographically.
-- A real (not merely cosmetic) tempo-reset budget exists: `CandidateSetContext.allow_tempo_reset` is actually gated by how many deliberate resets a path has already used relative to `SetDirectorConfig.effective_max_reset_budget(arc)`, so Phase 5 stops offering tempo-reset candidates once an arc's budget is spent.
-- The objective is a transparent, decomposed, non-circular sum: handoff quality (Phase 6 score), energy-arc fit, BPM-journey fit, vocal pacing, groove continuity/contrast (arc-dependent), technique diversity, artist spacing, duration fit, and reset budget — each independently reported in `SetDirectorPlan.component_totals`.
-- `measure_set_quality` computes validation facts (energy-arc error, peak-placement error, BPM-jump statistics, consecutive-vocal-heavy count, technique-repetition stats, artist-spacing violations, viable-audition-edge rate, mean selected-audition score, hard-rejection rate) entirely independently of the internal weighted objective, specifically to avoid circular "optimize X, validate with X" reasoning.
-- `compare_to_shuffled_baselines` compares a planned order against many seeded shuffled orderings of the identical track pool on those independent metrics, using a neutral (non-technique-memory-chained) audition context so repeated pairs across shuffles are cache hits.
-- Real-music validation: three set intents (warm-up-to-peak, smooth, open-format) were planned from the same 12-track anonymized real library and each beat 12 seeded shuffled baselines on the majority of independent metrics (see `BENCHMARK.md` for the full table); technique sequences were genuinely varied, not collapsed to one family.
+- Phases 0-7 are frozen; Phase 7 is pushed at `4fd29e6e63486e4b15c50167279bdeb03377a83a`.
+- Phase 8 bridges Set Director (Phase 7) into the actual running application for the first time -- through Phase 7, `plan_set_v2`/Candidate Composer/Audition Lab were only reachable from tests and throwaway scripts, never from the app a user actually runs.
+- New `djenius/audio/track_audio.py`: shared robust stereo audio decode (soundfile -> librosa -> ffmpeg fallback tiers) feeding Set Director's `AudioProvider` from real library files.
+- `LocalAppService` gains a parallel Set Director bridge (`start_set_director_plan`, `set_director_plan_view`, `set_director_handoff_view`, `lock_set_director_candidate`, `render_set_director_preview`) and `djenius/web/app.py` gains `/api/set-director/...` routes, entirely additive to the existing V1/V9/V14 plan/render pipeline (D038).
+- `HandoffSummary` (Phase 7) gained one additive field, `candidates: dict[str, TransitionCandidate]`, retaining the real audited candidate objects (not just the winner's ID) so the Transition Inspector and any future full-mix renderer can use them directly (D039).
+- New "Set Director" panel in the local web UI: set-arc selector, target duration, a creativity control (safe/balanced/creative), a track-trajectory view (BPM/key/energy per position), the nine Phase 7 objective components rendered transparently, a handoffs list, and a Transition Inspector modal per handoff (every audited candidate with score/rank or an honest hard-rejection reason, an in-browser audio preview player rendering the real bounded preview, and a "use this instead" manual lock that updates the plan record, not just the display) (D040).
+- Incidental fix: a pre-existing dead-code bug in `djenius/web/static/app.js` (`renderPerformancePlan` referenced but never defined) threw on every page load and silently prevented the V9/segment-performance appearance-reorder buttons from ever being attached. Fixed by rebinding onto the actual `renderPlan` symbol. Also added `Cache-Control: no-store` on `/` and version query strings on static assets to prevent this class of stale-JS confusion going forward.
 
 ## TEST RESULTS
-- Dedicated Phase 7 suite: **17 passed in ~24s**.
-- Broad targeted gate (analysis/recipe/technique/groove/candidate/audition/set-director/renderer/planner/scorer/model): **326 passed in ~31s**.
-- Complete repository regression: **1079 passed in ~44s**, with **2 known Typer/Click dependency deprecation warnings** and no asynchronous timeout failures.
-- `ruff check` clean on both new files.
-- Real-music gate (12 anonymized tracks, 3 arcs, 12 shuffled baselines each): planned order won or tied on every independent metric in all three arcs, and strictly won on artist spacing and viable-audition-edge rate in all three. Full table in `BENCHMARK.md`.
+- New backend test: **1 passed** (`test_set_director_plan_inspect_lock_and_preview`), full HTTP flow against the real FastAPI app with real (tiny synthetic) audio.
+- Complete repository regression: **1080 passed** (1079 at the Phase 7 checkpoint + 1), with the same 2 known Typer/Click dependency deprecation warnings and no asynchronous timeout failures.
+- `ruff check` clean on every new/changed file (one pre-existing, unrelated unused-import warning in `application.py` predates this phase).
+- Manual end-to-end verification via an actual browser against the real local app and the real anonymized `testMusic` library: scan/analyze -> plan a Set Director journey -> trajectory/component/handoff views render real data -> Transition Inspector shows real ranked survivors and honestly-labeled hard rejections -> real audio preview plays in-browser -> manual lock updates both the inspector and the trajectory view live and is confirmed persisted server-side. The pre-existing classic (non-Set-Director) plan UI was also re-verified working after the shared `renderPlan` bugfix. Full narrative in `BENCHMARK.md`; no private track data recorded.
 
 ## KNOWN LIMITATIONS / TECHNICAL DEBT
-- With a small real library, a forced-length path can include a handoff where every audited candidate hard-rejects (0 survivors); Set Director reports this truthfully (`selected_family: None`, `handoff_quality: 0.0`) rather than fabricating a winner, but has no backtracking/path-abandonment mechanism yet to avoid accepting such a forced handoff. Observed once in the SET_B real-music run.
-- `mean_selected_audition_score` is a weaker discriminator of ordering quality specifically when a library's BPM/key/vocal properties are close to uniform (a dedicated synthetic test isolates this on purpose) or when different arc positions steer Phase 5 toward different technique families independent of ordering quality. Reported for transparency; not treated as a hard pass/fail signal on its own.
-- Set Director inherits every Phase 5/6 deferred metric (certified true peak, isolated-kick alignment, overlap-local harmonic quality, vocal intelligibility, stem bleed) since it audits through those same components unchanged.
-- Set Director's automated shuffled-baseline win proves the planned order is measurably more coherent than random on independent, human-interpretable axes. It does **not** prove the set sounds like a professional human DJ performance; that remains for the later blind listening gate.
+- Full continuous full-mix rendering of a Set-Director-planned set is not wired this phase; only bounded per-handoff preview rendering is exposed through the UI. `HandoffSummary.candidates` retains what a future full-mix renderer would need.
+- Manual candidate locks are an inspection-level override (change what is displayed/exported as "selected" for one handoff) rather than a full re-plan honoring the lock as a hard constraint across the rest of the set (D040).
+- Graphical waveform visualization and a bar/action-level performance-timeline widget (research spec section 24.2/24.5) are not implemented; textual generation reasons and human-readable plan reasons cover explainability instead.
+- Stem-dependent candidates (e.g. `stem_handoff`) correctly hard-reject in the Transition Inspector with an honest reason rather than crashing, since this phase's audio bridge does not load/decode separated stems.
+- All Phase 7 known limitations (forced zero-survivor handoffs on a small library, `mean_selected_audition_score` as a weak discriminator in some constructions, inherited Phase 5/6 deferred metrics, and the general "beats shuffled baselines is not the same as professional human DJ quality" caveat) still apply unchanged.
 
 ## CURRENT BLOCKERS
-None for freezing Phase 7. Phase 8 - UI V2 must expose set trajectory, waveform structure, transition candidates, preview, performance timeline, creativity controls, and manual locks per the research specification (section 24 / Phase 8 in the roadmap), building on the now-available `SetDirectorPlan` diagnostics.
+None for freezing Phase 8. Phase 9 - Personalization needs structured listening feedback that changes future technique/candidate selection predictably; the existing V1 feedback endpoints (`/api/feedback/*`) and preference store are a starting point, but nothing yet feeds Set Director's technique/candidate choices.
 
 ## EXACT NEXT ACTION
-Run the Phase 7 privacy/diff gate over the exact tracked/untracked change set. If clean, stage only public-safe Phase 7 source/tests/docs; commit as `Add V2 set director`; push `origin/v2-professional-autonomous-dj`; verify clean working tree and exact local/remote HEAD equality. Only then begin Phase 8 UI V2.
+Run the Phase 8 privacy/diff gate over the exact tracked/untracked change set (confirm nothing under `testMusic/`, `*.db`, `/tmp`, `.claude/`, or any real track name entered the tracked set). If clean, stage the Phase 8 files, commit as `Add V2 Set Director UI`, push `origin/v2-professional-autonomous-dj`, and verify clean working tree plus exact local/remote HEAD equality. Only then begin Phase 9 - Personalization.

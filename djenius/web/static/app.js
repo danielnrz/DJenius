@@ -7,7 +7,7 @@ function toast(message, isError = false) { const node = $("toast"); node.textCon
 function switchPanel(id) { document.querySelectorAll(".nav-tab").forEach((button) => button.classList.toggle("active", button.dataset.panel === id)); document.querySelectorAll(".panel").forEach((panel) => panel.classList.toggle("active", panel.id === id)); }
 document.querySelectorAll(".nav-tab").forEach((button) => button.addEventListener("click", () => switchPanel(button.dataset.panel)));
 
-function jobCard(node, job) { node.classList.remove("hidden"); const label = job.type === "lyrics" ? "Song meaning" : job.type[0].toUpperCase() + job.type.slice(1); node.innerHTML = `<strong>${esc(label)} ${job.status === "completed" ? "finished" : "in progress"}</strong><div class="progress-track"><div class="progress-bar" style="width:${job.progress}%"></div></div><div class="job-message">${esc(job.message)}</div>`; }
+function jobCard(node, job) { node.classList.remove("hidden"); const label = job.type === "lyrics" ? "Song meaning" : job.type === "set_director_planning" ? "Set Director planning" : job.type[0].toUpperCase() + job.type.slice(1); node.innerHTML = `<strong>${esc(label)} ${job.status === "completed" ? "finished" : "in progress"}</strong><div class="progress-track"><div class="progress-bar" style="width:${job.progress}%"></div></div><div class="job-message">${esc(job.message)}</div>`; }
 async function pollJob(jobId, node, onComplete) { while (true) { const job = await api(`/api/jobs/${jobId}`); jobCard(node, job); if (job.status === "completed") { if (onComplete) await onComplete(job.result); return job.result; } if (job.status === "failed") throw new Error(job.error || job.message || "Job failed"); await new Promise((resolve) => setTimeout(resolve, 650)); } }
 
 function renderLibrary(result) { state.library = result; $("track-count").textContent = `${result.track_count} track${result.track_count === 1 ? "" : "s"}`; const semanticReady = result.tracks.filter((track) => track.semantic_status === "ready").length; const semanticUncertain = result.tracks.filter((track) => track.semantic_status === "uncertain").length; const meaning = result.meaning_summary || {}; $("library-summary").textContent = `${result.ready_count} analyzed · ${semanticReady} feeling tagged · ${meaning.ready || 0} meaning ready · ${meaning.low_confidence || 0} low confidence · ${meaning.failed || 0} failed`; $("analyze-button").disabled = result.track_count === 0; $("semantic-button").disabled = result.ready_count < 2 || !state.system?.semantic; $("lyrics-button").disabled = result.track_count === 0; $("retry-lyrics-button").disabled = result.track_count === 0 || !((meaning.missing || 0) + (meaning.failed || 0) + (meaning.low_confidence || 0) + (meaning.unavailable || 0)); $("plan-button").disabled = result.ready_count < 2; $("create-note").textContent = result.ready_count < 2 ? "Analyze at least two tracks to create a set." : "Ready to make a proposal."; const rows = $("library-rows"); rows.innerHTML = result.tracks.length ? result.tracks.map((track) => `<tr><td>${esc(track.title)}<small class="muted">${esc(track.filename)}</small></td><td>${esc(track.artist || "—")}</td><td>${fmt(track.duration_sec)}</td><td>${track.bpm ? Number(track.bpm).toFixed(1) : "—"}</td><td>${esc(track.key || "—")}</td><td>${track.energy ? Number(track.energy).toFixed(2) : "—"}</td><td title="${track.semantic_confidence == null ? "" : `Reliability ${(Number(track.semantic_confidence) * 100).toFixed(0)}% · relative model matches, not probabilities`}">${track.semantic_tags?.length ? track.semantic_tags.map((tag) => `<span class="semantic-tag">${esc(tag.replaceAll("_", " "))}</span>`).join(" ") : track.semantic_status === "uncertain" ? `<span class="muted">semantic uncertain</span>` : `<span class="muted">not analyzed</span>`}</td><td><span class="tag ${track.status === "ready" ? "ready" : ""}">${esc(track.status.replace("_", " "))}</span></td></tr>`).join("") : `<tr><td colspan="8" class="empty">No supported audio files found.</td></tr>`; }
@@ -109,8 +109,8 @@ function addPerformanceActions() {
     row.querySelector(".track-row").appendChild(actions);
   });
 }
-const oldPerformanceRender = renderPerformancePlan;
-renderPerformancePlan = function(plan) {
+const oldPerformanceRender = renderPlan;
+renderPlan = function(plan) {
   oldPerformanceRender(plan);
   const layers = (plan.timeline && plan.timeline.layered_events) || [];
   if (layers.length) {
@@ -139,3 +139,85 @@ window.removeAppearance = (index) => {
   if (order.length < 2) return toast("A performance needs at least two appearances", true);
   editAppearances(order);
 };
+
+// ---- V2 Phase 8: Set Director (whole-set journey, per-handoff audition) ----
+
+state.director = null;
+const COMPONENT_LABELS = {
+  handoff_quality: "Handoff quality", energy_arc_fit: "Energy arc", bpm_journey_fit: "BPM journey",
+  vocal_pacing: "Vocal pacing", groove_continuity: "Groove", technique_diversity: "Technique variety",
+  artist_spacing: "Artist spacing", duration_fit: "Duration fit", reset_budget: "Reset budget",
+};
+
+function renderDirectorPlan(plan) {
+  state.director = plan;
+  $("director-empty").classList.add("hidden");
+  $("director-content").classList.remove("hidden");
+  $("director-summary").innerHTML = `<div class="summary-tile"><small>Tracks</small><strong>${plan.tracks.length}</strong></div><div class="summary-tile"><small>Handoffs</small><strong>${plan.handoffs.length}</strong></div><div class="summary-tile"><small>Duration</small><strong>${fmt(plan.total_duration_sec)}</strong></div><div class="summary-tile"><small>Arc</small><strong>${esc(plan.arc.replaceAll("_", " "))}</strong></div>`;
+  $("director-reasons").innerHTML = `<div class="component-grid">${Object.entries(plan.component_totals).map(([key, value]) => `<div class="component-tile"><small>${esc(COMPONENT_LABELS[key] || key)}</small><div class="energy-bar"><span style="width:${Math.round(Math.max(0, Math.min(1, value)) * 100)}%"></span></div></div>`).join("")}</div>${(plan.human_readable_reasons || []).map((reason) => `<span class="reason">${esc(reason)}</span>`).join("")}`;
+  $("director-tracks").innerHTML = plan.tracks.map((track) => `<div class="director-track"><div class="track-number">${track.position}</div><div class="track-name">${esc(track.title)}<small>${esc(track.artist || "—")}</small></div><div class="metric"><small>BPM</small>${track.bpm ?? "—"}</div><div class="metric"><small>Key</small>${esc(track.camelot || "—")}</div><div class="energy-bar" title="Energy ${track.energy}"><span style="width:${Math.round(track.energy * 100)}%"></span></div></div>`).join("");
+  const trackById = Object.fromEntries(plan.tracks.map((track) => [track.id, track]));
+  $("director-handoffs").innerHTML = plan.handoffs.map((handoff) => {
+    const source = trackById[handoff.source_track_id] || {};
+    const target = trackById[handoff.target_track_id] || {};
+    const rejected = handoff.survivor_count === 0;
+    return `<div class="director-handoff"><div class="handoff-title">${esc(source.title || handoff.source_track_id)} → ${esc(target.title || handoff.target_track_id)}<small>${esc((handoff.technique_family || "no survivor").replaceAll("_", " "))} · ${handoff.survivor_count}/${handoff.audited_count} survived${handoff.user_locked ? " · locked" : ""}</small></div><div class="handoff-score ${rejected ? "rejected" : ""}">${Math.round(handoff.score * 100)}%</div><button class="button secondary" onclick="openInspector(${handoff.index})">Inspect</button></div>`;
+  }).join("");
+}
+
+async function planDirectorSet() {
+  try {
+    const path = $("library-path").value.trim() || null;
+    const body = {
+      path, arc: $("director-arc").value,
+      duration_minutes: Number($("director-duration").value),
+      creativity: $("director-creativity").value,
+    };
+    const job = await api("/api/set-director/plans", {method: "POST", body: JSON.stringify(body)});
+    await pollJob(job.job_id, $("director-job"), (result) => renderDirectorPlan(result));
+    toast("Set Director journey planned");
+  } catch (error) { toast(error.message, true); }
+}
+$("director-plan-button").addEventListener("click", planDirectorSet);
+
+async function openInspector(index) {
+  try {
+    const handoff = await api(`/api/set-director/plans/${state.director.id}/handoffs/${index}`);
+    state.inspectorIndex = index;
+    const source = state.director.tracks.find((track) => track.id === handoff.source_track_id) || {};
+    const target = state.director.tracks.find((track) => track.id === handoff.target_track_id) || {};
+    $("inspector-title").textContent = `${source.title || handoff.source_track_id} → ${target.title || handoff.target_track_id}`;
+    $("inspector-audio").removeAttribute("src");
+    renderInspectorCandidates(handoff);
+    $("inspector-overlay").classList.remove("hidden");
+  } catch (error) { toast(error.message, true); }
+}
+window.openInspector = openInspector;
+
+function renderInspectorCandidates(handoff) {
+  $("inspector-candidates").innerHTML = handoff.candidates.length ? handoff.candidates.map((candidate) => `<div class="candidate-row ${candidate.selected ? "selected" : ""} ${candidate.hard_rejected ? "hard-rejected" : ""}"><div class="candidate-name">${esc((candidate.technique_family || "unknown").replaceAll("_", " "))}<small>${candidate.hard_rejected ? "hard rejected: " + esc(candidate.failures[0] || "technical failure") : `rank ${candidate.rank} · score ${Math.round(candidate.score * 100)}% · ${candidate.duration_bars || "—"} bars`}</small></div><div class="candidate-actions">${candidate.hard_rejected ? "" : `<button class="button secondary" onclick="previewCandidate('${esc(candidate.candidate_id)}')">Preview</button>`}${candidate.selected ? `<span class="tag ready">in use</span>` : candidate.hard_rejected ? "" : `<button class="button primary" onclick="lockCandidate('${esc(candidate.candidate_id)}')">Use this</button>`}</div></div>`).join("") : `<div class="empty">No candidates were generated for this handoff.</div>`;
+}
+
+async function previewCandidate(candidateId) {
+  try {
+    const result = await api(`/api/set-director/plans/${state.director.id}/handoffs/${state.inspectorIndex}/preview`, {method: "POST", body: JSON.stringify({candidate_id: candidateId})});
+    $("inspector-audio").src = `/api/outputs/${encodeURIComponent(result.filename)}`;
+    $("inspector-audio").play();
+  } catch (error) { toast(error.message, true); }
+}
+window.previewCandidate = previewCandidate;
+
+async function lockCandidate(candidateId) {
+  try {
+    await api(`/api/set-director/plans/${state.director.id}/handoffs/${state.inspectorIndex}/lock`, {method: "POST", body: JSON.stringify({candidate_id: candidateId})});
+    const refreshed = await api(`/api/set-director/plans/${state.director.id}`);
+    renderDirectorPlan(refreshed);
+    const handoff = await api(`/api/set-director/plans/${state.director.id}/handoffs/${state.inspectorIndex}`);
+    renderInspectorCandidates(handoff);
+    toast("Handoff updated");
+  } catch (error) { toast(error.message, true); }
+}
+window.lockCandidate = lockCandidate;
+
+$("inspector-close").addEventListener("click", () => { $("inspector-overlay").classList.add("hidden"); $("inspector-audio").pause(); });
+$("inspector-overlay").addEventListener("click", (event) => { if (event.target.id === "inspector-overlay") { $("inspector-overlay").classList.add("hidden"); $("inspector-audio").pause(); } });
