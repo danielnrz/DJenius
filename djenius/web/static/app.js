@@ -219,5 +219,13 @@ async function lockCandidate(candidateId) {
 }
 window.lockCandidate = lockCandidate;
 
+async function rateHandoff(rating) {
+  try {
+    const result = await api(`/api/set-director/plans/${state.director.id}/handoffs/${state.inspectorIndex}/feedback`, {method: "POST", body: JSON.stringify({rating})});
+    toast(`Feedback saved: ${result.technique_family.replaceAll("_", " ")} rated "${rating}"`);
+  } catch (error) { toast(error.message, true); }
+}
+window.rateHandoff = rateHandoff;
+
 $("inspector-close").addEventListener("click", () => { $("inspector-overlay").classList.add("hidden"); $("inspector-audio").pause(); });
 $("inspector-overlay").addEventListener("click", (event) => { if (event.target.id === "inspector-overlay") { $("inspector-overlay").classList.add("hidden"); $("inspector-audio").pause(); } });

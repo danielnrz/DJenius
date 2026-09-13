@@ -199,13 +199,14 @@ class SetDirectorConfig:
     artist_spacing_min_tracks: int = 3
     vocal_heavy_threshold: float = 0.55
     weights: dict[str, float] = field(default_factory=lambda: {
-        "handoff_quality": 0.28,
+        "handoff_quality": 0.26,
         "energy_arc_fit": 0.16,
         "bpm_journey_fit": 0.12,
         "vocal_pacing": 0.10,
-        "groove_continuity": 0.08,
-        "technique_diversity": 0.10,
+        "groove_continuity": 0.06,
+        "technique_diversity": 0.08,
         "artist_spacing": 0.08,
+        "user_preference": 0.06,
         "duration_fit": 0.04,
         "reset_budget": 0.04,
     })
@@ -213,9 +214,18 @@ class SetDirectorConfig:
     audition_config: AuditionConfig = field(default_factory=AuditionConfig)
     seed: int = 0
 
+    # Phase 9 personalization: learned, session-independent evidence supplied
+    # by the application layer (never read from disk or a DB by this module,
+    # which stays pure/injectable like the rest of Set Director). A family
+    # absent from `technique_preferences` is treated as neutral (0.5); track
+    # ids absent from both id sets are neutral too.
+    technique_preferences: dict[str, float] = field(default_factory=dict)
+    liked_track_ids: frozenset[str] = field(default_factory=frozenset)
+    disliked_track_ids: frozenset[str] = field(default_factory=frozenset)
+
     EDGE_COMPONENTS = (
         "handoff_quality", "energy_arc_fit", "bpm_journey_fit", "vocal_pacing",
-        "groove_continuity", "technique_diversity", "artist_spacing",
+        "groove_continuity", "technique_diversity", "artist_spacing", "user_preference",
     )
     PATH_COMPONENTS = ("duration_fit", "reset_budget")
 
@@ -456,7 +466,12 @@ def _shortlist_next_tracks(
         energy_fit = 1.0 - min(1.0, abs(desired_delta - actual_delta))
         artist = _artist_key(track)
         artist_penalty = 0.35 if artist and artist in window else 0.0
-        score = 0.55 * compat + 0.35 * energy_fit + 0.10 - artist_penalty
+        preference_adjustment = 0.0
+        if track.id in config.liked_track_ids:
+            preference_adjustment += 0.08
+        if track.id in config.disliked_track_ids:
+            preference_adjustment -= 0.12
+        score = 0.55 * compat + 0.35 * energy_fit + 0.10 - artist_penalty + preference_adjustment
         scored.append((score, track))
     scored.sort(key=lambda item: (-item[0], item[1].id))
     return [track for _, track in scored[: max(1, config.shortlist_width)]]
@@ -520,6 +535,14 @@ def _score_edge_components(
     artist = _artist_key(target)
     window = artist_history[-(max(config.artist_spacing_min_tracks - 1, 0)):]
     components["artist_spacing"] = 0.2 if artist and artist in window else 1.0
+
+    family_preference = config.technique_preferences.get(family, 0.5) if family else 0.5
+    track_bonus = 0.0
+    if target.id in config.liked_track_ids:
+        track_bonus += 0.15
+    if target.id in config.disliked_track_ids:
+        track_bonus -= 0.20
+    components["user_preference"] = _clip01(family_preference + track_bonus)
 
     return components
 

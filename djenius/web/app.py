@@ -68,6 +68,10 @@ class SetDirectorPreviewRequest(BaseModel):
     candidate_id: Optional[str] = None
 
 
+class SetDirectorFeedbackRequest(BaseModel):
+    rating: str | float = Field(...)
+
+
 class MixFeedbackRequest(BaseModel):
     plan_id: str = Field(min_length=1)
     rating: int = Field(ge=1, le=5)
@@ -244,6 +248,15 @@ def create_app(service: LocalAppService | None = None) -> FastAPI:
     def lock_set_director_handoff(plan_id: str, index: int, request: SetDirectorLockRequest) -> dict:
         try:
             return service.lock_set_director_candidate(plan_id, index, request.candidate_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise fail(exc) from exc
+
+    @app.post("/api/set-director/plans/{plan_id}/handoffs/{index}/feedback")
+    def feedback_set_director_handoff(plan_id: str, index: int, request: SetDirectorFeedbackRequest) -> dict:
+        try:
+            return service.save_set_director_feedback(plan_id, index, request.rating)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         except ValueError as exc:

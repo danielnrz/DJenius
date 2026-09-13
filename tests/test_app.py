@@ -7,6 +7,7 @@ import asyncio
 from pathlib import Path
 
 import httpx
+import pytest
 import soundfile as sf
 
 from djenius.application import LocalAppService
@@ -296,3 +297,44 @@ def test_set_director_plan_inspect_lock_and_preview(tmp_path, monkeypatch):
         assert played.headers["content-type"] in {"audio/wav", "audio/x-wav"}
 
     assert client.get("/api/set-director/plans/does-not-exist").status_code == 404
+
+    # Phase 9: rating a handoff feeds the same preference store V1 uses.
+    refreshed_handoff = client.get(f"/api/set-director/plans/{plan_id}/handoffs/0").json()
+    rated_family = next(item["technique_family"] for item in refreshed_handoff["candidates"] if item["selected"])
+    feedback = client.post(f"/api/set-director/plans/{plan_id}/handoffs/0/feedback", json={"rating": "great"})
+    assert feedback.status_code == 200
+    assert feedback.json() == {"index": 0, "technique_family": rated_family, "rating": 1.0}
+    learned = client.get("/api/preferences").json()
+    assert learned["preferred_transition_styles"].get(rated_family) == pytest.approx(1.0)
+
+    bad_rating = client.post(f"/api/set-director/plans/{plan_id}/handoffs/0/feedback", json={"rating": "nonsense"})
+    assert bad_rating.status_code == 400
+
+
+def test_set_director_learns_technique_preference_across_plans(tmp_path, monkeypatch):
+    library = tmp_path / "music"
+    library.mkdir()
+    tracks = [
+        _set_director_track(library / "a.wav", "a", bpm=120.0, artist="Artist A"),
+        _set_director_track(library / "b.wav", "b", bpm=121.0, artist="Artist B"),
+    ]
+    service = LocalAppService(data_dir=tmp_path / "data", output_dir=tmp_path / "output")
+    monkeypatch.setattr(service, "_profiles_for_library", lambda path: tracks)
+    client = ApiClient(create_app(service))
+
+    job = client.post("/api/set-director/plans", json={"path": str(library), "duration_minutes": 1.0}).json()
+    first = _wait_long(client, job["job_id"])
+    assert first["status"] == "completed", first.get("error")
+    first_plan_id = first["result"]["id"]
+    family = first["result"]["handoffs"][0]["technique_family"]
+    assert family
+
+    for _ in range(3):
+        response = client.post(f"/api/set-director/plans/{first_plan_id}/handoffs/0/feedback", json={"rating": "bad"})
+        assert response.status_code == 200
+
+    learned = service._set_director_learned_preferences()
+    assert learned["technique_preferences"][family] == pytest.approx(0.0)
+
+    config = service._set_director_config("balanced")
+    assert config.technique_preferences[family] == pytest.approx(0.0)

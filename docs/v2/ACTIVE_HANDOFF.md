@@ -1,189 +1,197 @@
 # DJenius V2 Active Handoff
 
 ## LAST VERIFIED TIME
-2026-09-13T13:40Z (updated immediately after the Phase 8 freeze commit was pushed and verified)
+2026-09-13T15:10Z (updated after full end-to-end real-browser verification and all durable-doc updates for Phase 9)
 
 ## CURRENT PHASE
-Phase 8 - UI V2 (Set Director inspection slice): **FROZEN AND PUSHED**.
-Phase 9 - Personalization is the exact next implementation phase.
+Phase 9 - Personalization: **COMPLETE**. Ready to run the privacy/diff gate,
+commit, and push.
 
 ## CURRENT BRANCH
 `v2-professional-autonomous-dj`
 
 ## LAST PUSHED COMMIT
-`b4e5945d459c3b86f9927091e7fe3a1739dc1f55` - "Add V2 Set Director UI" (Phase 8 freeze).
+`23a60951acafb32c69d168bb4a875e0931a5f0e9` - "Update handoff state after Phase 8 freeze push". Nothing has been pushed yet for Phase 9.
 
 ## LOCAL HEAD
-`b4e5945d459c3b86f9927091e7fe3a1739dc1f55` (matches last pushed commit).
+`23a60951acafb32c69d168bb4a875e0931a5f0e9` (no commits made yet for Phase 9; all Phase 9 work is currently uncommitted in the working tree).
 
 ## REMOTE HEAD
-`b4e5945d459c3b86f9927091e7fe3a1739dc1f55` (`origin/v2-professional-autonomous-dj`, confirmed equal to local HEAD via `git fetch` immediately after push).
+`23a60951acafb32c69d168bb4a875e0931a5f0e9` (`origin/v2-professional-autonomous-dj`, matches local HEAD; no push has happened yet this phase).
 
 ## WORKING TREE
-Clean immediately after the freeze commit, aside from the untracked `.claude/`
-session-tooling directory (not part of the product, never staged). Re-run
-`git status --short` before trusting this if any time has passed. No frozen
-Phase 0-7 core logic was changed; `djenius/core/set_director.py`'s only
-change is one additive dataclass field (see below).
+Not clean: Phase 9 changes are unstaged. `git status --short` currently shows:
+```
+ M djenius/application.py
+ M djenius/core/set_director.py
+ M djenius/web/app.py
+ M djenius/web/static/app.js
+ M djenius/web/static/index.html
+ M djenius/web/static/styles.css
+ M tests/test_app.py
+?? .claude/                                    <- DO NOT COMMIT (session tooling)
+?? tests/test_v2_phase9_personalization.py
+```
+No frozen Phase 0-8 core logic was rewritten; every Phase 9 change to
+existing files is additive (new fields, new methods, new routes, new UI
+elements appended to existing ones).
 
 ## CURRENT IMPLEMENTATION STATE
-- Phase 7 (`set_director.py`) is unchanged except one additive field:
-  `HandoffSummary.candidates: dict[str, TransitionCandidate]`, populated in
-  `evaluate_edge`, so the actual audited candidate objects (family, recipe,
-  everything) are retrievable by ID, not just the winner's ID/family/score
-  that already existed. This did not require touching any existing test.
-- New `djenius/audio/track_audio.py`: `load_track_audio(filepath, target_sr)
-  -> (audio, sr)`, a robust stereo decoder (soundfile -> librosa -> ffmpeg
-  subprocess fallback, mirroring `djenius/audio/analyzer.py`'s strategy).
-- `djenius/application.py` `LocalAppService` gained (all under a new
-  "Set Director" section, right before "rendering and outputs"):
-  - `_set_director_config(creativity)`: maps "safe"/"balanced"/"creative" to
-    `SetDirectorConfig` overrides (reset budget, shortlist width, candidates
-    audited per edge).
-  - `start_set_director_plan(...)`: a background job (like `start_plan`) that
-    loads real analyzed profiles via the existing `_profiles_for_library`,
-    builds a per-track lazy-decode `AudioProvider` via `load_track_audio`,
-    runs `plan_set_v2`, and stores the result plus enough context (profiles,
-    provider, an `overrides` dict for locks) keyed by a new plan_id in
-    `self._set_director_plans`.
-  - `set_director_plan_view(plan_id)`: trajectory (per-track BPM/key/energy)
-    + handoffs (technique/score/survivor counts, honoring any lock override)
-    + `component_totals` + `compute_stats` + `human_readable_reasons`.
-  - `set_director_handoff_view(plan_id, index)`: the Transition Inspector --
-    every audited candidate (family, role, bars, generation reason, score,
-    rank, hard-rejection failures, whether it's currently selected).
-  - `lock_set_director_candidate(plan_id, index, candidate_id)`: records the
-    override and returns the refreshed handoff view.
-  - `render_set_director_preview(plan_id, index, candidate_id=None)`: renders
-    that one candidate's real bounded Phase 6 preview to a WAV under the
-    existing output directory (served through the existing, unmodified
-    `/api/outputs/{filename}` + `safe_output` path).
-- `djenius/web/app.py` gained `SetDirectorPlanRequest`/`SetDirectorLockRequest`/
-  `SetDirectorPreviewRequest` pydantic models and five `/api/set-director/...`
-  routes wired directly to the service methods above, following the exact
-  `fail()`/`HTTPException` conventions already used by every other route.
-- `djenius/web/static/index.html`/`app.js`/`styles.css` gained a new
-  "Set Director" nav tab and panel: arc/duration/creativity form, a job card
-  reusing the existing `pollJob`/`jobCard` machinery, a trajectory list, a
-  component-totals bar grid, a handoffs list, and a Transition Inspector
-  modal (`openInspector`/`renderInspectorCandidates`/`previewCandidate`/
-  `lockCandidate`, all attached as `window.*` for inline `onclick` handlers,
-  matching the existing code's own pattern for `moveTrack`/`rateTrack`/etc.).
-- Incidental fix (found while testing in-browser, see "Known defects"
-  below): `app.js` had a dead-code bug that broke V9 appearance editing on
-  every page load; fixed. Also added `Cache-Control: no-store` to the `/`
-  route and `?v=phase8-2` cache-busting query strings on the static asset
-  tags in `index.html`.
+- `djenius/core/set_director.py`: `SetDirectorConfig` gained
+  `technique_preferences: dict[str, float]` (family -> [0,1] preference,
+  default `{}`, missing key = neutral 0.5), `liked_track_ids`/
+  `disliked_track_ids: frozenset[str]` (default empty). `weights` gained
+  `user_preference: 0.06`; the other eight weights were rebalanced down
+  slightly so the total still sums to 1.0
+  (handoff_quality 0.28->0.26, groove_continuity 0.08->0.06,
+  technique_diversity 0.10->0.08, everything else unchanged).
+  `EDGE_COMPONENTS` now includes `"user_preference"`.
+  `_shortlist_next_tracks` applies a +0.08/-0.12 liked/disliked adjustment
+  to its cheap per-track score (same scale as V1's own
+  `liked_track_bonus`/`disliked_track_penalty`). `_score_edge_components`
+  computes `user_preference` as
+  `clip01(technique_preferences.get(selected_family, 0.5) + track_bonus)`
+  where `track_bonus` is +0.15 if the handoff's target is liked, -0.20 if
+  disliked. Module remains pure/DB-free (D043) -- these are just new plain
+  fields the application layer populates.
+- `djenius/application.py`: new `_set_director_learned_preferences()` reads
+  `PreferenceProfile.get_preferred_transition_types(min_samples=2)` (mapped
+  from [-1,1] to [0,1]) plus `get_liked_tracks()`/`get_disliked_tracks()`,
+  and `_set_director_config(creativity)` now calls it and passes the result
+  into every fresh `SetDirectorConfig`. New
+  `save_set_director_feedback(plan_id, index, rating)`: resolves whichever
+  technique family is *currently selected* (honoring a Phase 8 lock),
+  reuses V1's exact rating-label vocabulary
+  (`{"great":1.0,"good":0.7,"bad":-1.0,"too abrupt":-0.6,"too long":-0.4,
+  "too weak":-0.3}` or a raw float), and calls
+  `PreferenceProfile.rate_transition(source_id, target_id, family, score)`
+  -- the SAME table/method V1's `save_transition_feedback` already uses
+  (D041), so `/api/preferences`'s existing `preferred_transition_styles`
+  and the Preferences tab already display it with no changes.
+- `djenius/web/app.py`: new `SetDirectorFeedbackRequest` model and
+  `POST /api/set-director/plans/{plan_id}/handoffs/{index}/feedback`.
+- `djenius/web/static/index.html`/`app.js`/`styles.css`: new
+  "Rate the technique used here" button row (Great/Good/Too abrupt/Bad) at
+  the bottom of the Transition Inspector modal, wired to a new
+  `rateHandoff(rating)` JS function. Cache-busting bumped to `?v=phase9-1`.
+- New test file `tests/test_v2_phase9_personalization.py` (4 tests, pure
+  `set_director.py`-level, no HTTP/DB). Two cases added/extended in
+  `tests/test_app.py` for the full HTTP feedback flow and cross-plan
+  learning.
 
 ## UNCOMMITTED FILES
-None (all 13 Phase 8 files are committed at `b4e5945` and pushed).
-`.claude/launch.json` (and the mirrored copy at
-`/home/daniel/Documents/Programming/Music_Mode_Engine/.claude/launch.json`, a
-different repository entirely -- this session's original working directory
-before it switched to DJenius) are session-local dev-server tooling for the
-Browser preview tool, not part of the product; **never `git add` `.claude/`**.
+See the `git status --short` block above. `.claude/` is session-local
+Browser-preview tooling (also mirrored at
+`/home/daniel/Documents/Programming/Music_Mode_Engine/.claude/launch.json`,
+a different repository entirely) -- **never `git add` it**.
 
 ## TESTS COMPLETED
-- New backend test: `tests/test_app.py::test_set_director_plan_inspect_lock_and_preview`
-  — **1 passed** (~5.5s), exercising the full HTTP flow with real (tiny
-  synthetic) audio through the real FastAPI app via the existing `ApiClient`
-  test harness pattern.
-- Complete repository regression: **1080 passed** (twice, before and after
-  the final doc-only edits), same 2 pre-existing Typer/Click deprecation
-  warnings, no async timeout failures.
-- `ruff check` on every new/changed Python file: clean except one
-  pre-existing, unrelated `F401` (`typing.Optional` unused) in
-  `application.py` that was already present at the Phase 7 checkpoint
-  (verified via `git stash` + `ruff check` against the frozen commit) --
-  left alone, not introduced by this phase.
-- Manual real-browser end-to-end verification (see `BENCHMARK.md`'s new
-  Phase 8 section for the full narrative): scanned/analyzed the real
-  `testMusic` library through the actual UI, planned a real Set Director
-  journey, opened the Transition Inspector on a real handoff (2 real
-  survivors + 2 correctly-honest hard rejections), played a real rendered
-  preview WAV in-browser, locked an alternate candidate and confirmed the
-  override took effect live in the UI AND was independently confirmed via a
-  direct API re-fetch (not just trusting the client-side render). Also
-  re-verified the pre-existing classic (non-Set-Director) plan-creation UI
-  path still works after the `renderPlan` bugfix.
+- Dedicated Phase 9 suite: **4 passed**
+  (`pytest tests/test_v2_phase9_personalization.py -q`), covering: config
+  validation now requires the `user_preference` weight key; a technique
+  preference is reflected exactly in that component and produces the
+  expected `total_score` ordering (liked > neutral > disliked) for a single
+  forced edge (`beam_width=1`, to avoid a real subtlety documented below);
+  a disliked track loses a controlled two-track choice to an
+  otherwise-identical alternative; a liked track wins the analogous choice
+  (both using `max_candidates_audited_per_edge=8` and `max_tracks=2` for the
+  same reason, see "Known defects" below).
+- `test_app.py -k set_director`: **2 passed** (one extended, one new),
+  covering the full HTTP feedback flow and repeated feedback changing a
+  freshly-built `SetDirectorConfig`'s `technique_preferences`.
+- Complete repository regression: **1085 passed** (was 1080 at the Phase 8
+  checkpoint), same 2 pre-existing Typer/Click deprecation warnings, no
+  async timeout failures. Run twice (after implementation, again after doc
+  edits) with identical results.
+- `ruff check` on every changed Python file: clean except the same
+  pre-existing, unrelated `application.py` `F401` from before Phase 7 (left
+  alone, not introduced by this phase or Phase 8).
+- Manual real-browser verification: opened the real Transition Inspector for
+  a real handoff produced from the real `testMusic` library, clicked
+  "★ Great", confirmed the toast
+  ("Feedback saved: riser impact rated 'great'"), independently confirmed
+  via a direct `fetch('/api/preferences')` that `preferred_transition_styles`
+  now contained that family at `1.0`, and confirmed the *existing,
+  unmodified* Preferences tab rendered it correctly -- no new frontend code
+  was needed for that view since it already calls the same method Phase 9
+  now also feeds.
 
 ## TESTS CURRENTLY RUNNING
 None. The dev server used for manual verification was stopped
 (`preview_stop`) before this handoff was written.
 
 ## TESTS STILL REQUIRED
-None for the Phase 8 freeze itself.
+None for the Phase 9 freeze itself.
 
 ## PRIVATE LOCAL ARTIFACTS
-The manual browser verification wrote real preview WAVs and updated
-`data/app_state.json`/`data/analysis_cache.db` under the DJenius repo root
-(all already gitignored, pre-existing paths, not new artifact locations).
-Nothing was written under a new path. No real track title/artist/filepath
-was written into any tracked file -- verified by grepping the diffs of all
-four docs files for `testMusic`/audio extensions/real names before this
-handoff was written (only the generic string "testMusic" as a directory-name
-reference appears, matching the pattern already used in Phase 7's entries).
+The manual browser verification read and wrote to this machine's real,
+pre-existing `data/djenius_preferences.db` (already gitignored, not a new
+path) -- it already contained real prior liked-track/mix-rating data from
+actual past use of the app, confirmed only by hash-id counts, never by
+title/artist, and none of that was written into any tracked file.
 
 ## KNOWN DEFECTS / OPEN QUESTIONS
-- The pre-existing `app.js` `renderPerformancePlan` ReferenceError (see
-  "Completed work") was a real, independently-confirmed bug in the baseline
-  application predating any V2 phase -- not something this session
-  introduced. Fixed as an incidental "smallest justified fix" since Phase 8
-  work was already touching this exact file and the bug would have silently
-  swallowed any further additions placed after it in the file.
-- The Browser preview tool used for manual verification exhibited a caching
-  quirk this session: navigating to the *same* URL repeatedly (even after
-  hard-reload keypresses, tab close/reopen, or `Cache-Control: no-store` on
-  the server response) kept serving a stale cached document across tabs and
-  even across a server restart, until a genuinely novel query string was
-  used on the top-level navigation. This looked like a proxy/cache layer
-  specific to the sandboxed preview browser, not a real product bug --
-  confirmed by `curl` always returning fresh content and by manually
-  re-executing the fetched-fresh script in the page context with zero
-  errors. If a future agent sees "my JS/HTML change isn't showing up" in
-  this same tool, try navigating to a URL with a never-before-used query
-  string before assuming the code is wrong.
-- Open product question (not a blocker, see D040 in `DECISIONS.md`): should
-  a manual candidate lock eventually trigger a constrained re-plan of the
-  rest of the set (propagating the locked technique into technique-memory
-  context for later handoffs) rather than only changing what is displayed
-  for that one handoff? Left for whichever future phase builds full-mix
-  rendering, since that is when a lock's downstream effects start to matter
-  for real output, not just inspection.
+- A real test-design subtlety was found while writing the dedicated suite:
+  `TransitionCandidate` ids are content-hashed from (among other things) the
+  source/target track ids. Two fixtures identical except for id can
+  therefore have a *bounded* audition (`max_candidates_audited_per_edge`
+  smaller than the full generated set) sample a genuinely different subset
+  of the same underlying candidate pool, producing a real, non-preference
+  difference in `handoff_quality` large enough to swamp a small preference
+  signal. Worked around in tests by auditioning the full candidate set
+  (`max_candidates_audited_per_edge=8`) when isolating a preference effect,
+  and documented in `IMPLEMENTATION_PLAN.md`/`STATE.md` so a future agent
+  doesn't rediscover this the hard way. Not a defect in the production code
+  -- bounded sampling is exactly Phase 7's intended compute-cost control --
+  just a real thing test authors must control for.
+- Similarly, with more than `beam_width` tracks and ties at the opener slot,
+  Set Director can explore a track's *reverse-direction* edge as a separate
+  path (A->B and B->A can have different audition winners). Changing
+  `technique_preferences` can therefore legitimately flip which whole path
+  wins, not just an edge's score, when both directions are live options.
+  This is correct behavior, not a defect, but means "does the SAME edge's
+  score change" is a narrower and more reliable thing to test than "does
+  track_ids[1] change" whenever more than one path is genuinely alive.
+- Open product question (unchanged from Phase 8, D040): should a manual
+  lock or a strong learned dislike eventually trigger a constrained re-plan
+  rather than only affecting scoring/inspection? Still deferred to whichever
+  future phase builds full-mix rendering.
 
 ## DECISIONS MADE THIS SESSION
-Written to `DECISIONS.md` as D038-D040: (1) Set Director gets its own
-parallel application/UI bridge rather than being adapted into the existing
-V1/V9/V14 plan/render pipeline; (2) `HandoffSummary` retains real audited
-`TransitionCandidate` objects, not just IDs, so the Inspector and a future
-full-mix renderer can use them directly; (3) manual locks are an
-inspection-level override, not a full re-plan.
+Written to `DECISIONS.md` as D041-D043: (1) technique-family feedback reuses
+V1's `transition_ratings` table rather than a new one; (2) personalization
+is one new transparent weighted component plus a shortlist adjustment, not a
+hidden multiplier or a fold into an existing component; (3)
+`SetDirectorConfig`'s new preference fields are injected plain data,
+preserving `set_director.py`'s existing DB-free purity.
 
 ## DO NOT REDO
-- Do not redesign the Set Director application bridge or its `/api/set-
-  director/...` routes -- implemented, tested (automated + real-browser),
-  and passing full regression.
-- Do not re-investigate the Browser-preview-tool caching quirk described
-  above; it is understood and has a known workaround.
+- Do not redesign the personalization mechanism -- implemented, tested
+  (pure unit tests + full HTTP flow + real-browser verification), and
+  passing full regression.
+- Do not add a new preferences table/schema for Set Director -- the reuse
+  of V1's existing `transition_ratings` table is deliberate (D041).
 - Do not re-run the manual browser verification again this session -- it
-  already produced the results now recorded in `BENCHMARK.md`. Re-run only
-  if a further code change afterward casts doubt on those observations.
+  already produced the results now recorded in `BENCHMARK.md`.
 
 ## EXACT NEXT ACTION
-Phase 8 is fully frozen and pushed. The next agent should: (1) verify this
-handoff's HEAD SHAs against live `git fetch`/`git log` output, (2) read the
-research spec's section 22-23 (user taste/preference learning) and the
-Phase 9 roadmap entry in `IMPLEMENTATION_PLAN.md`, (3) inspect the existing
-`/api/feedback/*` endpoints and `djenius/db/preferences.py` (not yet reviewed
-in depth this session) to see what preference storage already exists before
-designing Phase 9 additions, (4) begin Phase 9 additively, following the
-same freeze checklist pattern used for Phases 7-8.
+Run the Phase 9 privacy/diff gate (`git status`, `git diff` review --
+confirm nothing under `testMusic/`, `*.db`, `/tmp`, `.claude/`, or any real
+track name entered the tracked set). If clean, stage exactly the 9 files
+listed under "Uncommitted files" (NOT `.claude/`), commit as
+`Add V2 personalization`, push `origin/v2-professional-autonomous-dj`, and
+verify clean working tree plus exact local/remote HEAD equality. Only then
+consider Phase 10 - Certification -- and note explicitly to the user that
+its defining gate (a blind V1-vs-V2 human listening comparison) needs their
+direct participation and cannot be completed autonomously; everything else
+in Phase 10 (full automated suite, private real-track benchmarks, multiple
+full real sets) can be prepared autonomously, but the phase cannot be
+declared complete without that human step.
 
 ## SAFE RECOVERY NOTES
-- Phase 8 is a clean, frozen, pushed checkpoint -- there is no in-progress
-  work to lose. A fresh agent can safely treat `b4e5945` as ground truth.
+- Every file change this session is additive to an existing file or a new
+  file; no frozen Phase 0-8 behavior was rewritten.
 - If you are a fresh agent picking this up: re-run `git fetch && git status
   --short && git log -1 --format='%H %s'` and compare against the HEAD SHAs
   recorded above before trusting this file. Then run `python -m pytest -q`
-  to confirm the full 1080-test regression still passes before starting
-  Phase 9.
+  to confirm the full regression still passes before committing.

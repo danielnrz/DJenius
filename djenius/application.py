@@ -930,6 +930,25 @@ class LocalAppService:
 
     # ---- Set Director (V2 Phase 7/8): plan inspection, candidates, preview ----
 
+    def _set_director_learned_preferences(self) -> dict[str, Any]:
+        """Phase 9: read learned technique/track preferences for Set Director.
+
+        Technique-family feedback is stored in the same `transition_ratings`
+        table V1 already uses for its own transition-type feedback (the
+        column is free-text, not enum-constrained) -- Set Director families
+        (`eq_blend`, `drum_bridge`, ...) and V1's `TransitionType` values
+        simply coexist as different strings in the same aggregate.
+        """
+        prefs = PreferenceProfile(str(self.paths.preferences_path))
+        try:
+            ratings = prefs.get_preferred_transition_types(min_samples=2)
+            technique_preferences = {family: (score + 1.0) / 2.0 for family, score in ratings.items()}
+            liked = frozenset(prefs.get_liked_tracks())
+            disliked = frozenset(prefs.get_disliked_tracks())
+        finally:
+            prefs.close()
+        return {"technique_preferences": technique_preferences, "liked_track_ids": liked, "disliked_track_ids": disliked}
+
     def _set_director_config(self, creativity: str):
         from dataclasses import replace as _replace
 
@@ -938,15 +957,15 @@ class LocalAppService:
         level = (creativity or "balanced").strip().lower()
         if level not in {"safe", "balanced", "creative"}:
             raise ValueError("Unknown creativity level")
-        base = SetDirectorConfig()
+        base = SetDirectorConfig(**self._set_director_learned_preferences())
         if level == "safe":
-            return _replace(
+            base = _replace(
                 base,
                 max_reset_budget=max(0, base.max_reset_budget - 1),
                 composer_config=_replace(base.composer_config, max_candidates=5),
             )
-        if level == "creative":
-            return _replace(
+        elif level == "creative":
+            base = _replace(
                 base,
                 max_reset_budget=base.max_reset_budget + 2,
                 shortlist_width=base.shortlist_width + 1,
@@ -1121,6 +1140,33 @@ class LocalAppService:
         with self._lock:
             record["overrides"][index] = {"candidate_id": candidate_id, "score": float(audition.final_score)}
         return self.set_director_handoff_view(plan_id, index)
+
+    def save_set_director_feedback(self, plan_id: str, index: int, rating: str | float) -> dict[str, Any]:
+        """Phase 9: rate the technique family actually used at one handoff.
+
+        Reuses the same rating vocabulary and storage as
+        `save_transition_feedback` (V1); see `_set_director_learned_preferences`
+        for how this feeds back into future Set Director plans.
+        """
+        record, edge = self._set_director_edge(plan_id, index)
+        handoff = edge.handoff
+        override = record["overrides"].get(index)
+        family = handoff.candidates[override["candidate_id"]].technique_family if override else handoff.selected_family
+        if not family:
+            raise ValueError("This handoff has no selected technique to rate")
+        if isinstance(rating, str):
+            labels = {"great": 1.0, "good": 0.7, "bad": -1.0, "too abrupt": -0.6, "too long": -0.4, "too weak": -0.3}
+            if rating not in labels:
+                raise ValueError("Unknown transition rating")
+            score = labels[rating]
+        else:
+            score = float(rating)
+        prefs = PreferenceProfile(str(self.paths.preferences_path))
+        try:
+            prefs.rate_transition(edge.source_track_id, edge.target_track_id, family, score)
+        finally:
+            prefs.close()
+        return {"index": index, "technique_family": family, "rating": score}
 
     def render_set_director_preview(self, plan_id: str, index: int, candidate_id: str | None = None) -> str:
         import soundfile as sf

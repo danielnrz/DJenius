@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>DJenius - Local DJ</title>
   <link rel="icon" href="/favicon.ico">
-  <link rel="stylesheet" href="/static/styles.css?v=phase8-2">
+  <link rel="stylesheet" href="/static/styles.css?v=phase9-1">
 </head>
 <body>
   <header class="topbar">
@@ -78,6 +78,7 @@
           <div class="inspector-header"><h2 id="inspector-title">Transition inspector</h2><button id="inspector-close" class="icon-button">×</button></div>
           <audio id="inspector-audio" controls preload="none"></audio>
           <div id="inspector-candidates"></div>
+          <div class="inspector-feedback"><span class="muted">Rate the technique used here:</span><button class="button secondary" onclick="rateHandoff('great')">★ Great</button><button class="button secondary" onclick="rateHandoff('good')">+ Good</button><button class="button secondary" onclick="rateHandoff('too abrupt')">Too abrupt</button><button class="button secondary" onclick="rateHandoff('bad')">Bad</button></div>
         </div>
       </div>
     </section>
@@ -93,6 +94,6 @@
 
     <section id="system-panel" class="panel"><div class="section-heading"><div><p class="eyebrow">LOCAL STATUS</p><h1>System</h1><p class="muted">Optional tools improve certain workflows but are never required for standard mixes.</p></div><button id="refresh-system" class="button ghost">Refresh</button></div><div id="system-content" class="system-grid"></div><div class="privacy-note"><span>◎</span><div><strong>Private by default</strong><p>DJenius binds to localhost. Your music, analysis, renders, and feedback stay on this machine.</p></div></div></section>
   </main>
-  <script src="/static/app.js?v=phase8-2"></script>
+  <script src="/static/app.js?v=phase9-1"></script>
 </body>
 </html>
