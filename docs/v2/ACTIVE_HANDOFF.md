@@ -1,39 +1,30 @@
 # DJenius V2 Active Handoff
 
 ## LAST VERIFIED TIME
-2026-09-13T13:15Z (updated after full end-to-end real-browser verification and all durable-doc updates for Phase 8)
+2026-09-13T13:40Z (updated immediately after the Phase 8 freeze commit was pushed and verified)
 
 ## CURRENT PHASE
-Phase 8 - UI V2 (Set Director inspection slice): **COMPLETE**. Ready to run
-the privacy/diff gate, commit, and push.
+Phase 8 - UI V2 (Set Director inspection slice): **FROZEN AND PUSHED**.
+Phase 9 - Personalization is the exact next implementation phase.
 
 ## CURRENT BRANCH
 `v2-professional-autonomous-dj`
 
 ## LAST PUSHED COMMIT
-`026d2a48d5eff7fa3acc124eb87e01625118d499` - "Update handoff state after Phase 7 freeze push" (Phase 7 freeze). Nothing has been pushed yet this session's Phase 8 work.
+`b4e5945d459c3b86f9927091e7fe3a1739dc1f55` - "Add V2 Set Director UI" (Phase 8 freeze).
 
 ## LOCAL HEAD
-`026d2a48d5eff7fa3acc124eb87e01625118d499` (no commits made yet for Phase 8; all Phase 8 work is currently uncommitted in the working tree).
+`b4e5945d459c3b86f9927091e7fe3a1739dc1f55` (matches last pushed commit).
 
 ## REMOTE HEAD
-`026d2a48d5eff7fa3acc124eb87e01625118d499` (`origin/v2-professional-autonomous-dj`, matches local HEAD; not re-fetched since Phase 8 work started, but no push has happened either).
+`b4e5945d459c3b86f9927091e7fe3a1739dc1f55` (`origin/v2-professional-autonomous-dj`, confirmed equal to local HEAD via `git fetch` immediately after push).
 
 ## WORKING TREE
-Not clean: Phase 8 changes are unstaged. `git status --short` currently shows:
-```
- M djenius/application.py
- M djenius/core/set_director.py
- M djenius/web/app.py
- M djenius/web/static/app.js
- M djenius/web/static/index.html
- M djenius/web/static/styles.css
- M tests/test_app.py
-?? .claude/            <- DO NOT COMMIT (session tooling config, see below)
-?? djenius/audio/track_audio.py
-```
-No frozen Phase 0-7 core logic was changed; `djenius/core/set_director.py`'s
-only change is one additive dataclass field (see below).
+Clean immediately after the freeze commit, aside from the untracked `.claude/`
+session-tooling directory (not part of the product, never staged). Re-run
+`git status --short` before trusting this if any time has passed. No frozen
+Phase 0-7 core logic was changed; `djenius/core/set_director.py`'s only
+change is one additive dataclass field (see below).
 
 ## CURRENT IMPLEMENTATION STATE
 - Phase 7 (`set_director.py`) is unchanged except one additive field:
@@ -85,11 +76,12 @@ only change is one additive dataclass field (see below).
   tags in `index.html`.
 
 ## UNCOMMITTED FILES
-See the `git status --short` block above. `.claude/launch.json` (and the
-mirrored copy at `/home/daniel/Documents/Programming/Music_Mode_Engine/.claude/launch.json`,
-a different repository entirely -- this session's original working directory
+None (all 13 Phase 8 files are committed at `b4e5945` and pushed).
+`.claude/launch.json` (and the mirrored copy at
+`/home/daniel/Documents/Programming/Music_Mode_Engine/.claude/launch.json`, a
+different repository entirely -- this session's original working directory
 before it switched to DJenius) are session-local dev-server tooling for the
-Browser preview tool, not part of the product; **do not `git add` `.claude/`**.
+Browser preview tool, not part of the product; **never `git add` `.claude/`**.
 
 ## TESTS COMPLETED
 - New backend test: `tests/test_app.py::test_set_director_plan_inspect_lock_and_preview`
@@ -178,21 +170,20 @@ inspection-level override, not a full re-plan.
   if a further code change afterward casts doubt on those observations.
 
 ## EXACT NEXT ACTION
-Run the Phase 8 privacy/diff gate (`git status`, `git diff` review --
-confirm nothing under `testMusic/`, `*.db`, `/tmp`, `.claude/`, or any real
-track name entered the tracked set; the `git status --short` block above is
-the expected file list). If clean, stage exactly those 8 files (NOT
-`.claude/`), commit as `Add V2 Set Director UI`, push
-`origin/v2-professional-autonomous-dj`, and verify clean working tree plus
-exact local/remote HEAD equality. Only then begin Phase 9 - Personalization
-(do not start it in this same push).
+Phase 8 is fully frozen and pushed. The next agent should: (1) verify this
+handoff's HEAD SHAs against live `git fetch`/`git log` output, (2) read the
+research spec's section 22-23 (user taste/preference learning) and the
+Phase 9 roadmap entry in `IMPLEMENTATION_PLAN.md`, (3) inspect the existing
+`/api/feedback/*` endpoints and `djenius/db/preferences.py` (not yet reviewed
+in depth this session) to see what preference storage already exists before
+designing Phase 9 additions, (4) begin Phase 9 additively, following the
+same freeze checklist pattern used for Phases 7-8.
 
 ## SAFE RECOVERY NOTES
-- Every file change this session is either a new file or an additive change
-  to an existing one; the only "fix" to pre-existing behavior is the
-  `app.js` bugfix described above, which is small, isolated, and already
-  covered by the manual browser re-verification of the classic plan UI path.
+- Phase 8 is a clean, frozen, pushed checkpoint -- there is no in-progress
+  work to lose. A fresh agent can safely treat `b4e5945` as ground truth.
 - If you are a fresh agent picking this up: re-run `git fetch && git status
   --short && git log -1 --format='%H %s'` and compare against the HEAD SHAs
   recorded above before trusting this file. Then run `python -m pytest -q`
-  to confirm the full regression still passes before committing.
+  to confirm the full 1080-test regression still passes before starting
+  Phase 9.
