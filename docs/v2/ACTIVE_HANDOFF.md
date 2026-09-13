@@ -1,39 +1,30 @@
 # DJenius V2 Active Handoff
 
 ## LAST VERIFIED TIME
-2026-09-13T15:10Z (updated after full end-to-end real-browser verification and all durable-doc updates for Phase 9)
+2026-09-13T15:25Z (updated immediately after the Phase 9 freeze commit was pushed and verified)
 
 ## CURRENT PHASE
-Phase 9 - Personalization: **COMPLETE**. Ready to run the privacy/diff gate,
-commit, and push.
+Phase 9 - Personalization: **FROZEN AND PUSHED**. Phase 10 - Certification
+is the exact next implementation phase.
 
 ## CURRENT BRANCH
 `v2-professional-autonomous-dj`
 
 ## LAST PUSHED COMMIT
-`23a60951acafb32c69d168bb4a875e0931a5f0e9` - "Update handoff state after Phase 8 freeze push". Nothing has been pushed yet for Phase 9.
+`4f71818e2f2613d14db184c23901f43474ce04fd` - "Add V2 personalization" (Phase 9 freeze).
 
 ## LOCAL HEAD
-`23a60951acafb32c69d168bb4a875e0931a5f0e9` (no commits made yet for Phase 9; all Phase 9 work is currently uncommitted in the working tree).
+`4f71818e2f2613d14db184c23901f43474ce04fd` (matches last pushed commit).
 
 ## REMOTE HEAD
-`23a60951acafb32c69d168bb4a875e0931a5f0e9` (`origin/v2-professional-autonomous-dj`, matches local HEAD; no push has happened yet this phase).
+`4f71818e2f2613d14db184c23901f43474ce04fd` (`origin/v2-professional-autonomous-dj`, confirmed equal to local HEAD via `git fetch` immediately after push).
 
 ## WORKING TREE
-Not clean: Phase 9 changes are unstaged. `git status --short` currently shows:
-```
- M djenius/application.py
- M djenius/core/set_director.py
- M djenius/web/app.py
- M djenius/web/static/app.js
- M djenius/web/static/index.html
- M djenius/web/static/styles.css
- M tests/test_app.py
-?? .claude/                                    <- DO NOT COMMIT (session tooling)
-?? tests/test_v2_phase9_personalization.py
-```
-No frozen Phase 0-8 core logic was rewritten; every Phase 9 change to
-existing files is additive (new fields, new methods, new routes, new UI
+Clean immediately after the freeze commit, aside from the untracked
+`.claude/` session-tooling directory (not part of the product, never
+staged). Re-run `git status --short` before trusting this if any time has
+passed. No frozen Phase 0-8 core logic was rewritten; every Phase 9 change
+to existing files is additive (new fields, new methods, new routes, new UI
 elements appended to existing ones).
 
 ## CURRENT IMPLEMENTATION STATE
@@ -80,8 +71,8 @@ elements appended to existing ones).
   learning.
 
 ## UNCOMMITTED FILES
-See the `git status --short` block above. `.claude/` is session-local
-Browser-preview tooling (also mirrored at
+None (all 13 Phase 9 files are committed at `4f71818` and pushed).
+`.claude/` is session-local Browser-preview tooling (also mirrored at
 `/home/daniel/Documents/Programming/Music_Mode_Engine/.claude/launch.json`,
 a different repository entirely) -- **never `git add` it**.
 
@@ -175,23 +166,24 @@ preserving `set_director.py`'s existing DB-free purity.
   already produced the results now recorded in `BENCHMARK.md`.
 
 ## EXACT NEXT ACTION
-Run the Phase 9 privacy/diff gate (`git status`, `git diff` review --
-confirm nothing under `testMusic/`, `*.db`, `/tmp`, `.claude/`, or any real
-track name entered the tracked set). If clean, stage exactly the 9 files
-listed under "Uncommitted files" (NOT `.claude/`), commit as
-`Add V2 personalization`, push `origin/v2-professional-autonomous-dj`, and
-verify clean working tree plus exact local/remote HEAD equality. Only then
-consider Phase 10 - Certification -- and note explicitly to the user that
-its defining gate (a blind V1-vs-V2 human listening comparison) needs their
-direct participation and cannot be completed autonomously; everything else
-in Phase 10 (full automated suite, private real-track benchmarks, multiple
-full real sets) can be prepared autonomously, but the phase cannot be
-declared complete without that human step.
+Phase 9 is fully frozen and pushed. The next agent should: (1) verify this
+handoff's HEAD SHAs against live `git fetch`/`git log` output, (2) read the
+research spec's section 30-32 (testing strategy, human listening benchmark,
+V1-vs-V2 blind comparison) and the Phase 10 roadmap entry in
+`IMPLEMENTATION_PLAN.md`, (3) prepare everything Phase 10 can do
+autonomously (full automated suite -- already green; a private real-track
+transition/set benchmark, much of which already exists from Phases 6/7's
+real-music gates; multiple full real sets rendered locally), then (4)
+**stop and clearly tell the user** that Phase 10's defining gate -- a blind
+V1-vs-V2 human listening comparison with a human scorecard -- requires their
+direct participation and cannot be completed autonomously. Do not declare
+Phase 10 complete without that human step.
 
 ## SAFE RECOVERY NOTES
-- Every file change this session is additive to an existing file or a new
-  file; no frozen Phase 0-8 behavior was rewritten.
+- Phase 9 is a clean, frozen, pushed checkpoint -- there is no in-progress
+  work to lose. A fresh agent can safely treat `4f71818` as ground truth.
 - If you are a fresh agent picking this up: re-run `git fetch && git status
   --short && git log -1 --format='%H %s'` and compare against the HEAD SHAs
   recorded above before trusting this file. Then run `python -m pytest -q`
-  to confirm the full regression still passes before committing.
+  to confirm the full 1085-test regression still passes before starting
+  Phase 10.
