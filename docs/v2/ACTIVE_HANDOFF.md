@@ -1,5 +1,53 @@
 # DJenius V2 Active Handoff
 
+## PERFORMANCE RESET — HANDCRAFTED REFERENCE #1 READY FOR HUMAN LISTENING
+2026-09-14T12:36:51Z (Codex/GPT-5.6 Sol). The user's new authority explicitly
+pauses autonomous-planner, scoring, set-level, UI, and broad architecture work.
+The only active gate is proving one manually choreographed real-track handoff.
+Local HEAD and the existing remote-tracking ref were both
+`af5400d6921fdbdde8bd626f785d27021c5e8fcd` at recovery; the pre-existing
+untracked `.claude/` directory remains untouched. The repository and Downloads
+research specifications were verified byte-identical (SHA-256
+`de2605fe29f41594ff035c3333fcbc151576e06584119b4f712e59da3e8a224f`).
+
+A private listening package is ready at:
+
+`/tmp/djenius_reference_dj_transition/`
+
+It contains `REFERENCE_A.wav`, `REFERENCE_B.wav`, `REFERENCE_C.wav`, and the
+anonymous `REFERENCE_NOTES.json` requested by the user, plus a private
+diagnostic image and reproducible private render script. No real track identity
+was written to Git. All clips are about 40 seconds: ~8 seconds of source
+context, an exact eight-detected-bar / 16.022-second performed transition, and
+~16 seconds after the landing.
+
+The manually selected pair has matching 10B keys, high-confidence beatgrids,
+complete stems, a low-vocal energetic TRACK_A exit, and a clear TRACK_B drop.
+Manual cue study found that TRACK_B's nominal section boundary leads into a
+sparse pickup bar; using it produced a false 5–6 dB landing collapse. The final
+cue deliberately skips that pickup and lands on TRACK_B's first sustained
+full-power drop downbeat. A +6.4 dB target deck trim corrects a real mastering
+level mismatch before choreography. The final half-second landing changes are
++0.62 dB (A), -0.22 dB (B's riser/impact resolution), and +0.14 dB (C), with
+continuous low-end, zero clipping, and no accidental silence.
+
+- **A:** restrained long stem/EQ blend, staged target drums/upper frequencies,
+  explicit phrase-boundary bass ownership swap, then clean source release.
+- **B:** foreground source loop progression `4 beats -> 2 -> 1 -> 1/2`, rising
+  high-pass tension, a genuinely audible two-bar riser, bounded landing impact,
+  and full target release. An earlier private pass proved the production
+  riser/impact at its raw generator ceiling was effectively buried (~-46 dBFS),
+  so only this selected build receives a local bounded return gain.
+- **C:** early rhythmic stem handoff, short TRACK_A-vocal-over-TRACK_B-bed
+  mashup, then a four-tap post-fader vocal echo release with no riser/impact.
+
+This checkpoint intentionally made no repository production-code change. It is
+a private performance-vocabulary proof built from the production analyzer,
+cached stems, time-stretching, filters, loudness/limiting utilities, and
+procedural FX. Do not return to automation until the user listens. If none is
+approved, iterate on this performance/audio; if one is approved, freeze its
+choreography as reference #1 and create a genuinely different reference #2.
+
 ## RESUMED PERFORMANCE-RECOVERY SESSION
 2026-09-13T17:59:57Z (Codex/GPT-5.6 Sol). Recovered the repository in the
 required authority order, read the complete research specification, and
