@@ -235,3 +235,35 @@ The `NO` above is deliberate: reverse sweep/cymbal passed deterministic synthesi
   `/tmp/djenius_performance_lab/listening_checkpoint/`. Human acceptance is
   explicitly pending; the twice-failed DJ-likeness verdict remains authoritative
   until the user listens to this checkpoint.
+
+## Reference-backed automation reproduction gate
+
+- Human manual-R&D result: F is the strongest reference; C3 is a successful
+  DJ-like edit; B8 is an acceptable loop/build/coherent-handoff performance;
+  D2 is an acceptable restrained blend. This proves plausible DJ behavior on
+  controlled pairs but does not validate autonomous selection.
+- Frozen manual hashes: F
+  `947a1a2556efb6e1d6b6ffd3ebb9c16c851d3d97bdd5026b57ec3bd5f1056f48`,
+  C3 `ecdd7b694a3d9f5100f02e3aa62df0ec68cb90e874de1b863eec846a8a8eff03`,
+  B8 `47824cc9b923c708f261c7d3db82e46e2f910fec47b802111bcd26c1c5aa1205`,
+  D2 `5c1f72c9ae6edff9c7e51c0f6386f15abb72455a8421561cf242ef4864ade586`.
+- Four deterministic, explicitly selected templates reproduce the same pairs
+  from analysis-derived anchors. Every source/target anchor differs from the
+  independently recorded manual anchor by less than 0.1 ms.
+- Automated private hashes: AUTO_F
+  `13c3691cf81b40467d8adce0c9cf2408206199500554648ef29ae32584ab6f2b`,
+  AUTO_C3 `0c89bb5f9024baacdb419556f2fbd8c4a1b60099b13a26a0dcc9738b16426a32`,
+  AUTO_B8 `f6ff0d862739e8c0b71993d3fc5ba1b4eb8a73468354d59f2f525ce747c5e3b1`,
+  AUTO_D2 `ab2dbd9156eb18b3c450495ffab8b21060841abe430e23d38f7b9340fc532634`.
+- Structural evidence: F uses adjacent natural target-master samples; C3,
+  B8, and D2 use a shared multichannel target time map. F/C3 tails clear
+  before landing, B8's state-continuous tail ends 20 ms before the measured
+  incoming vocal, and D2 declares no effect tail. All files are finite stereo
+  44.1 kHz PCM24 with no clipped samples.
+- Focused template suite: **14 passed**. Complete repository regression:
+  **1116 passed in 82.14s**, with only the two existing Typer/Click dependency
+  deprecation warnings. Touched-file `ruff check` and `git diff --check` pass.
+- Private evidence/output directory:
+  `/tmp/djenius_reference_dj_transition/automated/`, including
+  `REFERENCE_AUTOMATION_MANIFEST.json`. Metrics are diagnostic only; the gate
+  remains manual F/C3/B8/D2 versus AUTO_F/AUTO_C3/AUTO_B8/AUTO_D2 listening.

@@ -161,3 +161,28 @@ Building this exposed a real, previously-latent architectural fact, confirmed on
 
 ## Human listening gate
 No merge to master until serious V2 candidates are rendered locally and the user completes the blind listening gate described in `DJENIUS_V2_RESEARCH_SPEC.md`. **This is now the single remaining blocker for calling V2 "done."** Phase 10 prepared everything it can without the user: a real, technically-verified full mix has been delivered to them (see above), and the same pipeline can render more (different arcs, a longer set, or a specific library) on request. A comparable V1-style bake of the same library would need to be rendered through the existing classic `/api/plans` + `/api/plans/{id}/render` path for a true side-by-side; this was not attempted this phase and is a reasonable next step whenever the user is ready to do the actual comparison.
+
+## Post-roadmap reference-backed automation gate
+
+Manual R&D has produced four accepted controlled references. Before any
+autonomous planning resumes, DJenius must prove it can reconstruct those
+performances from analysis and explicit templates:
+
+- freeze F, C3, B8, and D2 by hash and durable choreography contract;
+- instantiate one named archetype deterministically from source/target
+  `TrackAnalysis`, without absolute cue timestamps;
+- render through a dedicated executor that permanently enforces shared target
+  timing, continuous loop/effect state, explicit tail lifetime, deliberate
+  bass ownership, and target establishment;
+- reproduce the four original private pairs as AUTO_F, AUTO_C3, AUTO_B8, and
+  AUTO_D2;
+- compare analysis-derived cues, musical-time actions, overlap/ownership,
+  target stream, tails, and establishment in a machine-readable manifest;
+- stop for manual reference-vs-automation listening.
+
+Delivered: all four templates, four same-pair renders, focused coverage, and
+the private comparison manifest. Focused tests pass at 14; full regression
+passes at 1116. This layer is deliberately not wired into Candidate Composer,
+Audition Lab selection, Set Director, UI, or full-set rendering. New-pair
+generalization and those integrations remain prohibited until the user passes
+the same-pair listening gate.

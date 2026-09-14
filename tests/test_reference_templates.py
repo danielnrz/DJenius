@@ -1,0 +1,226 @@
+from __future__ import annotations
+
+from dataclasses import replace
+
+import numpy as np
+import pytest
+
+from djenius.audio.reference_template_renderer import (
+    ReferenceRenderInputs,
+    coherent_time_fit,
+    render_reference_template,
+)
+from djenius.core.models import TrackAnalysis
+from djenius.core.performance_recipe import ActionType, validate_performance_recipe
+from djenius.core.reference_templates import (
+    ARCHETYPE_DEFINITIONS,
+    ReferenceArchetype,
+    ReferenceTemplateEligibilityError,
+    instantiate_reference_template,
+)
+
+
+SR = 4000
+STEM_NAMES = ("drums", "bass", "other", "vocals")
+
+
+def _analysis(*, source: bool, shift: float = 0.0) -> TrackAnalysis:
+    grid = [shift + 2.0 * index for index in range(31)]
+    energy = [.55] * 31
+    if not source:
+        energy[14], energy[15], energy[16], energy[17] = .54, .94, .88, .86
+    sections = (
+        [
+            {"start_sec": shift, "end_sec": shift + 16, "label": "verse", "energy_mean": .63},
+            {"start_sec": shift + 16, "end_sec": shift + 44, "label": "outro", "energy_mean": .72},
+            {"start_sec": shift + 46, "end_sec": shift + 60, "label": "outro", "energy_mean": .22},
+        ]
+        if source
+        else [
+            {"start_sec": shift, "end_sec": shift + 24, "label": "intro", "energy_mean": .35},
+            {"start_sec": shift + 24, "end_sec": shift + 28, "label": "build", "energy_mean": .58},
+            {"start_sec": shift + 28, "end_sec": shift + 48, "label": "drop", "energy_mean": .90},
+            {"start_sec": shift + 48, "end_sec": shift + 62, "label": "verse", "energy_mean": .65},
+        ]
+    )
+    vocals = [(shift + 18, shift + 21)] if source else [(shift + 32, shift + 35)]
+    return TrackAnalysis(
+        bpm=120,
+        bpm_confidence=.97,
+        analysis_confidence=.96,
+        downbeat_times=grid,
+        bar_times=grid,
+        bar_energies=energy,
+        section_profiles=sections,
+        structural_sections=[
+            (float(item["start_sec"]), float(item["end_sec"]), str(item["label"]))
+            for item in sections
+        ],
+        vocal_regions=vocals,
+        stems={name: f"/{name}.wav" for name in STEM_NAMES},
+    )
+
+
+def _instance(archetype: ReferenceArchetype, *, shift: float = 0.0):
+    return instantiate_reference_template(
+        _analysis(source=True, shift=shift),
+        _analysis(source=False, shift=shift),
+        archetype,
+        source_track_id="source-hash",
+        target_track_id="target-hash",
+        source_duration_sec=shift + 62,
+        target_duration_sec=shift + 62,
+    )
+
+
+def _audio(frequency: float, length_sec: float = 64.0) -> np.ndarray:
+    axis = np.arange(round(length_sec * SR), dtype=np.float64) / SR
+    mono = (
+        .18 * np.sin(2 * np.pi * frequency * axis)
+        + .04 * np.sin(2 * np.pi * frequency * 2.013 * axis)
+        + .015 * np.sign(np.sin(2 * np.pi * 2 * axis))
+    ).astype(np.float32)
+    return np.column_stack((mono, np.roll(mono, 3))).astype(np.float32)
+
+
+def _render_inputs() -> ReferenceRenderInputs:
+    source_audio, target_audio = _audio(110), _audio(137)
+    source_stems = {
+        "drums": _audio(190),
+        "bass": _audio(82),
+        "other": _audio(310),
+        "vocals": _audio(440),
+    }
+    target_stems = {
+        "drums": _audio(205),
+        "bass": _audio(91),
+        "other": _audio(350),
+        "vocals": _audio(510),
+    }
+    return ReferenceRenderInputs(
+        source_audio,
+        target_audio,
+        source_stems,
+        target_stems,
+        _analysis(source=True),
+        _analysis(source=False),
+        SR,
+    )
+
+
+@pytest.mark.parametrize("archetype", list(ReferenceArchetype))
+def test_reference_template_instantiation_is_deterministic_and_bar_relative(archetype):
+    first, second = _instance(archetype), _instance(archetype)
+    assert first.to_dict() == second.to_dict()
+    assert first.instance_id == second.instance_id
+    assert first.recipe.recipe_id == second.recipe.recipe_id
+    assert validate_performance_recipe(first.recipe) == []
+    assert all(0 <= item.position.beat_offset < first.recipe.bars * 4 for item in first.recipe.actions)
+    assert first.recipe.metadata["autonomous_selection_allowed"] is False
+
+
+def test_analysis_shift_moves_anchors_without_changing_choreography_schedule():
+    baseline = _instance(ReferenceArchetype.LOOP_BUILD_COHERENT_HANDOFF)
+    shifted = _instance(ReferenceArchetype.LOOP_BUILD_COHERENT_HANDOFF, shift=1.25)
+    assert shifted.anchors.source_start_sec == pytest.approx(baseline.anchors.source_start_sec + 1.25)
+    assert shifted.anchors.target_landing_sec == pytest.approx(baseline.anchors.target_landing_sec + 1.25)
+    assert [item.position for item in shifted.recipe.actions] == [item.position for item in baseline.recipe.actions]
+
+
+def test_loop_build_schedule_and_bass_ownership_are_constrained():
+    instance = _instance(ReferenceArchetype.LOOP_BUILD_COHERENT_HANDOFF)
+    loop_actions = [
+        (item.action, item.position.beat_offset, item.parameters.get("length_beats"))
+        for item in instance.recipe.actions
+        if item.action in {ActionType.LOOP_START, ActionType.LOOP_LENGTH, ActionType.LOOP_END}
+    ]
+    assert loop_actions == [
+        (ActionType.LOOP_START, 16.0, 4.0),
+        (ActionType.LOOP_LENGTH, 24.0, 2.0),
+        (ActionType.LOOP_LENGTH, 28.0, 1.0),
+        (ActionType.LOOP_END, 31.75, None),
+    ]
+    ownership = instance.choreography["bass_ownership"]
+    assert ownership == ((0.0, 4.0, "source"), (4.0, 5.65, "none_or_target_tease"), (5.65, 8.0, "target"))
+    assert ownership[0][1] <= ownership[1][0] and ownership[1][1] <= ownership[2][0]
+
+
+def test_eligibility_rejects_missing_stems_low_confidence_and_unsafe_tempo():
+    source, target = _analysis(source=True), _analysis(source=False)
+    with pytest.raises(ReferenceTemplateEligibilityError, match="source stems missing"):
+        instantiate_reference_template(
+            replace(source, stems={}), target, ReferenceArchetype.LOOP_BUILD_COHERENT_HANDOFF,
+            source_track_id="a", target_track_id="b", source_duration_sec=62, target_duration_sec=62,
+        )
+    with pytest.raises(ReferenceTemplateEligibilityError, match="beatgrid confidence"):
+        instantiate_reference_template(
+            replace(source, bpm_confidence=.1), target, ReferenceArchetype.STEM_ECHO_HANDOFF,
+            source_track_id="a", target_track_id="b", source_duration_sec=62, target_duration_sec=62,
+        )
+    with pytest.raises(ReferenceTemplateEligibilityError, match="tempo delta"):
+        instantiate_reference_template(
+            source, replace(target, bpm=150), ReferenceArchetype.RESTRAINED_OWNERSHIP_BLEND,
+            source_track_id="a", target_track_id="b", source_duration_sec=62, target_duration_sec=62,
+        )
+
+
+def test_shared_time_fit_preserves_master_stem_clock_and_reconstruction():
+    axis = np.linspace(0, 8 * np.pi, 4000, endpoint=False, dtype=np.float32)
+    left = np.column_stack((np.sin(axis), np.cos(axis))).astype(np.float32)
+    right = np.column_stack((np.sin(axis * 1.7), np.cos(axis * 1.7))).astype(np.float32)
+    rendered, backend = coherent_time_fit(
+        {"master": left + right, "left": left, "right": right}, 4600, SR, backend="scipy",
+    )
+    assert backend == "scipy_shared_multichannel_fallback"
+    assert {name: values.shape for name, values in rendered.items()} == {
+        "master": (4600, 2), "left": (4600, 2), "right": (4600, 2),
+    }
+    np.testing.assert_allclose(rendered["master"], rendered["left"] + rendered["right"], atol=2e-5)
+
+
+@pytest.mark.parametrize("archetype", list(ReferenceArchetype))
+def test_reference_renderer_enforces_target_continuity_and_tail_contract(archetype):
+    rendered = render_reference_template(_instance(archetype), _render_inputs(), time_fit_backend="scipy")
+    assert rendered.audio.ndim == 2 and rendered.audio.shape[1] == 2
+    assert np.isfinite(rendered.audio).all()
+    assert np.max(np.abs(rendered.audio)) < .999
+    assert 0 < rendered.landing_sample < len(rendered.audio)
+    proof = rendered.provenance
+    assert proof["target_stream_contract"] == _instance(archetype).choreography["target_stream"]
+    assert proof["target_establishment_bars"] == 8
+    if archetype == ReferenceArchetype.RESET_RELEASE:
+        assert proof["target_time_map_backend"] == "natural_target_master_no_stretch"
+        assert proof["fx_tail"]["fx_tail_end_sec_relative_landing"] <= 0
+    else:
+        assert proof["target_time_map_backend"] == "scipy_shared_multichannel_fallback"
+    if archetype == ReferenceArchetype.LOOP_BUILD_COHERENT_HANDOFF:
+        tail = proof["fx_tail"]
+        assert tail["loop_state_continuous_at_landing"] is True
+        assert tail["fx_tail_end_sec_relative_landing"] <= (
+            tail["target_vocal_onset_sec_relative_landing"] - tail["tail_margin_before_target_vocal_sec"]
+        )
+    elif archetype != ReferenceArchetype.RESET_RELEASE:
+        assert proof["fx_tail"]["fx_tail_end_sec_relative_landing"] <= 0
+
+
+def test_loop_build_render_is_sample_deterministic():
+    instance, inputs = _instance(ReferenceArchetype.LOOP_BUILD_COHERENT_HANDOFF), _render_inputs()
+    first = render_reference_template(instance, inputs, time_fit_backend="scipy")
+    second = render_reference_template(instance, inputs, time_fit_backend="scipy")
+    np.testing.assert_array_equal(first.audio, second.audio)
+    assert first.provenance == second.provenance
+
+
+def test_catalog_documents_every_requested_archetype_constraint():
+    assert set(ARCHETYPE_DEFINITIONS) == set(ReferenceArchetype)
+    for definition in ARCHETYPE_DEFINITIONS.values():
+        assert definition.suitable_source_sections
+        assert definition.suitable_target_sections
+        assert definition.vocal_requirements
+        assert definition.target_cue_requirements
+        assert definition.source_side_actions
+        assert definition.shared_territory_actions
+        assert definition.target_reveal_sequence
+        assert definition.failure_conditions
+        assert definition.variable_parameters
+        assert definition.fixed_parameters

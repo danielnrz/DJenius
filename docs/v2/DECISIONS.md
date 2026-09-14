@@ -219,3 +219,11 @@
 ## D050 - Audition damage metrics are bounded by declared technique intent
 **Decision:** Audition Lab's spectral metric retains universal collision/mud/hole protection but applies small family-specific allowances to continuity movement and expected high-frequency buildup for techniques that deliberately restructure frequency space. Excess beyond those bounds is still penalized, and no score-only creativity bonus is added.
 **Why:** a riser, filter move, phrase cut, bass handoff, or stem mashup should not lose solely because it performed its declared safe transformation. The evaluator must distinguish intended behavior from the same change appearing in a family that did not declare it.
+
+## D051 - Approved performances become explicit templates before autonomous choices resume
+**Decision:** the F, C3, B8, and D2 human references are frozen by SHA-256 and represented by four explicitly selected, deterministic `TrackAnalysis`-to-`PerformanceRecipe` templates. The new layer cannot choose a template and is not connected to Candidate Composer, Audition Lab policy, Set Director, UI, or full-set rendering until same-pair automated reconstructions pass human listening.
+**Why:** automation must first reproduce proven musical behavior. Separating instantiation from selection prevents ranking or planning changes from concealing a failure to reproduce the accepted choreography.
+
+## D052 - Reference templates own a coherent target clock and explicit tail contract
+**Decision:** every beatmatched reference template renders its target master and participating stems together through one multichannel timing/stretch operation spanning runway and postlanding material. Source effects crossing landing retain their buffer state and declare an auditable endpoint; other templates must clear their effect before landing.
+**Why:** the B7/B8 investigation proved that independently stretched target material and restarted source-loop state were audible renderer defects. They are permanent invariants, not optional artistic parameters.

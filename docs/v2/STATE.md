@@ -1,60 +1,48 @@
 # DJenius V2 State
 
 ## CURRENT PHASE
-All roadmap phases (0-10) have their autonomous portions complete and
-pushed. **There is no active roadmap phase and none should be started.**
-Phase 10's actual defining gate -- the human blind V1-vs-V2 listening
-comparison -- has now been run **twice** by the user, and **has not passed
-either time**:
+All roadmap phases (0-10) remain frozen. **There is no new roadmap phase.**
+The post-Phase-10 manual performance R&D gate has advanced: the user judged
+F strongest, C3 successful, B8 acceptable after the B7/B8 structural fixes,
+and D2 an acceptable restrained blend. Convincing DJ behavior is therefore
+proven possible for these controlled performances. Do not keep polishing B8.
 
-1. First listen (pre-fix): V1 and V2 were not meaningfully distinguishable
-   at all.
-2. Second listen (post-fix, current V2 code): V2 techniques (loops, builds,
-   drops, echo, bass changes) are occasionally noticeable, but "subtle/
-   small," "not transformative," and -- the user's own words -- **"it still
-   does NOT feel like a real DJ is actively performing... I did not have
-   moments where I clearly thought: 'yes, that was a real DJ move.'"**
+The active work is a narrower reference-reproduction gate: four explicit,
+analysis-driven templates must reproduce those exact approved behaviors on
+the same private pairs before any autonomous technique selection resumes.
+Candidate Composer selection, Audition Lab policy, Set Director, UI, new
+families, generalized pairs, and full mixes remain out of scope.
 
-**PERFORMANCE QUALITY / DJ-LIKENESS IS NOW THE PROJECT'S SINGLE OPEN,
-UNRESOLVED, CROSS-PHASE GATE.** This is not a defect in any one phase's
-own acceptance criteria -- every phase's own dedicated tests and the full
-1095-test regression suite pass. It is a product-level gate above and
-across all phases (research spec section 32/43), and it is the only thing
-standing between "V2 is technically complete" and "V2 is done." Do not
-interpret the phase-completion history below as contradicting this: the
-phases built the right machinery; the machinery is not yet producing an
-audibly convincing autonomous DJ performance.
+## REFERENCE-AUTOMATION CHECKPOINT (HUMAN GATE PENDING)
 
-## PERFORMANCE-RECOVERY CHECKPOINT (HUMAN GATE PENDING)
-
-The two leading root causes above have now been corrected in a validated local
-checkpoint:
-
-- Set Director schema 7.1 plans a typed, path-dependent `TrackAppearance` and
-  protects an explicit establishment window before the next transition. The
-  real recovery set rendered with zero anchor shifts; its middle tracks had
-  33.599–191.989 seconds of independent airtime.
-- Phrase-cut target-cursor semantics, full-set stem delivery, Phase-5
-  EQ/build/landing choreography, riser/impact musical placement, post-fader
-  echo release, and family-aware Audition spectral damage modeling were fixed
-  through the actual production path.
-- The private fixed-anchor family audit and full V1/previous-V2/recovery-V2
-  listening package are at `/tmp/djenius_performance_lab/`; the durable matrix
-  is `docs/v2/PERFORMANCE_QUALITY_AUDIT.md`.
-- Focused recovery tests pass at 110; complete regression passes at **1102
-  passed**. This evidence protects implementation only. It does **not** close
-  the twice-failed human DJ-quality gate.
+- Frozen manual SHA-256 and exact choreography are recorded in
+  `REFERENCE_BACKED_ARCHETYPES.md`; the private render driver verifies the
+  four hashes before and after every run.
+- `core/reference_templates.py` provides four explicitly selected,
+  deterministic templates. It derives anchors from analysis and emits a
+  complete bar-relative `PerformanceRecipe` plus an auditable choreography
+  contract. It performs no autonomous selection.
+- `audio/reference_template_renderer.py` preserves B7/B8 permanently: target
+  runway/body master and stems share one multichannel time map; a crossing
+  source loop retains state; every tail has a checked endpoint.
+- The same-pair outputs and machine-readable comparison manifest are in
+  `/tmp/djenius_reference_dj_transition/automated/`. Every source/target cue
+  matches the frozen manual choreography within 0.1 ms. The four manual WAV
+  hashes remain unchanged.
+- Focused reference-template tests pass (**14 passed**). The complete
+  repository regression passes (**1116 passed**, 2 pre-existing dependency
+  deprecation warnings).
+- Human listening, not the deterministic or audio metrics, decides whether
+  this reproduction gate passes.
 
 ## CURRENT BRANCH
 `v2-professional-autonomous-dj`
 
 ## LATEST PERFORMANCE-RECOVERY COMMIT
-`32b2d3d6e679495d0edd7818fd2a787cb512608e` - "Recover V2 DJ performance
-choreography". It contains the production fixes, regression coverage, durable
-technique audit, and private-package metadata references described above, and
-was pushed to `origin/v2-professional-autonomous-dj`. A docs-only handoff
-finalization may follow it; resolve the current tip from Git rather than this
-historical field.
+`e5339a9f2b98f483ff203efa080a9cce52f2e2f9` - "Record B8 residual landing
+fix". It is the last pushed manual-R&D checkpoint before the current
+reference-template work; resolve the current tip from Git after this work is
+committed rather than treating this historical field as immutable.
 
 ## PHASE COMPLETION HISTORY (unchanged, factual record)
 - Phases 0-9: frozen. Phase 9 pushed at `4f71818e2f2613d14db184c23901f43474ce04fd`
@@ -148,16 +136,14 @@ performance.** Two deeper findings, confirmed but deliberately not fixed
   visualization).
 
 ## CURRENT BLOCKERS
-Not a missing feature or a failing test. The blocker is that **V2 does not
-yet sound and behave like an intentional, skilled autonomous DJ**, per two
-independent real human listens using the actual current code. Do not treat
-this as closeable by more automated verification alone -- closing it
-requires actual audible/behavioral improvement, then a third human listen.
+The only immediate blocker is the manual-vs-automated same-pair listening
+gate. Technical checks cannot establish that `AUTO_F`, `AUTO_C3`, `AUTO_B8`,
+and `AUTO_D2` preserve the musical behavior of their accepted references.
+Autonomous selection remains paused until the user accepts these renders.
 
 ## EXACT NEXT ACTION
-Do **not** start UI or broad feature work. Human-listen to the new private
-checkpoint against V1 and previous V2. If recognizable intent/taste still does
-not clear the gate, use the contextual and controlled clips to identify which
-specific move fails (especially bass swap or drum bridge) and continue the
-smallest production-path correction. Do not close the project from tests or
-distance metrics alone.
+Stop for the user to compare manual F vs `AUTO_F`, manual C3 vs `AUTO_C3`,
+manual B8 vs `AUTO_B8`, and manual D2 vs `AUTO_D2`. If an automated version is
+substantially worse, correct only the template/instantiation/rendering layer.
+Do not generalize to new pairs or resume Candidate Composer, Audition Lab, Set
+Director, UI, or full mixes.

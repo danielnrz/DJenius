@@ -1,5 +1,63 @@
 # DJenius V2 Active Handoff
 
+## REFERENCE-BACKED AUTOMATION — SAME-PAIR RENDERS READY FOR HUMAN LISTENING
+2026-09-14. The user judged B8 substantially better than the earlier B-series
+and acceptable. Manual plausibility is no longer the blocking question. Do not
+continue polishing B8. Freeze these four private files as the current
+human-approved/accepted reference set:
+
+- `REFERENCE_F.wav` — strongest; SHA-256
+  `947a1a2556efb6e1d6b6ffd3ebb9c16c851d3d97bdd5026b57ec3bd5f1056f48`
+- `REFERENCE_C3.wav` — successful DJ-like edit; SHA-256
+  `ecdd7b694a3d9f5100f02e3aa62df0ec68cb90e874de1b863eec846a8a8eff03`
+- `B8_RESIDUAL_FIX.wav` — acceptable loop/build/handoff; SHA-256
+  `47824cc9b923c708f261c7d3db82e46e2f910fec47b802111bcd26c1c5aa1205`
+- `REFERENCE_D2.wav` — acceptable restrained blend; SHA-256
+  `5c1f72c9ae6edff9c7e51c0f6386f15abb72455a8421561cf242ef4864ade586`
+
+The reference-backed layer is implemented without touching autonomous
+selection. `core/reference_templates.py` maps an explicitly requested
+archetype plus source/target `TrackAnalysis` into deterministic analysis-
+derived anchors, a complete bar-relative `PerformanceRecipe`, eligibility
+evidence, and an executable choreography contract.
+`audio/reference_template_renderer.py` executes only those selected templates
+and permanently retains the structural fixes: target master/stems and runway/
+body share one multichannel time map; source loop state crossing landing is
+continuous; tail endpoints are explicit and checked.
+
+The four private same-pair reproductions are ready:
+
+- `automated/AUTO_F.wav` — SHA-256
+  `13c3691cf81b40467d8adce0c9cf2408206199500554648ef29ae32584ab6f2b`
+- `automated/AUTO_C3.wav` — SHA-256
+  `0c89bb5f9024baacdb419556f2fbd8c4a1b60099b13a26a0dcc9738b16426a32`
+- `automated/AUTO_B8.wav` — SHA-256
+  `f6ff0d862739e8c0b71993d3fc5ba1b4eb8a73468354d59f2f525ce747c5e3b1`
+- `automated/AUTO_D2.wav` — SHA-256
+  `ab2dbd9156eb18b3c450495ffab8b21060841abe430e23d38f7b9340fc532634`
+
+All are stereo 44.1 kHz PCM24. Every automated source/target cue reproduces
+the corresponding frozen manual cue within 0.1 ms. F uses adjacent natural
+target master; C3/B8/D2 report one shared FFmpeg multichannel target clock.
+F's final echo clears 41.2 ms before landing, C3's clears 239.2 ms before,
+B8's uninterrupted rhythmic/airy tail clears 20 ms before the measured target
+vocal, and D2 declares no FX tail. The four frozen manual hashes were verified
+unchanged after rendering.
+
+Focused tests: **14 passed**. Complete repository regression: **1116 passed**
+in 82.14 seconds, with only the two pre-existing Typer/Click dependency
+deprecation warnings. Touched-file `ruff check` and `git diff --check` pass.
+Machine-readable evidence is in private
+`automated/REFERENCE_AUTOMATION_MANIFEST.json`; the full archetype contract is
+in `REFERENCE_BACKED_ARCHETYPES.md`.
+
+**STOP/GATE:** the user must compare manual F vs `AUTO_F`, manual C3 vs
+`AUTO_C3`, manual B8 vs `AUTO_B8`, and manual D2 vs `AUTO_D2`. Numerical
+similarity is not acceptance. If a reproduction is substantially worse,
+change only the reference template/instantiation renderer. Do not test new
+pairs, expose these templates to Candidate Composer, alter Audition Lab or Set
+Director, touch UI, create new families, or render full mixes before approval.
+
 ## B8 RESIDUAL FIX — READY FOR B7-vs-B8 HUMAN LISTENING
 2026-09-14. Residual-error forensics is complete. Exactly one new user-facing
 render exists:
