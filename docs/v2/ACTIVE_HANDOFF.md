@@ -1,5 +1,63 @@
 # DJenius V2 Active Handoff
 
+## TARGET-ENTRY LAB — B5 TARGET 1/2/3 READY FOR HUMAN LISTENING
+2026-09-14T14:11:42Z (Codex/GPT-5.6 Sol). Latest human verdict is now the
+authority: A4 is too ordinary and is paused; B4's source-side loop manipulation
+is genuinely DJ-like but its target handoff is bad; E3 has useful source-side
+preparation but its target arrival is also wrong. F and C3 remain the successful
+references, D2 remains the acceptable restrained reference, and E3 is not being
+iterated until the target-entry lesson is established. Automation and all broad
+product work remain paused.
+
+The controlled private target-entry lab is ready in
+`/tmp/djenius_reference_dj_transition/`:
+
+- `B5_TARGET_1.wav` — early continuous rhythmic introduction, SHA-256
+  `105a4dea78ad5da508ce29ac234b52a8761cfe03a69ff66ee6d1ac8e781ace06`
+- `B5_TARGET_2.wav` — staged drum/stem/frequency/identity reveal, SHA-256
+  `9a2a547f39a1ed45e640f8dcf90c1fc4b85d92e10e1411531667459fc3b3a8d9`
+- `B5_TARGET_3.wav` — sparse tease into an alternate lower-vocal drop cue,
+  SHA-256
+  `524b58894058491f27f26cde4603ec1aad008c0481e2002cf041f367020ebb39`
+
+All three retain B4's exact source-side contribution: source low/upper
+envelopes, the same bar-2 phase-anchored `4 -> 2 -> 1` loop, the same shaped
+riser, and the same source release. The raw source contribution is
+sample-identical in every variant, SHA-256
+`8071c0caddd8dfa03768708c930fa1559f0fed11dbff2dd76ecbb9d40ac9dc4b`.
+They also use one fixed master gain (`0.556776515`) derived from the original B4
+raw performance; per-variant loudness normalization is disabled so target entry
+is the only experimental variable. TARGET_1 and TARGET_2 retain B4's target cue;
+TARGET_3 changes only the target cue to test whether the original dense/vocal
+arrival was itself unsuitable. The source track and choreography remain fixed.
+
+Root cause isolated in B4: its target low, drum, and upper previews all withdrew
+before landing while the source loop/riser also ended. That erased the shared
+territory and made the full target reappear as a replacement. Target bass also
+arrived before target identity was sufficiently established, while target vocal
+identity remained absent until landing. C3 demonstrates continuity across the
+landing and staged target ownership; F demonstrates separate perceptual roles
+for source release, effect tail, target context, and full target entry. The new
+variants test those principles without copying C3/F's effects.
+
+`REFERENCE_NOTES.json` records the exact target-only change, hypothesis, and
+bar-level choreography for each variant, plus listening times, fixed-source and
+mastering controls, diagnostics, and preservation hashes. All three transitions
+begin at 7.988s and land at 24.007s, followed by about eight clean target bars.
+They are stereo 44.1-kHz PCM-24 and contain no clipped samples. Integrated
+loudness is -14.079/-14.246/-14.320 LUFS under the fixed master gain; this is a
+safety/control check, not acceptance evidence. The private reproducibility and
+visual QA aids are `render_target_entry_lab.py` and
+`TARGET_ENTRY_LAB_DIAGNOSTICS.png`.
+
+B4, C3, D2, and F were hashed before and after rendering and remain byte-identical:
+B4 `9060240f5aedd8d8a185f447d82eaa9279b099e64d2a08ea20d8b67ffee20a07`,
+C3 `ecdd7b694a3d9f5100f02e3aa62df0ec68cb90e874de1b863eec846a8a8eff03`,
+D2 `5c1f72c9ae6edff9c7e51c0f6386f15abb72455a8421561cf242ef4864ade586`,
+and F `947a1a2556efb6e1d6b6ffd3ebb9c16c851d3d97bdd5026b57ec3bd5f1056f48`.
+No production code changed. Stop here for the human listening gate; do not return
+to automation or transfer anything to E3 yet.
+
 ## MUSICAL-CAUSALITY ROUND — A4/B4/E3 READY; C3/D2/F PRESERVED
 2026-09-14T13:53:01Z (Codex/GPT-5.6 Sol). Latest human verdict is now the
 authority: F remains the strongest gold reference; C3 is newly successful and
