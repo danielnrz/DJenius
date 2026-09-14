@@ -1,5 +1,67 @@
 # DJenius V2 Active Handoff
 
+## LANDING MICRO-LAB — B6 LANDING 1/2/3 READY FOR HUMAN LISTENING
+2026-09-14T14:31:46Z (Codex/GPT-5.6 Sol). Latest human verdict is now the
+authority: B5_TARGET_2 is the winning target-entry direction and is frozen as
+the working reference; its staged target reveal is noticeably better, but its
+final ownership transfer is still not smooth. B5_TARGET_1 is not smooth enough
+and B5_TARGET_3 is abandoned. The successful B4 source choreography, target
+pair, target cue, and fixed mastering control remain unchanged. Automation and
+all broad product work remain paused.
+
+The private landing-only listening files are in
+`/tmp/djenius_reference_dj_transition/`:
+
+- `B6_LANDING_1.wav` — target remains in its staged spectral/stem state at the
+  nominal downbeat, then reaches the mastered full mix across 1.25 target bars;
+  SHA-256
+  `5c0c76c8e214cbe08418e0afd1e99d3fb02b447d7c073a10557f4f804b01a6eb`
+- `B6_LANDING_2.wav` — during only the final transition bar, the partial target
+  reveal becomes a phrase-aligned full target-stem reconstruction before the
+  normal mastered drop begins; SHA-256
+  `5717fe223b1b1fd7431be7aeb6378b1db66d4302f0aee4fe4851a74be87306fe`
+- `B6_LANDING_3.wav` — B5_TARGET_2's target reveal remains unchanged; B4's
+  high-passed one-beat source motif continues through the target downbeat as a
+  decaying tail while target gain reaches unity within 0.62 bar; SHA-256
+  `38854dc9f50bb215cfeda0fe8ef434395381fb90d22083a7e172de1ccc9c9ad7`
+
+Forensic diagnosis:
+
+- Beat/cue phase is not the defect. Target drum and low-frequency landing
+  references show 0.0 ms best lag and correlations of 1.000/0.999. The intro
+  and post-landing audio are both fitted to the same 1.997-second performance
+  bar. The cue therefore remains unchanged.
+- B5_TARGET_2 changes by about +2.0 dB overall and +3.2 dB below 155 Hz while
+  losing about 4.6 dB above 3 kHz across the landing half-seconds. Its staged
+  target's partial drum/stem/EQ state becomes the mastered full target through
+  only a 128-sample/2.9-ms seam. The content is phase-aligned; the spectral
+  ownership state is not.
+- B4's one-beat source loop stops before the boundary and its riser ends at the
+  boundary, reinforcing the perceptual syntax "effect stops, full target
+  starts."
+- C3 keeps target low/rhythm continuous and changes full level by roughly
+  -0.5 dB with low/mid changes within about 1 dB. F instead earns its larger
+  landing contrast by clearly separating source release, echo decay, target
+  context, and target downbeat. B5_TARGET_2 promises continuity, so its abrupt
+  spectral pivot reads as a defect rather than a reset.
+
+Every B6 output is sample-identical to frozen B5_TARGET_2 up to the start of the
+eighth/final transition bar within one PCM-24 quantization step. LANDING_1 does
+not change anything before the nominal landing; LANDING_2 changes only the
+final bar's target reconstruction; LANDING_3 extends only the final source-loop
+gesture and first target bar. Target remains the sole bass owner throughout all
+three treatments. The transition still begins at 7.988s and lands at 24.007s.
+
+`REFERENCE_NOTES.json` contains the full diagnosis, C3/F comparison, exact
+variant differences, focused listening window, fixed-reference hashes, and
+safety diagnostics. The frozen `B5_TARGET_2.wav` remains byte-identical,
+SHA-256 `9a2a547f39a1ed45e640f8dcf90c1fc4b85d92e10e1411531667459fc3b3a8d9`.
+C3, D2, F, and B4 also remain unchanged. All B6 WAVs are stereo 44.1-kHz PCM-24
+with no clipped samples and no anomalous sample discontinuity at landing. The
+private reproducibility/forensics aids are `render_b6_landing_lab.py` and
+`analyze_b6_landing.py`. No production code changed. Stop here for the human
+listening gate; do not return to automation.
+
 ## TARGET-ENTRY LAB — B5 TARGET 1/2/3 READY FOR HUMAN LISTENING
 2026-09-14T14:11:42Z (Codex/GPT-5.6 Sol). Latest human verdict is now the
 authority: A4 is too ordinary and is paused; B4's source-side loop manipulation
