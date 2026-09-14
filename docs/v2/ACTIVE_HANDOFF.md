@@ -6,6 +6,14 @@ and acceptable. Manual plausibility is no longer the blocking question. Do not
 continue polishing B8. Freeze these four private files as the current
 human-approved/accepted reference set:
 
+Validated implementation checkpoint: commit
+`5571b573ae9c8e6e17333c9a387bb0d253271517` ("Add reference-backed DJ
+performance templates"), pushed to `origin/v2-professional-autonomous-dj`;
+local and remote HEAD matched immediately after push. The only remaining
+worktree item is the pre-existing untracked `.claude/` directory, left
+untouched. A docs-only handoff finalization follows that implementation commit;
+resolve the current tip from Git.
+
 - `REFERENCE_F.wav` — strongest; SHA-256
   `947a1a2556efb6e1d6b6ffd3ebb9c16c851d3d97bdd5026b57ec3bd5f1056f48`
 - `REFERENCE_C3.wav` — successful DJ-like edit; SHA-256

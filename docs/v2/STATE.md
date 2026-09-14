@@ -39,10 +39,12 @@ families, generalized pairs, and full mixes remain out of scope.
 `v2-professional-autonomous-dj`
 
 ## LATEST PERFORMANCE-RECOVERY COMMIT
-`e5339a9f2b98f483ff203efa080a9cce52f2e2f9` - "Record B8 residual landing
-fix". It is the last pushed manual-R&D checkpoint before the current
-reference-template work; resolve the current tip from Git after this work is
-committed rather than treating this historical field as immutable.
+`5571b573ae9c8e6e17333c9a387bb0d253271517` - "Add reference-backed DJ
+performance templates". It contains the explicitly selected template and
+renderer layer, regression coverage, durable archetype contract, and private
+same-pair output metadata. It was pushed to
+`origin/v2-professional-autonomous-dj`; resolve the current tip from Git rather
+than treating this field as immutable.
 
 ## PHASE COMPLETION HISTORY (unchanged, factual record)
 - Phases 0-9: frozen. Phase 9 pushed at `4f71818e2f2613d14db184c23901f43474ce04fd`
