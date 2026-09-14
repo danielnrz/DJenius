@@ -493,7 +493,9 @@ def _render_b8(instance: ReferenceTemplateInstance, inputs: ReferenceRenderInput
     target_input = m["target_input_duration_sec"]
     target_output = m["target_output_duration_sec"]
     vocal_onset = min(vocal_starts) * target_output / target_input
-    release_end = landing + max(1, int(round((vocal_onset - .020) * sr)))
+    # Floor rather than round: the declared 20 ms vocal-clearance margin is a
+    # hard upper bound, so sample quantization may only shorten the tail.
+    release_end = landing + max(1, int(np.floor((vocal_onset - .020) * sr)))
     loop_tail, replaced = _b8_continuous_loop_tail(m, source_backing, loop, len(provisional), landing, release_end, sr)
     source -= replaced
     raw, landing = _assemble(m["pre"], source + target, after)
@@ -626,6 +628,7 @@ def render_reference_template(
         "bass_ownership": instance.choreography["bass_ownership"],
         "target_stream_contract": instance.choreography["target_stream"],
         "target_time_map_backend": material["clock_backend"],
+        "target_trim_db": round(float(material["trim_db"]), 6),
         "target_establishment_bars": instance.choreography["target_establishment_bars"],
         "landing_sample": landing,
         "landing_sec": round(landing / inputs.sample_rate, 6),

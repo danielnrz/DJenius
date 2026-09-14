@@ -1,5 +1,58 @@
 # DJenius V2 Active Handoff
 
+## CROSS-PAIR GENERALIZATION GATE — READY FOR HUMAN LISTENING
+
+2026-09-15. The user passed the first human reference-automation gate:
+`AUTO_F` was the best and genuinely enjoyable; `AUTO_C3` made good, clearly
+audible DJ work; `AUTO_B8` was acceptable and substantially beyond AutoDJ-like
+behavior; `AUTO_D2` was good for its restrained role. The explicit template
+layer therefore reproduces approved behavior without collapsing into generic
+crossfades. The eight manual/automated references remain frozen at the hashes
+below and were verified unchanged after this gate.
+
+Exactly two new real private pairs per archetype are rendered in
+`/tmp/djenius_reference_dj_transition/generalization/`. The directory contains
+only the requested eight stereo 44.1 kHz PCM24 WAVs and
+`GENERALIZATION_MANIFEST.json`. The manifest retains private source/target
+identity, analysis-derived cues, BPM/stretch/key/energy/vocal/drum/bass/stem
+evidence, instantiated choreography, adapted parameters, technical checks,
+all rejected candidate pairs and reasons, and eligible-but-not-selected pairs.
+Audition Lab was not invoked and none of these renders is claimed successful
+before human listening.
+
+| Render | Anonymous private pair | Selection evidence | SHA-256 |
+|---|---|---|---|
+| `GEN_F_01.wav` | `PRIVATE_12 -> PRIVATE_04` | 86.1 -> 117.5 BPM reset, relative 10A/10B keys, vocal hook into vocal-free pickup and +0.376 landing-energy lift | `81e2d58f6be6666089c19d3eaa847b38a89243a26d056822037f872cbef5e626` |
+| `GEN_F_02.wav` | `PRIVATE_07 -> PRIVATE_12` | recognizable 123 -> 86.1 BPM hook/reset, adjacent 9A/10A keys, sparse pickup and +0.289 landing lift | `e926ca09eb9645d1f3e8a9ede0f335a2e90e17ce3942c9e2d9d4967e547f7247` |
+| `GEN_C3_01.wav` | `PRIVATE_02 -> PRIVATE_03` | 5.04% tempo fit, groove distance 0.0575, capturable late vocal and active target drums | `2d019af332416fa5d62143daec7072f9f33f260b91d02e01e87db492258a55a9` |
+| `GEN_C3_02.wav` | `PRIVATE_01 -> PRIVATE_03` | dense late source capture, strong target drum/drop phrase; 10.57% tempo change is retained as a caution | `0f313c8b42ac3587953fbe6ac65530f0d9e113c94a0ca2d33caa4ba7c35d7718` |
+| `GEN_B8_01.wav` | `PRIVATE_03 -> PRIVATE_02` | 5.04% tempo fit, groove distance 0.0575, active backing motif, stable landing bass rise and 0.627 s vocal runway | `3871f3ae02b5fe4884b884a8218b22a7dd76de4fa668f9a8e22d105cd4809e4b` |
+| `GEN_B8_02.wav` | `PRIVATE_07 -> PRIVATE_02` | compatible 9A/10B relation, active backing motif, stable drums/bass and 0.627 s vocal runway | `30949ccbed4236981f1efe331bd07aaba87f08a67d6916bf7944cb82d3f2ef58` |
+| `GEN_D2_01.wav` | `PRIVATE_10 -> PRIVATE_01` | exact 136 BPM, groove distance 0.1408, close section energy and active target drums/bass; key risk is explicit | `7129d81e7009bb32652280dd8730f75c11e2bc893cc2e5bb999c6fb49db86c1e` |
+| `GEN_D2_02.wav` | `PRIVATE_04 -> PRIVATE_07` | 4.47% tempo adjustment, compatible 10B/9A keys, close energy and target drum/bass support | `8b03200b8df27db82c5c6219280704bdfa5e04d959ad2dbb6170ef59112ff77d` |
+
+The exhaustive analysis-only scan considered all 196 ordered candidates per
+archetype in the 14-track private library. Counts `(selected / eligible but
+not selected / rejected)` are F `2/60/134`, C3 `2/10/184`, B8 `2/3/191`, and
+D2 `2/9/185`; same-track and original-reference pairs are explicit rejects.
+This is feasibility/context evidence, not an automated listening score.
+
+The new-pair run exposed one concrete renderer boundary defect: nearest-sample
+rounding could place a B8 tail a few microseconds beyond its hard 20 ms
+pre-vocal margin. The endpoint now rounds inward with `floor`, so quantization
+can only shorten the tail. The source loop remains state-continuous and all
+beatmatched targets still use a single shared multichannel time map. Focused
+tests: **19 passed**. Complete repository regression: **1121 passed in
+82.55s**, with the two pre-existing Typer/Click deprecation warnings. Touched
+Python `ruff check` passes; the eight renders reproduced the same hashes on a
+second complete run.
+
+**STOP/GATE:** the user must listen to all eight `GEN_*` renders. Do not tune
+them, add pairs/families, let Audition Lab select, integrate Candidate Composer
+or Set Director, touch UI/personalization, or make full mixes. The next
+question is only whether each approved choreography generalizes to these new
+pairs as intentional DJ work.
+
 ## REFERENCE-BACKED AUTOMATION — SAME-PAIR RENDERS READY FOR HUMAN LISTENING
 2026-09-14. The user judged B8 substantially better than the earlier B-series
 and acceptable. Manual plausibility is no longer the blocking question. Do not

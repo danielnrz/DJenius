@@ -2,38 +2,40 @@
 
 ## CURRENT PHASE
 All roadmap phases (0-10) remain frozen. **There is no new roadmap phase.**
-The post-Phase-10 manual performance R&D gate has advanced: the user judged
-F strongest, C3 successful, B8 acceptable after the B7/B8 structural fixes,
-and D2 an acceptable restrained blend. Convincing DJ behavior is therefore
-proven possible for these controlled performances. Do not keep polishing B8.
+The user passed the manual-reference and automated same-pair reproduction
+gates for F, C3, B8, and D2. The active gate is narrower than autonomous
+planning: determine whether analysis-only eligibility can place each of those
+four fixed choreographies on exactly two new real pairs. Candidate Composer,
+Audition Lab selection, Set Director, UI, personalization, new families, and
+full mixes remain out of scope.
 
-The active work is a narrower reference-reproduction gate: four explicit,
-analysis-driven templates must reproduce those exact approved behaviors on
-the same private pairs before any autonomous technique selection resumes.
-Candidate Composer selection, Audition Lab policy, Set Director, UI, new
-families, generalized pairs, and full mixes remain out of scope.
+## CROSS-PAIR GENERALIZATION CHECKPOINT (HUMAN GATE PENDING)
 
-## REFERENCE-AUTOMATION CHECKPOINT (HUMAN GATE PENDING)
-
-- Frozen manual SHA-256 and exact choreography are recorded in
-  `REFERENCE_BACKED_ARCHETYPES.md`; the private render driver verifies the
-  four hashes before and after every run.
-- `core/reference_templates.py` provides four explicitly selected,
-  deterministic templates. It derives anchors from analysis and emits a
-  complete bar-relative `PerformanceRecipe` plus an auditable choreography
-  contract. It performs no autonomous selection.
-- `audio/reference_template_renderer.py` preserves B7/B8 permanently: target
-  runway/body master and stems share one multichannel time map; a crossing
-  source loop retains state; every tail has a checked endpoint.
-- The same-pair outputs and machine-readable comparison manifest are in
-  `/tmp/djenius_reference_dj_transition/automated/`. Every source/target cue
-  matches the frozen manual choreography within 0.1 ms. The four manual WAV
-  hashes remain unchanged.
-- Focused reference-template tests pass (**14 passed**). The complete
-  repository regression passes (**1116 passed**, 2 pre-existing dependency
-  deprecation warnings).
-- Human listening, not the deterministic or audio metrics, decides whether
-  this reproduction gate passes.
+- The four manual and four automated references are immutable and reverified
+  by SHA-256. Their choreography and hashes are recorded in
+  `REFERENCE_BACKED_ARCHETYPES.md`.
+- `assess_reference_template_pair` now returns deterministic eligibility,
+  explicit rejection reasons, cautions, and evidence spanning BPM/stretch,
+  phrase/downbeat fit, global harmonic relation, groove, energy, cue-local
+  bass, vocals, section density, and stem presence/activity. Its fit value is
+  analysis-only and does not invoke or imitate Audition Lab.
+- Every one of the 196 ordered pairs per archetype in the 14-track private
+  library was considered. Exactly eight unique new pairs were selected and
+  rendered; self-pairs, original reference pairs, and musically ineligible
+  candidates remain explicit in the private manifest.
+- The requested files and `GENERALIZATION_MANIFEST.json` are in
+  `/tmp/djenius_reference_dj_transition/generalization/`. All are finite,
+  unclipped, stereo 44.1 kHz PCM24 and reproduced byte-for-byte on a second
+  complete render.
+- The run found and fixed one concrete boundary edge case: sample rounding
+  could exceed B8's hard 20 ms pre-vocal tail margin by microseconds. Tail
+  endpoints now round inward. Shared target clocks and uninterrupted loop
+  state remain permanent renderer invariants.
+- Focused reference-template tests pass (**19 passed**). The complete
+  repository regression passes (**1121 passed in 82.55s**, 2 pre-existing
+  dependency deprecation warnings).
+- Human listening, not eligibility or technical metrics, decides whether
+  these new-pair performances generalize.
 
 ## CURRENT BRANCH
 `v2-professional-autonomous-dj`
@@ -138,14 +140,13 @@ performance.** Two deeper findings, confirmed but deliberately not fixed
   visualization).
 
 ## CURRENT BLOCKERS
-The only immediate blocker is the manual-vs-automated same-pair listening
-gate. Technical checks cannot establish that `AUTO_F`, `AUTO_C3`, `AUTO_B8`,
-and `AUTO_D2` preserve the musical behavior of their accepted references.
-Autonomous selection remains paused until the user accepts these renders.
+The only immediate blocker is the eight-render cross-pair human listening
+gate. Technical checks cannot establish that the fixed F/C3/B8/D2
+choreographies make intentional musical sense on their selected new pairs.
+Autonomous selection remains paused.
 
 ## EXACT NEXT ACTION
-Stop for the user to compare manual F vs `AUTO_F`, manual C3 vs `AUTO_C3`,
-manual B8 vs `AUTO_B8`, and manual D2 vs `AUTO_D2`. If an automated version is
-substantially worse, correct only the template/instantiation/rendering layer.
-Do not generalize to new pairs or resume Candidate Composer, Audition Lab, Set
-Director, UI, or full mixes.
+Stop for the user to listen to `GEN_F_01/02`, `GEN_C3_01/02`,
+`GEN_B8_01/02`, and `GEN_D2_01/02`. Record success/failure against the
+manifest's eligibility evidence. Do not tune, add pairs, broaden scoring, or
+resume Candidate Composer, Audition Lab, Set Director, UI, or full mixes.

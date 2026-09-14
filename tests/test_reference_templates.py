@@ -16,6 +16,7 @@ from djenius.core.reference_templates import (
     ARCHETYPE_DEFINITIONS,
     ReferenceArchetype,
     ReferenceTemplateEligibilityError,
+    assess_reference_template_pair,
     instantiate_reference_template,
 )
 
@@ -28,19 +29,19 @@ def _analysis(*, source: bool, shift: float = 0.0) -> TrackAnalysis:
     grid = [shift + 2.0 * index for index in range(31)]
     energy = [.55] * 31
     if not source:
-        energy[14], energy[15], energy[16], energy[17] = .54, .94, .88, .86
+        energy[12], energy[13], energy[14], energy[15], energy[16], energy[17] = .85, .82, .54, .94, .88, .86
     sections = (
         [
-            {"start_sec": shift, "end_sec": shift + 16, "label": "verse", "energy_mean": .63},
-            {"start_sec": shift + 16, "end_sec": shift + 44, "label": "outro", "energy_mean": .72},
-            {"start_sec": shift + 46, "end_sec": shift + 60, "label": "outro", "energy_mean": .22},
+            {"start_sec": shift, "end_sec": shift + 16, "label": "verse", "energy_mean": .63, "drum_density": .7},
+            {"start_sec": shift + 16, "end_sec": shift + 44, "label": "outro", "energy_mean": .72, "drum_density": .68},
+            {"start_sec": shift + 46, "end_sec": shift + 60, "label": "outro", "energy_mean": .22, "drum_density": .15},
         ]
         if source
         else [
-            {"start_sec": shift, "end_sec": shift + 24, "label": "intro", "energy_mean": .35},
-            {"start_sec": shift + 24, "end_sec": shift + 28, "label": "build", "energy_mean": .58},
-            {"start_sec": shift + 28, "end_sec": shift + 48, "label": "drop", "energy_mean": .90},
-            {"start_sec": shift + 48, "end_sec": shift + 62, "label": "verse", "energy_mean": .65},
+            {"start_sec": shift, "end_sec": shift + 24, "label": "intro", "energy_mean": .35, "drum_density": .5},
+            {"start_sec": shift + 24, "end_sec": shift + 28, "label": "build", "energy_mean": .58, "drum_density": .65},
+            {"start_sec": shift + 28, "end_sec": shift + 48, "label": "drop", "energy_mean": .90, "drum_density": .82},
+            {"start_sec": shift + 48, "end_sec": shift + 62, "label": "verse", "energy_mean": .65, "drum_density": .7},
         ]
     )
     vocals = [(shift + 18, shift + 21)] if source else [(shift + 32, shift + 35)]
@@ -51,6 +52,7 @@ def _analysis(*, source: bool, shift: float = 0.0) -> TrackAnalysis:
         downbeat_times=grid,
         bar_times=grid,
         bar_energies=energy,
+        low_energy_curve=[.31 if source else (.18 if index < 28 else .57) for index in range(62)],
         section_profiles=sections,
         structural_sections=[
             (float(item["start_sec"]), float(item["end_sec"]), str(item["label"]))
@@ -58,6 +60,12 @@ def _analysis(*, source: bool, shift: float = 0.0) -> TrackAnalysis:
         ],
         vocal_regions=vocals,
         stems={name: f"/{name}.wav" for name in STEM_NAMES},
+        stem_activity_profiles={
+            "drums": {"active_fraction": .82, "activity_confidence": .95},
+            "bass": {"active_fraction": .75, "activity_confidence": .95},
+            "other": {"active_fraction": .86, "activity_confidence": .95},
+            "vocals": {"active_fraction": .70, "activity_confidence": .95},
+        },
     )
 
 
@@ -211,6 +219,26 @@ def test_loop_build_render_is_sample_deterministic():
     assert first.provenance == second.provenance
 
 
+def test_loop_build_tail_sample_quantization_never_exceeds_vocal_margin():
+    target = replace(_analysis(source=False), vocal_regions=[(32.00019, 35.0)])
+    instance = assess_reference_template_pair(
+        _analysis(source=True),
+        target,
+        ReferenceArchetype.LOOP_BUILD_COHERENT_HANDOFF,
+        source_track_id="source-hash",
+        target_track_id="target-hash",
+        source_duration_sec=62,
+        target_duration_sec=62,
+    ).instance
+    assert instance is not None
+    inputs = replace(_render_inputs(), target_analysis=target)
+    rendered = render_reference_template(instance, inputs, time_fit_backend="scipy")
+    tail = rendered.provenance["fx_tail"]
+    assert tail["fx_tail_end_sec_relative_landing"] <= (
+        tail["target_vocal_onset_sec_relative_landing"] - tail["tail_margin_before_target_vocal_sec"]
+    )
+
+
 def test_catalog_documents_every_requested_archetype_constraint():
     assert set(ARCHETYPE_DEFINITIONS) == set(ReferenceArchetype)
     for definition in ARCHETYPE_DEFINITIONS.values():
@@ -224,3 +252,66 @@ def test_catalog_documents_every_requested_archetype_constraint():
         assert definition.failure_conditions
         assert definition.variable_parameters
         assert definition.fixed_parameters
+
+
+def _assessment(archetype, source=None, target=None):
+    return assess_reference_template_pair(
+        source or _analysis(source=True),
+        target or _analysis(source=False),
+        archetype,
+        source_track_id="source-hash",
+        target_track_id="target-hash",
+        source_duration_sec=62,
+        target_duration_sec=62,
+    )
+
+
+def test_pair_assessment_is_deterministic_and_is_not_an_audition_result():
+    first = _assessment(ReferenceArchetype.LOOP_BUILD_COHERENT_HANDOFF)
+    second = _assessment(ReferenceArchetype.LOOP_BUILD_COHERENT_HANDOFF)
+    assert first == second
+    assert first.eligible is True
+    assert first.fit_score > 0
+    assert first.instance is not None
+    assert "target_vocal_onset_sec_after_landing" in first.evidence
+    assert first.evidence["source_cue_bass_ratio"] == pytest.approx(.31)
+    assert first.evidence["target_bass_change_at_landing"] > 0
+    assert first.evidence["phrase_compatibility"]["target_runway_and_body_are_adjacent"] is True
+    assert "audition" not in first.to_dict()
+
+
+def test_loop_build_pair_rejects_target_vocal_at_landing():
+    target = replace(_analysis(source=False), vocal_regions=[(29.5, 35.0)])
+    result = _assessment(ReferenceArchetype.LOOP_BUILD_COHERENT_HANDOFF, target=target)
+    assert result.eligible is False
+    assert "target vocal begins at landing" in " ".join(result.rejection_reasons)
+    assert result.fit_score == 0
+
+
+def test_reset_pair_requires_hook_space_reset_need_and_landing_lift():
+    source = replace(_analysis(source=True), vocal_regions=[(40.0, 44.0)], bpm=160, camelot="1A")
+    target = replace(_analysis(source=False), bpm=100, camelot="7B")
+    accepted = _assessment(ReferenceArchetype.RESET_RELEASE, source=source, target=target)
+    assert accepted.eligible is True
+    rejected = _assessment(
+        ReferenceArchetype.RESET_RELEASE,
+        source=replace(source, vocal_regions=[]),
+        target=target,
+    )
+    assert "lacks a recognizable vocal/hook capture" in " ".join(rejected.rejection_reasons)
+
+
+def test_restrained_pair_rejects_large_groove_difference():
+    source = replace(
+        _analysis(source=True),
+        groove_profile={"onbeat_fraction": 0.0, "syncopation_index": 0.0, "percussion_density_mean": 0.0},
+        camelot="8A",
+    )
+    target = replace(
+        _analysis(source=False),
+        groove_profile={"onbeat_fraction": 1.0, "syncopation_index": 1.0, "percussion_density_mean": 1.0},
+        camelot="8A",
+    )
+    result = _assessment(ReferenceArchetype.RESTRAINED_OWNERSHIP_BLEND, source=source, target=target)
+    assert result.eligible is False
+    assert "groove difference" in " ".join(result.rejection_reasons)

@@ -267,3 +267,28 @@ The `NO` above is deliberate: reverse sweep/cymbal passed deterministic synthesi
   `/tmp/djenius_reference_dj_transition/automated/`, including
   `REFERENCE_AUTOMATION_MANIFEST.json`. Metrics are diagnostic only; the gate
   remains manual F/C3/B8/D2 versus AUTO_F/AUTO_C3/AUTO_B8/AUTO_D2 listening.
+
+## Reference-backed cross-pair generalization gate
+
+- The user passed all four same-pair automated reproductions: AUTO_F was best
+  and genuinely enjoyable; AUTO_C3 was good with clear DJ work; AUTO_B8 was
+  acceptable and well beyond generic AutoDJ behavior; AUTO_D2 was good for
+  its restrained role.
+- Analysis-only eligibility scanned all **196 ordered pairs per archetype** in
+  a 14-track private real library. After self-pair and original-pair exclusion,
+  counts `(selected / eligible-not-selected / rejected)` were F `2/60/134`,
+  C3 `2/10/184`, B8 `2/3/191`, and D2 `2/9/185`.
+- Exactly eight unique new pairs were rendered. All files are stereo 44.1 kHz
+  PCM24, finite, and free of clipped samples; a second complete render
+  reproduced all eight SHA-256 hashes exactly. Private identities and detailed
+  evidence remain in `generalization/GENERALIZATION_MANIFEST.json`.
+- Structural checks prove adjacent natural target master for F, one shared
+  multichannel target clock for C3/B8/D2, explicit bass ownership and target
+  establishment, uninterrupted B8 loop state, and bounded effect tails.
+- The new pairs exposed and fixed a sample-quantization defect: B8's hard
+  pre-vocal tail endpoint now rounds inward and therefore cannot overrun its
+  20 ms margin by nearest-sample rounding.
+- Focused suite: **19 passed**. Complete regression: **1121 passed in 82.55s**
+  with the same two dependency deprecation warnings. These measurements prove
+  deterministic execution and rule enforcement, not perceptual success; the
+  eight-file human listening gate is pending.

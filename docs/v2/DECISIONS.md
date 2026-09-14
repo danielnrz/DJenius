@@ -227,3 +227,11 @@
 ## D052 - Reference templates own a coherent target clock and explicit tail contract
 **Decision:** every beatmatched reference template renders its target master and participating stems together through one multichannel timing/stretch operation spanning runway and postlanding material. Source effects crossing landing retain their buffer state and declare an auditable endpoint; other templates must clear their effect before landing.
 **Why:** the B7/B8 investigation proved that independently stretched target material and restarted source-loop state were audible renderer defects. They are permanent invariants, not optional artistic parameters.
+
+## D053 - Generalization eligibility is explicit and analysis-only
+**Decision:** each explicitly requested reference archetype may reject a source/target pair as `NOT SUITABLE` using deterministic TrackAnalysis evidence and archetype-specific hard rules. A transparent fit value may order feasible pairs for a bounded human experiment, but it is not an Audition Lab/perceptual score and cannot choose the archetype or assert sound quality.
+**Why:** forcing every choreography onto every pair would erase the musical conditions that made the references work. Keeping feasibility/context screening separate from rendered-audio judgment lets human outcomes become honest future eligibility evidence without prematurely restoring autonomous selection.
+
+## D054 - Hard effect-tail bounds round inward at sample conversion
+**Decision:** when an effect must end before a content event by a fixed margin, its continuous-time endpoint converts to a sample with `floor`, never nearest-sample rounding. The quantized endpoint may be slightly early but may not cross the declared bound.
+**Why:** the first new B8-style pair exposed a few-microsecond tail overrun caused solely by rounding. A hard target-vocal exclusion margin is a safety invariant, so sample quantization must preserve it directionally.

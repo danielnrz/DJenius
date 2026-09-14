@@ -4,10 +4,11 @@
 
 This layer converts one explicitly requested, human-approved performance
 archetype into an analysis-anchored `PerformanceRecipe` and an executable
-performance description. It answers only: **can automation reproduce the
-approved behavior on the approved pair?** It does not choose an archetype and
-is not connected to Candidate Composer, Audition Lab policy, Set Director, the
-UI, or full-set rendering.
+performance description. The same-pair reproduction gate has passed human
+listening; the current question is whether analysis-only eligibility can place
+that approved behavior on new pairs. The layer still does not choose an
+archetype and is not connected to Candidate Composer, Audition Lab policy, Set
+Director, the UI, or full-set rendering.
 
 The implementation entry point is
 `instantiate_reference_template(source, target, archetype, ...)`. Cue times
@@ -16,9 +17,8 @@ regions; the templates contain no approved-reference timestamps. The private
 same-pair driver records the independently known manual anchors only for the
 comparison manifest.
 
-The current gate is human listening of each frozen manual reference against
-its automated reconstruction. Generalization and autonomous selection remain
-prohibited until that gate passes.
+The current gate is human listening of exactly two new private real pairs per
+archetype. Autonomous selection remains prohibited until that gate passes.
 
 ## Frozen human reference set
 
@@ -31,6 +31,19 @@ prohibited until that gate passes.
 
 These private files must never be overwritten. The private reproduction
 driver verifies every hash both before and after rendering.
+
+## Frozen automated reference set
+
+| Human result | File | SHA-256 |
+|---|---|---|
+| best; genuinely enjoyable | `AUTO_F.wav` | `13c3691cf81b40467d8adce0c9cf2408206199500554648ef29ae32584ab6f2b` |
+| good; DJ work clearly audible | `AUTO_C3.wav` | `0c89bb5f9024baacdb419556f2fbd8c4a1b60099b13a26a0dcc9738b16426a32` |
+| acceptable; beyond generic AutoDJ behavior | `AUTO_B8.wav` | `f6ff0d862739e8c0b71993d3fc5ba1b4eb8a73468354d59f2f525ce747c5e3b1` |
+| good for restrained/effect role | `AUTO_D2.wav` | `ab2dbd9156eb18b3c450495ffab8b21060841abe430e23d38f7b9340fc532634` |
+
+These are also immutable regression-listening references. The generalization
+driver verifies the full eight-file manual/automated hash set before and after
+rendering; the same-pair reproduction driver protects the manual set.
 
 ## Permanent structural invariants
 
@@ -201,5 +214,25 @@ Private outputs and the complete machine-readable comparison are in:
 The manifest records frozen/manual and automated hashes, analysis-derived cue
 differences, bar-relative action schedules, bass ownership, target stream/time
 map, tail lifetime, target-establishment period, renderer provenance, and
-technical audio measurements. Those measurements protect execution; only the
-manual-vs-automated human listen can pass this gate.
+technical audio measurements. The user passed this same-pair reproduction gate
+on 2026-09-15.
+
+## Cross-pair generalization evidence
+
+`assess_reference_template_pair(...)` now returns deterministic, explainable
+analysis-only evidence plus either an instantiated template or explicit
+`NOT SUITABLE` reasons. It checks the template's structural feasibility and
+archetype-specific cue context: phrase/downbeat bounds, BPM/stretch, global
+key relation, groove descriptors, source/target energy, cue-local bass ratio,
+vocal windows/onset, section density, and stem presence/activity. Its
+`fit_score` only orders plausible pairs for this bounded experiment; it is not
+an Audition Lab score or a claim of perceptual quality.
+
+The private generalization output and full manifest are in:
+
+`/tmp/djenius_reference_dj_transition/generalization/`
+
+The manifest includes eight selected new real pairs, every instantiated
+action/anchor/adaptation, and all rejected or eligible-but-not-selected pairs.
+The user must listen before any result is called successful or exposed to
+autonomous planning.

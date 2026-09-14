@@ -186,3 +186,23 @@ passes at 1116. This layer is deliberately not wired into Candidate Composer,
 Audition Lab selection, Set Director, UI, or full-set rendering. New-pair
 generalization and those integrations remain prohibited until the user passes
 the same-pair listening gate.
+
+The user passed that same-pair gate on 2026-09-15. The immediate follow-up is
+the bounded cross-pair generalization gate, not autonomous integration:
+
+- deterministically assess all private ordered pairs for one explicitly named
+  archetype using BPM/stretch, phrase/downbeat, global harmonic, groove,
+  energy, cue-local bass, vocal, arrangement, and stem evidence;
+- return explicit `NOT SUITABLE` reasons rather than force choreography;
+- select exactly two new pairs per archetype, excluding original reference
+  pairs, and retain every rejection plus every feasible non-selection;
+- render exactly eight private transitions while preserving the fixed
+  reference choreography and structural renderer invariants;
+- stop for human listening before changing Candidate Composer, Audition Lab,
+  Set Director, UI, personalization, or full-set behavior.
+
+Delivered: the analysis-only suitability layer, eight deterministic new-pair
+renders, and the private `GENERALIZATION_MANIFEST.json`. A concrete
+sample-rounding tail-bound edge case found during rendering is fixed with
+focused regression coverage. Focused tests pass at 19; full regression passes
+at 1121. Human judgment of the eight files is now the only active gate.
