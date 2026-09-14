@@ -1,5 +1,152 @@
 # DJenius V2 Active Handoff
 
+## B8 RESIDUAL FIX — READY FOR B7-vs-B8 HUMAN LISTENING
+2026-09-14. Residual-error forensics is complete. Exactly one new user-facing
+render exists:
+
+- private file: `/tmp/djenius_reference_dj_transition/B8_RESIDUAL_FIX.wav`
+- SHA-256: `47824cc9b923c708f261c7d3db82e46e2f910fec47b802111bcd26c1c5aa1205`
+- format: stereo 44.1 kHz PCM24, 40.0283 seconds
+- transition start: 7.9877 seconds; landing: 24.0065 seconds
+- focused two-bars-before/four-bars-after interval: approximately
+  20.0127–31.9942 seconds
+- integrated loudness: -14.134 LUFS; sample peak: 0.751554; clipped samples: 0
+- deterministic rerender produced the same SHA-256
+
+### Residual diagnosis
+
+The B7 renderer corrections remain valid and are retained. No new hard DSP
+splice, mastering reset, target gain reset, or sample-level click was found:
+
+- The B7 shared-clock stem sum still reconstructs its target master with
+  0.999662 correlation and 0.026310 RMS residual ratio.
+- In the isolated target-only render, the half-bar landing change is only
+  -0.354 dB full-band, -0.762 dB below 155 Hz, and +0.744 dB above 3 kHz.
+- B7's landing-local maximum sample delta is only 0.531 times its global
+  99.9th-percentile delta. C3 is 0.624 times; neither landing is an anomalous
+  click/transient.
+- B7 uses one fixed global gain and one memoryless soft clip across the whole
+  file. Its only postlanding deck ramp is the already-declared target master
+  gain from 0.88 to 1.0 over 0.62 bar.
+
+The remaining defect is therefore choreography/tail-state, with two measured
+parts:
+
+1. **False bass/energy event before the real landing.** B7 previewed four bars
+   of the target's low-frequency cue material. The fourth preview bar contains
+   an internal pocket: its four low-band quarter-bars measured -31.310,
+   -33.375, -16.221, and -15.917 dBFS. Energy therefore collapses, returns
+   strongly half a bar early, and then falls again onto the nominal landing.
+   C3's successful handoff uses the same cue but a stable two-bar target-low
+   cadence and does not expose that four-bar pocket at this location.
+2. **Wrong outgoing-FX frequency/lifetime handoff.** B7's isolated target gains
+   0.744 dB above 3 kHz at landing, but the full B7 loses 5.486 dB from the
+   final prelanding quarter-bar to the first postlanding quarter-bar. The
+   difference is the outgoing riser: it reaches its peak at the boundary and
+   has no wet release. Meanwhile the rhythmic source loop remains in the
+   520–5200 Hz lead/vocal range until 1.5576 seconds after landing. The first
+   annotated target vocal begins at 0.6802 performed seconds, leaving 0.8774
+   seconds of unnecessary rhythmic/midrange overlap. Its onset-envelope
+   correlation with the target drums is only 0.105 (best lag -29.0 ms), so the
+   overlap is not reinforcing the target groove.
+
+The target cue itself is retained. It is the same cue used by successful C3.
+It is one bar after the detected drop boundary by deliberate design: the
+classifier's first drop bar is 98.7% vocal-active and has a weak first-quarter
+drum onset (0.368), whereas the current cue has a strong first-quarter onset
+(3.310), substantially less vocal coverage (62.0%), and stable raw full/low
+energy across its four-bar loop boundary (-0.28/+0.17 dB). Nearby cues either
+lose downbeat strength, have more vocal coverage, or sit much deeper inside
+the phrase. There is no evidence-based reason to move it for B8.
+
+The immediate full-target reveal is also retained. The private staged-target
+counterfactual made the half-bar high-band loss worse (-7.805 dB), while the
+actual target-only reveal rises +0.744 dB. The staged reconstruction still
+differs from the full master (first-bar correlation 0.98835, residual ratio
+0.16086, full master 4.27 dB brighter above 3 kHz), but that difference is
+helping replace outgoing spectrum rather than causing the residual failure.
+
+Target playback is not one linear deck stream in B7: target drop drums/low are
+previewed as a four-bar loop, intro other/vocal run linearly into the cue, and
+the full master starts at the cue on landing. C3 uses the same four-bar drum
+restart successfully, so this is a declared choreography choice rather than a
+remaining renderer defect. F alone uses adjacent natural-tempo target-master
+slices throughout.
+
+### C3/F control comparison
+
+- B7 introduces target drum air at bar 1, body at 3.5, low at 5.3 (material by
+  5.65), and target vocal at 5.2 (material by 5.6); full spectrum appears at
+  bar 8. Its final bar has eight simultaneously moving source/target layers,
+  and its source loop originally survived 0.78 bar after landing.
+- C3 introduces target rhythm at bar 0, target low at bar 4 (material by 4.5),
+  withholds target vocal until the postlanding master, and reaches full
+  spectrum at bar 8. Its four-layer final-bar handoff settles target gains to
+  drums 0.90 / low 1.00 / upper 0.88, and its final source echo ends 0.2392
+  seconds before landing.
+- F has only two concurrent reset actions: one linear target-context fade over
+  1.9273 seconds and one decaying source-vocal echo sequence. Its last echo
+  ends 0.0412 seconds before landing; adjacent raw target master supplies the
+  landing. F's large energy rise is therefore a promised reset, unlike B7's
+  unintentional prelanding bass pocket/rebound.
+
+### Private diagnostic renders
+
+All use exact B7 timing and cover two bars before through four bars after the
+landing. They are forensic tools, not DJ candidates:
+
+- `DIAG_SOURCE_TAIL.wav` — processed outgoing source only
+- `DIAG_TARGET_PRELAND.wav` — target contribution before landing only
+- `DIAG_TARGET_POSTLAND.wav` — target contribution after landing only
+- `DIAG_TARGET_CONTINUOUS.wav` — target across the boundary, no source
+- `DIAG_SUM_NO_SOURCE_FX.wav` — B7 with outgoing FX suppressed
+- `DIAG_SUM_NO_TARGET_FULL_REVEAL.wav` — staged target retained after landing
+
+`DIAG_SUM_NO_SOURCE_FX` and `DIAG_TARGET_CONTINUOUS` are intentionally
+sample-identical in the focused window: by two bars before landing, B7 has no
+remaining dry source, only its loop/riser/tail effects. Machine-readable
+evidence is in private `B7_RESIDUAL_DIAGNOSTICS.json` and
+`B7_C3_F_RESIDUAL_COMPARISON.json`.
+
+### Exact B8 correction and regression evidence
+
+B8 changes only the smallest set supported by those controls:
+
+1. The target cue, full reveal, landing, gains, and B7 shared-clock renderer
+   stay fixed. Only the target-low preview uses the same cue's stable two-bar
+   cadence instead of exposing its four-bar internal pocket.
+2. B7's uninterrupted rhythmic loop state is preserved through landing, then
+   released by 0.6602 seconds — 20 ms before the performed target-vocal onset
+   — instead of continuing 0.8774 seconds into that vocal.
+3. A band-limited, diffuse wet residue derived from the existing riser carries
+   only its >3 kHz release across landing and decays at the same pre-vocal
+   endpoint. No unrelated impact or new musical event was added.
+
+The B8 final-bar low quarter-bars are now -16.669, -16.791, -16.599, and
+-16.211 dBFS. The landing high-band quarter-step improved from -5.486 dB in B7
+to -2.745 dB. The landing-local sample delta is 0.194494, below the file's
+0.280035 global 99.9th-percentile delta, so the wet release did not create a
+click-like seam transient. B8 preserves B7 up to the source release scope,
+contains finite audio, and has no clipping.
+
+**STOP/GATE:** compare only `B7_FIXED_BOUNDARY.wav` against
+`B8_RESIDUAL_FIX.wav`. Human listening decides whether the already-good source
+move now flows into TRACK_B as one intentional performance. Do not produce B9,
+resume automation/UI/Set Director, create another transition family, or render
+a full mix before that verdict.
+
+## B7 HUMAN VERDICT — STRUCTURAL FIXES VALIDATED; RESIDUAL LANDING FORENSICS ACTIVE
+2026-09-14. The user compared `B6_LANDING_3` with
+`B7_FIXED_BOUNDARY` and judged B7 **definitely and significantly better**.
+This validates that the shared target time-map and uninterrupted source-loop
+state fixes below were real and audible; preserve them permanently. The core
+perceptual complaint nevertheless remains: the transition into TRACK_B is
+still not fully convincing, smooth, or DJ-like. Do not declare success, revert
+B7, resume automation/UI/Set Director/full mixes, or guess B8 parameters.
+
+That task is complete in the B8 section above; B7 remains the frozen comparison
+baseline and its renderer fixes must not be reverted.
+
 ## STRUCTURAL LANDING-BOUNDARY INVESTIGATION — B7 READY FOR HUMAN LISTENING
 2026-09-14T17:32:26Z (fresh Codex recovery after the prior thread-store
 failure).
