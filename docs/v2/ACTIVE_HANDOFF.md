@@ -1,5 +1,59 @@
 # DJenius V2 Active Handoff
 
+## GOLD-REFERENCE ROUND 2 — A2 THROUGH F READY FOR HUMAN LISTENING
+2026-09-14T13:08:26Z (Codex/GPT-5.6 Sol). The user listened to the first
+handcrafted A/B/C package and gave the first positive performance verdict:
+all three sounded noticeably more like real DJing and were much better than the
+autonomous mixes. They are promising, not finished or frozen. Per explicit
+instruction, all Set Director, Candidate Composer, Audition Lab, UI, broad
+architecture, and autonomous work remains paused.
+
+The updated private package remains at:
+
+`/tmp/djenius_reference_dj_transition/`
+
+New listening files are `REFERENCE_A2.wav`, `REFERENCE_B2.wav`,
+`REFERENCE_C2.wav`, `REFERENCE_D.wav`, `REFERENCE_E.wav`, and
+`REFERENCE_F.wav`. `REFERENCE_NOTES.json` has been replaced with the requested
+anonymous bar-level choreography, selection rationale, listening timestamps,
+changes from A/B/C, bass ownership, FX, and safety diagnostics. The original
+A/B/C files remain available. `GOLD_REFERENCE_DIAGNOSTICS.png` and
+`render_gold_references.py` are private reproducibility aids. No private track
+filename or identity appears in the notes or Git.
+
+Round-2 strategies are intentionally different:
+
+- **A2** refines A into a real three-band blend: target highs first, mids later,
+  a one-beat bass handoff, and ordered source release. No decorative FX.
+- **B2** preserves the foreground `4 -> 2 -> 1 -> 1/2 beat` source loop, then
+  deliberately removes low-end/drums during the final build pocket so the
+  target drop and bounded impact have space to land.
+- **C2** preserves the rhythmic stem/mashup identity but replaces overlapping
+  half-bar echo chunks with one selected vocal transient and four discrete,
+  beat-spaced, progressively darker alternating-stereo post-fader taps.
+- **D** uses a different, adjacent-key/close-tempo pair for a patient 12-bar EQ
+  blend. Instrumental frequency ownership develops first; source and target
+  vocals hand off after the bass switch instead of colliding.
+- **E** uses another pair with near tempo compatibility but deliberately
+  incompatible keys. Only high-passed target drums are teased; bass, melody,
+  and vocals remain out until a tight phrase-release pocket and hard full-drop
+  landing. It is not a harmonic crossfade.
+- **F** uses a compatible-key pair with radically different tempos. It refuses
+  forced beatmatch: the source completes four natural-tempo bars, a captured
+  vocal echoes post-fader through a roughly two-second beatless reset, the
+  target intro enters at natural tempo, and its verse lands after the echo has
+  cleared.
+
+Private iteration rejected three defects before this checkpoint: D initially
+lost too much body because its instrumental intro was quieter than its landing;
+E initially left about half a second of dead air; F initially included two
+seconds of genuinely silent target intro. The final renders correct those
+decisions. All six are stereo 44.1-kHz PCM-24, have no clipped samples, no
+accidental silence, and click-safe landing seams. The intentional low-end paths
+are continuous in A2/C2/D, removed only for the designed buildup/cut/reset in
+B2/E/F. Human listening remains the only acceptance gate. Stop here; do not
+extract templates or return to automation until the user judges A2-F.
+
 ## PERFORMANCE RESET — HANDCRAFTED REFERENCE #1 READY FOR HUMAN LISTENING
 2026-09-14T12:36:51Z (Codex/GPT-5.6 Sol). The user's new authority explicitly
 pauses autonomous-planner, scoring, set-level, UI, and broad architecture work.
