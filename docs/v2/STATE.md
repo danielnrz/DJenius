@@ -40,11 +40,11 @@ full mixes remain out of scope.
 ## CURRENT BRANCH
 `v2-professional-autonomous-dj`
 
-## LATEST PERFORMANCE-RECOVERY COMMIT
-`5571b573ae9c8e6e17333c9a387bb0d253271517` - "Add reference-backed DJ
-performance templates". It contains the explicitly selected template and
-renderer layer, regression coverage, durable archetype contract, and private
-same-pair output metadata. It was pushed to
+## LATEST REFERENCE-AUTOMATION COMMIT
+`2c6574483ed52dbc40ac19704f3f2b74d7bcef57` - "Add reference template
+generalization gate". It contains analysis-only pair suitability/rejection,
+the sample-safe tail-bound fix, regression coverage, and durable private
+generalization evidence. It was pushed to
 `origin/v2-professional-autonomous-dj`; resolve the current tip from Git rather
 than treating this field as immutable.
 
