@@ -1,5 +1,94 @@
 # DJenius V2 Active Handoff
 
+## STRUCTURAL LANDING-BOUNDARY INVESTIGATION — B7 READY FOR HUMAN LISTENING
+2026-09-14T17:32:26Z (fresh Codex recovery after the prior thread-store
+failure).
+Repository authority was read in the required order, including the complete
+research specification and implementation plan. After an approved
+`git fetch`, local HEAD and `origin/v2-professional-autonomous-dj` both resolve
+to `93bbc327dded3da74498de04bd54c9ed57161779`. The tracked worktree and index
+are clean; the pre-existing untracked `.claude/` directory remains untouched.
+
+The latest human verdict supersedes the listening-ready stop instruction below:
+`B6_LANDING_3` was the best B6 treatment, but still exposes a discontinuous
+handoff boundary; `B6_LANDING_2` improved the landing but dropped the source
+effect too abruptly; `B6_LANDING_1` was poor when its source-side effect tried
+to connect to TRACK_B. Autonomous planning, UI, long mixes, and new transition
+families remain paused.
+
+The requested trace is complete. A crucial provenance finding is that the B6
+manual R&D files do **not** travel through `PerformanceRecipe`, recipe
+compilation, `PerformanceTransition`, `apply_transition`, Audition Lab, or the
+Set Director/full-set renderer. Their actual path is `prepare_material` ->
+direct stem/full-mix/loop envelopes -> a 128-sample (2.902-ms) manual splice ->
+one fixed whole-file gain/soft-clip pass. No recipe/compiler/production-DSP
+state exists to reset in B6, and patching those production modules would not
+change the controlled artifact.
+
+Exact structural diagnosis:
+
+- The B6 source tail is **not truncated at landing**. It measures about
+  -24.19 dBFS over the last half-beat before landing, -28.60 dBFS over the
+  first half-beat after it, and reaches about -65.07 dBFS in its final 50 ms
+  before becoming exactly zero at its declared 0.78-bar endpoint.
+- It nevertheless has a real lifetime defect 0.219 bar before landing: B4's
+  active one-beat loop buffer ends on a nonzero sample, then B6 creates a new,
+  differently filtered buffer whose first sample is exactly zero and fades it
+  back in. The old last-sample-to-new-first-sample component delta is
+  `0.05433497`; the following 50-ms full level rises by 4.33 dB. Thus B6_3's
+  apparent continuation is actually teardown/restart.
+- The primary target defect is stronger. Raw target stems reconstruct their
+  master correctly (`corr=0.999646`, residual/master RMS `0.02689`). The lab
+  then launches separate adaptive FFmpeg `atempo` jobs for the master and each
+  stem/interval. After that independent processing, the reconstructed stems
+  correlate only `0.302336` with the separately processed master and their
+  residual is `1.17845` times the master RMS. The transition therefore changes
+  from independently stretched intro stems plus repeated target-drop
+  drum/low buffers to a separately stretched mastered full mix at landing.
+  It is phase-cued, but it is not one coherent rendered target deck.
+- B6_3 exposes both defects because it asks one perceptual gesture to cross the
+  splice while target ownership also changes there. Across the landing
+  half-seconds it changes +0.85 dB full-band, +2.25 dB below 155 Hz, and
+  -5.55 dB above 3 kHz. The 128-sample guard prevents a digital click but
+  cannot preserve filter/time-stretch state or make incoherent buffers equal.
+- C3 uses the same underlying manual target reconstruction and therefore masks,
+  rather than disproves, that renderer defect. Its choreography has target
+  rhythm/low ownership established before landing and its source echo is
+  already clearing, so its half-second full/low/mid movements stay roughly
+  -0.47/-0.98/+0.91 dB. F avoids the defect: its target intro and target body
+  are adjacent samples from one natural-tempo master at one trim, while the
+  source echo has completed its separate reset role before the target downbeat.
+- There is no boundary-local mastering change in B6: all material receives the
+  same fixed gain `0.556776515` and one memoryless soft-clip pass. The observed
+  change is upstream buffer/state reconstruction, not mastering.
+
+Classification: the demonstrated fault is in the **private manual renderer's
+buffer/time-map lifetime**, amplified by B6's choreography. It is not evidence
+of a `PerformanceRecipe`/`apply_transition` production defect because those
+paths are absent from this render. The smallest correct fix was therefore made
+in the private controlled renderer only: the target master and all landing
+stems are now processed together once as a ten-channel bundle under one shared
+time map, and the active source loop is transferred through a 12-ms state
+handoff into one phase-continuous post-landing tail rather than restarted.
+Autonomous production code remains unchanged and paused.
+
+Exactly one controlled output was rendered:
+
+- `/tmp/djenius_reference_dj_transition/B7_FIXED_BOUNDARY.wav`
+- SHA-256 `88ef7b56c481bd210aab2dcf3a4d06ca82e0cf466f33c2fab9f6caf915c8b19a`
+- stereo 44.1-kHz PCM-24, 40.0283s, peak `0.644854`, zero clipped samples
+- transition 16.0218s; landing unchanged at 24.007s
+- shared-clock target reconstruction `corr=0.999662`, residual ratio `0.02631`
+- source buffer handoff delta reduced from `0.05433497` to approximately
+  `1.86e-9`; tail duration/envelope remains B6_3's 0.78-bar design
+- deterministic rerender reproduced the exact B7 SHA-256 above; all frozen
+  B6_3/C3/F/B4/D2/B5_TARGET_2 hashes remain unchanged
+
+Private reproducibility/diagnosis files are `render_b7_fixed_boundary.py` and
+`diagnose_boundary_structure.py`; `REFERENCE_NOTES.json` contains the B7
+control and measurements. This is engineering evidence only. Stop for the
+human B6_3-vs-B7 listening gate; do not create B8 or resume automation.
+
 ## LANDING MICRO-LAB — B6 LANDING 1/2/3 READY FOR HUMAN LISTENING
 2026-09-14T14:31:46Z (Codex/GPT-5.6 Sol). Latest human verdict is now the
 authority: B5_TARGET_2 is the winning target-entry direction and is frozen as
