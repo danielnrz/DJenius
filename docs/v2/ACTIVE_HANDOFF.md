@@ -1,5 +1,68 @@
 # DJenius V2 Active Handoff
 
+## MUSICAL-CAUSALITY ROUND — A4/B4/E3 READY; C3/D2/F PRESERVED
+2026-09-14T13:53:01Z (Codex/GPT-5.6 Sol). Latest human verdict is now the
+authority: F remains the strongest gold reference; C3 is newly successful and
+must not be redesigned; D2 is acceptable as the restrained/smooth category;
+A3 still sounded like source -> unrelated effect -> target; B3's concept worked
+but remained mechanical; E2 still sounded like an unearned total replacement.
+Automation and all broad product work remain paused.
+
+New private listening files in `/tmp/djenius_reference_dj_transition/`:
+
+- `REFERENCE_A4.wav` — SHA-256
+  `14eb04318b6cd695e347e70e05693b0fdf1d458835c87ffed6b69f906eed5db7`
+- `REFERENCE_B4.wav` — SHA-256
+  `9060240f5aedd8d8a185f447d82eaa9279b099e64d2a08ea20d8b67ffee20a07`
+- `REFERENCE_E3.wav` — SHA-256
+  `919cb480ad169fd828b69f7209abd19c34863569730b09f18f72743597447158`
+
+Successful/acceptable files were frozen before rendering and remain
+byte-identical afterward: C3
+`ecdd7b694a3d9f5100f02e3aa62df0ec68cb90e874de1b863eec846a8a8eff03`,
+D2 `5c1f72c9ae6edff9c7e51c0f6386f15abb72455a8421561cf242ef4864ade586`,
+and F `947a1a2556efb6e1d6b6ffd3ebb9c16c851d3d97bdd5026b57ec3bd5f1056f48`.
+No C4 was created because no single certain micro-polish justified altering the
+successful C3.
+
+Root causes and fixes:
+
+- **A4:** A3 already used the target's real drums, but kept the target's most
+  recognizable pre-drop material—its vocal runway—out of the bridge. The
+  percussion was related by provenance but anonymous to the listener. A4 first
+  hands rhythmic ownership toward the target, clears the source vocal, then
+  introduces the target's actual final intro vocal before delaying the two-beat
+  bass swap until the target groove has been accepted. The landing completes a
+  target identity already heard; no generated effect was added.
+- **B4:** seam study across source motif candidates selected bar 2, which had
+  the smallest boundary discontinuity and most even quarter-beat energy. B3's
+  crossfaded simultaneous loop states could create phasing/flams even under
+  smooth envelopes. B4 uses one phase-anchored motif with only sequential
+  4-beat -> 2-beat -> 1-beat states. Halvings occur at the shared loop start;
+  the half-beat flourish and synthetic impact remain removed; riser entrance
+  starts at zero and the bass pocket is shorter.
+- **E3:** the E/E2 pair was judged wrong for the technique: incompatible keys
+  required hiding all target identity except drums, guaranteeing sudden total
+  replacement. E3 uses a different exact-key pair with an eight-bar low-energy
+  target runway into a stronger section. Target intro highs/mids/drums enter
+  before the cut; source drums/vocal/harmony/bass clear sequentially; one short
+  source-vocal throw marks release; target vocal lightly foreshadows identity;
+  target bass remains reserved for the landing. A rejected first private E3
+  render exposed another issue: the intro was about 5 dB quieter than the source
+  and much quieter than its own landing, leaving preparation theoretical. The
+  final E3 uses an intro-only deck return so target material becomes dominant in
+  the final bar and the landing adds full range rather than the entire song.
+
+`REFERENCE_NOTES.json` contains exact prior-version changes, causal rationale,
+bar-level choreography, bass ownership, listening times, preservation hashes,
+and private safety diagnostics. `render_remaining_round.py` and
+`REMAINING_ROUND_DIAGNOSTICS.png` are private reproducibility/QA aids. A4/B4
+transitions begin at 7.988s and land at 24.007s; E3 begins at 7.384s and lands
+at 22.172s. All three WAVs are stereo 44.1-kHz PCM-24 with no clipped samples;
+loop edit/landing deltas remain below ordinary high-percentile musical
+transients. Human listening remains the only acceptance gate. No production
+code changed. Stop here.
+
 ## SMOOTHNESS ROUND — A3/B3/C3/D2/E2 READY; F FROZEN AS GOLD
 2026-09-14T13:28:28Z (Codex/GPT-5.6 Sol). The user listened to every manual
 reference through A2-F. Human verdict: A2/B2/C2 improved their predecessors but
