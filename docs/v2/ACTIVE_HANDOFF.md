@@ -1,5 +1,72 @@
 # DJenius V2 Active Handoff
 
+## SMOOTHNESS ROUND — A3/B3/C3/D2/E2 READY; F FROZEN AS GOLD
+2026-09-14T13:28:28Z (Codex/GPT-5.6 Sol). The user listened to every manual
+reference through A2-F. Human verdict: A2/B2/C2 improved their predecessors but
+still lacked effect integration/smoothness; D was too ordinary; E was rough;
+F was "REALLY GOOD" relative to the rest and is now the explicit gold
+reference. `REFERENCE_F.wav` was frozen before work and remained byte-identical
+after every render, SHA-256
+`947a1a2556efb6e1d6b6ffd3ebb9c16c851d3d97bdd5026b57ec3bd5f1056f48`.
+No F2 was made because no sufficiently certain micro-polish justified risking
+the approved reference.
+
+The new private human-listening files are under
+`/tmp/djenius_reference_dj_transition/`:
+
+- `REFERENCE_A3.wav`
+- `REFERENCE_B3.wav`
+- `REFERENCE_C3.wav`
+- `REFERENCE_D2.wav`
+- `REFERENCE_E2.wav`
+- preserved `REFERENCE_F.wav`
+
+`REFERENCE_NOTES.json` now includes the exact prior-version deltas, why each
+change targets smoothness, transferable principles learned from F, bar-level
+choreography, bass ownership, listening timestamps, and diagnostics. The
+private reproducible script is `render_smoothness_round.py`; private visual QA
+is `SMOOTHNESS_ROUND_DIAGNOSTICS.png`. No private track filename or identity is
+present in Git or the notes.
+
+Transferable explanation for F's success: it tells one sequential story rather
+than stacking several actions; dry source, wet tail, target context, and target
+full-range entry occupy different perceptual roles; one track owns bass at a
+time; the wet signal comes from musical source material and decays into space;
+and the target begins establishing before its landing completes the direction.
+F's shorter duration helps because that pacing is coherent, not because
+echo/reset is intrinsically superior.
+
+Round changes:
+
+- **A3:** uses a four-bar phrase of the real target drums, split into air/body.
+  Target hats enter first, drum body waits for the two-beat bass handoff, and
+  source drums fade separately from source music. This directly addresses the
+  pasted-on percussion criticism without generated drums or louder FX.
+- **B3:** loop sizes/filters no longer switch as hard stages. Raised-cosine
+  crossfades overlap the 4/2/1/half-beat captures, the riser has a shaped
+  zero-level entry, the bass pocket is narrower, and the disconnected synthetic
+  impact is removed so the target's own transient is the payoff.
+- **C3:** preserves the human-liked repeat/echo character. Target drum material
+  is now a four-bar rather than two-bar repeat; drum/other/vocal/bass ownership
+  changes sequentially; taps have edge guards, progressive damping, and short
+  stereo diffusion. A too-dense first private render was rejected and reduced
+  before packaging.
+- **D2:** fixes D's root musical defect: its intro-derived target low band was
+  nearly empty, making the stated bass swap inaudible. D2 uses target landing
+  low-end and drums only after the swap, while high/mid/vocal ownership proceeds
+  in a deliberate 12-bar sequence. No decorative FX were added.
+- **E2:** retains the decisive phrase/drop cut but replaces the envelope cliff.
+  A four-bar native target drum phrase splits into air/body anticipation;
+  source low/mid/high release at separate times; musical energy remains until
+  the final fraction of a beat; no unrelated impact or FX masks the cut.
+
+All five new WAVs are stereo 44.1-kHz PCM-24 with zero clipped samples; landing
+crossfade deltas remain below ordinary high-percentile musical transients. This
+is safety evidence only—the user must decide whether they are musically smooth.
+No repository production code changed. Set Director, Candidate Composer,
+Audition Lab, UI, long mixes, and autonomous work remain paused. Stop at this
+human gate.
+
 ## GOLD-REFERENCE ROUND 2 — A2 THROUGH F READY FOR HUMAN LISTENING
 2026-09-14T13:08:26Z (Codex/GPT-5.6 Sol). The user listened to the first
 handcrafted A/B/C package and gave the first positive performance verdict:
