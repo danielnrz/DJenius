@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import numpy as np
+
 from djenius.core.intent import SetIntent
 from djenius.core.models import TrackAnalysis, TrackMetadata, TrackProfile, SemanticProfile
 from djenius.core.nl_parser import parse_request
@@ -224,3 +226,32 @@ def test_semantic_similarity_matrix_is_symmetric():
     matrix = semantic_similarity_matrix({"a": [1.0, 0.0], "b": [0.0, 1.0], "c": [1.0, 0.0]})
     assert matrix["a"]["b"] == matrix["b"]["a"]
     assert matrix["a"]["c"] > matrix["a"]["b"]
+
+
+def test_semantic_decoder_falls_back_when_librosa_returns_empty(monkeypatch):
+    import librosa
+    import soundfile
+
+    import djenius.audio.semantic as semantic
+
+    commands = []
+    monkeypatch.setattr(semantic, "_audio_duration", lambda _path: 8.0)
+    monkeypatch.setattr(
+        librosa, "load",
+        lambda *_args, **_kwargs: (np.asarray([], dtype=np.float32), 48_000),
+    )
+    monkeypatch.setattr(
+        soundfile, "read",
+        lambda *_args, **_kwargs: (np.ones(64, dtype=np.float32), 48_000),
+    )
+
+    def fake_run(command, **_kwargs):
+        commands.append(command)
+        return None
+
+    monkeypatch.setattr(semantic.subprocess, "run", fake_run)
+    analyzer = object.__new__(semantic.SemanticAnalyzer)
+    windows, clips = analyzer._audio_windows("mislabelled-aac.mp3")
+    assert len(windows) == len(clips) == 1
+    assert clips[0].size == 64
+    assert commands and commands[0].index("-i") < commands[0].index("-ss")

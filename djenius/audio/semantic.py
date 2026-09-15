@@ -199,19 +199,23 @@ class SemanticAnalyzer:
         for window in windows:
             start = window["start_sec"]
             length = window["end_sec"] - start
+            audio = np.asarray([], dtype=np.float32)
             try:
                 audio, _sr = librosa.load(
                     filepath, sr=SEMANTIC_SAMPLE_RATE, mono=True,
                     offset=start, duration=length,
                 )
             except Exception:
+                pass
+            if audio.size == 0:
                 # Keep semantic analysis aligned with the acoustic decoder
-                # fallback for AAC/M4A files with misleading extensions.
+                # fallback for AAC/M4A files with misleading extensions. Some
+                # decoders return an empty array instead of raising.
                 temporary = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
                 temporary.close()
                 try:
                     subprocess.run(
-                        ["ffmpeg", "-y", "-v", "error", "-ss", str(start), "-i", filepath,
+                        ["ffmpeg", "-y", "-v", "error", "-i", filepath, "-ss", str(start),
                          "-t", str(length), "-ar", str(SEMANTIC_SAMPLE_RATE), "-ac", "1",
                          "-f", "wav", temporary.name],
                         check=True, capture_output=True, timeout=120,

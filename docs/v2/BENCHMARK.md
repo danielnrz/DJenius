@@ -415,3 +415,26 @@ The `NO` above is deliberate: reverse sweep/cymbal passed deterministic synthesi
   continuous cursor/tail handling, finite output, and absence of clipping. It
   does **not** prove DJ quality, transition appropriateness, or set-flow
   success; those claims remain pending human listening of the one pilot.
+
+## Flow-aware joint set pilot 2
+
+- First-pilot forensic replay: old transition 1 now fails D2's explicit
+  source-launch/groove margin; old transition 2 fails HOLD rhythmic-role
+  continuity; old transition 3 fails PEAK role/energy-direction suitability.
+  The human-described affect contrast is retained as human evidence because
+  local semantic mood reliability did not clear `.55` on the relevant tracks.
+- The second pilot uses two independent hard-gate layers and a stateful
+  `OPEN -> HOLD -> PEAK -> RELEASE` trajectory. Anonymous mean energy is
+  `.750 -> .747 -> .770 -> .702`; frozen archetypes are `D2 -> F -> F`.
+  All three human-rejected first-pilot adjacencies and the exact old sequence
+  were excluded.
+- Continuous output: **264.977052 s**, stereo 44.1 kHz PCM24, sample peak
+  `.95`, clipping fraction `0`. Six exact natural/template boundary deltas are
+  `.010425/.073514/.076625/.080537/.056854/.050126`.
+- Excerpts are **33.131973 / 22.636553 / 31.018957 s** and are cut from the
+  final continuous render. All twelve frozen accepted-reference hashes were
+  verified unchanged.
+- Focused role/joint/template/semantic gate: **66 passed**. Complete
+  regression: **1154 passed in 88.07s**, with the same two Typer/Click
+  dependency warnings. Human listening remains the only evidence for whether
+  the second set's musical story and individual transitions succeed.

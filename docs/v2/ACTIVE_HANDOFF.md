@@ -1,5 +1,71 @@
 # DJenius V2 Active Handoff
 
+## JOINT SET PILOT 2 — COMPLETE; HUMAN GATE PENDING
+
+2026-09-15. The first pilot's set-story failure is now explicit. Its planner had
+no musical-role or short-term trajectory state, recorded genre/style as
+unavailable, and had no mood evidence. The existing local semantic analyzer did
+not clear its reliability floor for the human-described sad/bright contrast, so
+the implementation correctly preserves that as human listening evidence rather
+than fabricating an audio-model claim. Existing acoustic evidence did expose the
+problematic HOLD adjacency as a straight-driving to compound-or-halftime
+candidate change with a large tempo/groove-role discontinuity.
+
+`musical_role.py` now derives an interpretable energy, dance-function, rhythmic,
+vocal, optional reliable mood/style, and set-role profile. The joint planner
+maintains recent energy/function/rhythm/reliable-mood state, a declared phase,
+and an intentional-contrast budget. `PERFORMANCE_FEASIBILITY` and
+`SET_FLOW_SUITABILITY` are independent hard gates; relationships are disclosed
+as `COHERENT_CONTINUATION`, `INTENTIONAL_ENERGY_MOOD_SHIFT`, or
+`UNJUSTIFIED_DISCONTINUITY`, never one opaque score. The old pilot now rejects:
+
+- transition 1 because D2 no longer clears the source-launch/groove performance
+  margin;
+- transition 2 as an unjustified rhythmic-role discontinuity during HOLD;
+- transition 3 because the target cannot serve the requested PEAK role or energy
+  direction.
+
+Exactly one second pilot was rendered. Its anonymous energy path is `.750 ->
+.747 -> .770 -> .702`, with declared roles `OPEN -> HOLD -> PEAK -> RELEASE`
+and frozen archetypes `D2 -> F -> F`. All three first-pilot human-rejected
+adjacencies and the exact old sequence were hard-excluded. The repeated F was
+not forced for variety: it survived the performance and flow gates and expresses
+the peak and release actions. No renderer or frozen template choreography was
+changed.
+
+Private deliverables are in
+`/tmp/djenius_reference_dj_transition/joint_set_pilot_2/`:
+
+- `JOINT_SET_PILOT_2.wav` — 264.977052 s, stereo 44.1 kHz PCM24, SHA-256
+  `39bd32bf146c4fff2ce9f9ff002956daa253fea70a9b0bc988a9722d576a4dd4`;
+- `TRANSITION_01.wav` — D2, 33.131973 s,
+  `ebfc13f67e03f97002b26c3408fe7281f7ea3d9968f73ad51f29540c2523a53a`;
+- `TRANSITION_02.wav` — F, 22.636553 s,
+  `19ef2adde58a217c64157da1c9a0fac73ce9b7cd688edd479bf84907fa507cb6`;
+- `TRANSITION_03.wav` — F, 31.018957 s,
+  `13e5c4fd38b472f9b2c1257fc8a8adaf4c2e206120e0791c22ee5a02f9522e8b`;
+- `JOINT_SET_PLAN.json`, `JOINT_SET_DECISIONS.json`, and
+  `SET_FLOW_POSTMORTEM.json` contain complete candidate tables, reliable and
+  deferred evidence, state changes, old-vs-new decisions, choreography, and
+  render provenance. Their SHA-256 values are respectively
+  `554c2c602d4b72264fa963bb3ac6a2e47a4251277689f98971a21c822d71f4ed`,
+  `63bba81332d004dce4ad9620e688f6aaaea0ec0ba47df00f9346a69856c869cb`,
+  and `97ccf745ef1d2d940cf9f9692743df7865720f214374621b03c00a346750d8ef`.
+
+The set peak is `.95`, clipping fraction is zero, and the six exact natural /
+template boundary deltas are `.010425/.073514/.076625/.080537/.056854/.050126`.
+All twelve accepted reference hashes were verified unchanged. Focused tests pass
+at **66**; complete regression passes at **1154 passed in 88.07s**, with only
+the two existing Typer/Click dependency warnings. These facts validate the
+planner contract, determinism, continuity, and technical safety—not musical
+quality.
+
+**STOP/GATE:** human-listen to the three excerpts and continuous second pilot.
+Do not render a third pilot, alter F/C3/B8/D2 or the renderer, or reconnect the
+legacy Set Director, Candidate Composer, Audition Lab, UI, personalization, or
+new families until the user evaluates this gate. The pre-existing untracked
+`.claude/` directory remains untouched.
+
 ## CONSTRAINED JOINT SET-DIRECTOR PILOT — COMPLETE; HUMAN GATE PENDING
 
 2026-09-15. One isolated four-track/three-transition joint-planning pilot is

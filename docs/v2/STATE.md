@@ -6,10 +6,31 @@ The user passed manual reference quality, same-pair automated reproduction,
 new-pair generalization, and the two targeted source-entry fixes. The first
 blind autonomous selector gate failed; its postmortem produced a calibrated,
 conservative `PAIR_TRANSITIONABLE`/`USABLE_FOR_PERFORMANCE` selector. One
-isolated four-track joint-planning pilot has now been rendered and is awaiting
-human listening. The legacy Set Director, Candidate Composer, Audition Lab,
-UI, personalization, generic families, and unrestricted/full-set automation
-remain disconnected.
+isolated joint-planning pilot then failed on set story. A second, flow-aware
+four-track pilot is now rendered and awaiting human listening. The legacy Set
+Director, Candidate Composer, Audition Lab, UI, personalization, generic
+families, and unrestricted/full-set automation remain disconnected.
+
+## FLOW-AWARE JOINT SET PILOT 2 (HUMAN GATE PENDING)
+
+- The first pilot's three old choices now all fail an independent hard gate:
+  D2 performance launch/groove margin; HOLD rhythmic-role continuity; and PEAK
+  target-role/energy direction, respectively.
+- `musical_role.py` uses existing acoustic, groove, section, optional semantic,
+  and optional lyric evidence. Semantic mood/style below `.55` reliability is
+  explicitly unknown. The human-described affect mismatch remains human
+  evidence; no unsupported classifier claim is substituted for it.
+- `PERFORMANCE_FEASIBILITY` and `SET_FLOW_SUITABILITY` are independent. The
+  planner carries a short OPEN/BUILD/HOLD/PEAK/RELEASE/COOLDOWN state, recent
+  energy/dance/rhythm/reliable-mood context, and an intentional-contrast budget.
+- The one second pilot follows `OPEN -> HOLD -> PEAK -> RELEASE`, anonymous
+  energy `.750 -> .747 -> .770 -> .702`, and frozen D2/F/F choreography. It is
+  264.977052 seconds, peak `.95`, with no clipped samples.
+- Private artifacts and the complete old-vs-new postmortem are under
+  `/tmp/djenius_reference_dj_transition/joint_set_pilot_2/`.
+- Focused gate: **66 passed**. Full regression: **1154 passed in 88.07s** with
+  two existing dependency warnings. Human listening remains the only quality
+  gate; no third pilot is authorized.
 
 ## CONSTRAINED JOINT SET-DIRECTOR PILOT (HUMAN GATE PENDING)
 

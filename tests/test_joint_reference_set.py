@@ -21,6 +21,7 @@ from djenius.core.joint_reference_set import (
     plan_joint_reference_set,
 )
 from djenius.core.models import TrackAnalysis, TrackMetadata, TrackProfile
+from djenius.core.musical_role import SetRole, initial_set_flow_state
 from djenius.core.reference_templates import ReferenceArchetype, TemplateAnchors
 
 
@@ -88,7 +89,16 @@ class _Selection:
         }
 
 
-def _candidate(source, target, archetype=None, *, retained=False, prior_landing=None):
+def _candidate(
+    source,
+    target,
+    archetype=None,
+    *,
+    retained=False,
+    prior_landing=None,
+    set_flow_state=None,
+    target_phase=SetRole.HOLD,
+):
     instance = SimpleNamespace(anchors=_anchors()) if archetype is not None else None
     selection = _Selection(
         source.id,
@@ -99,6 +109,13 @@ def _candidate(source, target, archetype=None, *, retained=False, prior_landing=
         f"{source.id}-{target.id}-{archetype}",
         pair_rejection_reasons=() if archetype else ("no usable template",),
     )
+    state = set_flow_state or initial_set_flow_state(source)
+    state_after = {
+        **state.to_dict(),
+        "phase": target_phase.value,
+        "recent_track_ids": [*state.recent_track_ids[-2:], target.id],
+        "recent_energy": [*state.recent_energy[-2:], target.mean_energy],
+    }
     flow = SetFlowEvaluation(
         True,
         {"test_gate": True},
@@ -106,6 +123,10 @@ def _candidate(source, target, archetype=None, *, retained=False, prior_landing=
             "energy_change": round(target.mean_energy - source.mean_energy, 4),
             "tempo_delta_pct": 0.0,
             "harmonic_compatibility": 1.0,
+            "musical_role_and_set_story": {
+                "relationship": "COHERENT_CONTINUATION",
+                "state_after": state_after,
+            },
         },
         (),
         (),
@@ -128,7 +149,15 @@ def _candidate(source, target, archetype=None, *, retained=False, prior_landing=
 
 
 def _patch_graph(monkeypatch, graph):
-    def evaluate(source, target, *, prior_target_landing_sec, **_kwargs):
+    def evaluate(
+        source,
+        target,
+        *,
+        prior_target_landing_sec,
+        set_flow_state,
+        target_phase,
+        **_kwargs,
+    ):
         archetype = graph.get((source.id, target.id))
         return _candidate(
             source,
@@ -136,6 +165,8 @@ def _patch_graph(monkeypatch, graph):
             archetype,
             retained=archetype is not None,
             prior_landing=prior_target_landing_sec,
+            set_flow_state=set_flow_state,
+            target_phase=target_phase,
         )
 
     monkeypatch.setattr(
@@ -217,12 +248,63 @@ def test_establishment_floor_rejects_an_early_outgoing_cue(monkeypatch):
         target,
         used_track_ids={source.id},
         prior_target_landing_sec=10.0,
+        set_flow_state=initial_set_flow_state(source),
+        target_phase=SetRole.HOLD,
         config=JointSetConfig(min_establishment_sec=30),
     )
     assert candidate.establishment["available_establishment_sec"] == 25.0
     assert candidate.retained is False
     assert (
         "insufficient_target_establishment_before_next_source_move"
+        in candidate.rejection_reasons
+    )
+
+
+def test_transitionable_but_set_inappropriate_candidate_is_rejected(monkeypatch):
+    import djenius.core.joint_reference_set as joint
+
+    source, target = _profile("A"), _profile("B", energy=0.76)
+    source.analysis.groove_profile = {
+        "percussion_density_mean": 0.68,
+        "onset_density_hz": 4.0,
+        "syncopation_index": 0.3,
+        "onbeat_fraction": 0.6,
+        "swing_ratio": 1.0,
+    }
+    target.analysis.bpm = 86.0
+    target.analysis.tempo_hypotheses = [{"relation": "double", "confidence": 0.7}]
+    target.analysis.groove_profile = {
+        "percussion_density_mean": 0.68,
+        "onset_density_hz": 4.0,
+        "syncopation_index": 0.3,
+        "onbeat_fraction": 0.4,
+        "swing_ratio": 1.0,
+    }
+    selection = _Selection(
+        source.id,
+        target.id,
+        ReferenceArchetype.STEM_ECHO_HANDOFF,
+        SimpleNamespace(anchors=_anchors()),
+        True,
+        "technically-transitionable",
+    )
+    monkeypatch.setattr(
+        joint, "select_reference_transition", lambda *_args, **_kwargs: selection
+    )
+    candidate = joint._evaluate_candidate(
+        source,
+        target,
+        used_track_ids={source.id},
+        prior_target_landing_sec=None,
+        set_flow_state=initial_set_flow_state(source),
+        target_phase=SetRole.HOLD,
+        config=JointSetConfig(),
+    )
+    assert candidate.transition_selection.pair_transitionable is True
+    assert candidate.set_flow.passes_hard_gates is False
+    assert candidate.retained is False
+    assert (
+        "incompatible rhythmic role lacks a supported bridge"
         in candidate.rejection_reasons
     )
 

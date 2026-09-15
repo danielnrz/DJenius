@@ -15,11 +15,12 @@ from djenius.core.performance_recipe import ActionType, validate_performance_rec
 from djenius.core.reference_templates import (
     ARCHETYPE_DEFINITIONS,
     ReferenceArchetype,
+    ReferencePairAssessment,
     ReferenceTemplateEligibilityError,
     assess_reference_template_pair,
     instantiate_reference_template,
 )
-from djenius.core.reference_selector import select_reference_transition
+from djenius.core.reference_selector import _performance_acceptance, select_reference_transition
 
 
 SR = 4000
@@ -613,3 +614,32 @@ def test_pair_transitionability_is_serialized_separately_from_template_eligibili
     assert any(item["eligible"] for item in payload["evaluations"])
     assert payload["pair_transitionable"] is False
     assert payload["pair_rejection_reasons"]
+
+
+def test_d2_performance_floor_requires_launch_or_groove_margin():
+    evidence = {
+        "tempo_delta_pct": 4.7,
+        "groove_distance": 0.213,
+        "harmonic_compatibility": 0.7,
+        "shared_arrangement_density_pressure": 1.27,
+        "target_landing_energy": 0.74,
+        "source_energy": 0.78,
+        "target_drum_stem_activity": 0.8,
+        "target_bass_stem_activity": 0.7,
+        "source_entry": {
+            "nearest_vocal_boundary_sec": 0.97,
+            "nearest_section_boundary_sec": 0.97,
+        },
+        "pair_context": {"expected_overlap_conflicts": {"raw_vocal_overlap_pressure": 0.7}},
+    }
+    assessment = ReferencePairAssessment(
+        ReferenceArchetype.RESTRAINED_OWNERSHIP_BLEND,
+        True, 1.0, (), (), (), evidence,
+    )
+    rejected = _performance_acceptance(assessment, {"qualified": True})
+    assert rejected["checks"]["source_launch_and_groove_have_margin"] is False
+    accepted = _performance_acceptance(
+        replace(assessment, evidence={**evidence, "groove_distance": 0.19}),
+        {"qualified": True},
+    )
+    assert accepted["checks"]["source_launch_and_groove_have_margin"] is True

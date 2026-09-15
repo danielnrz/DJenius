@@ -16,14 +16,22 @@ from typing import Any, Iterable
 import numpy as np
 
 from djenius.core.models import TrackProfile
+from djenius.core.musical_role import (
+    SetFlowState,
+    SetRole,
+    assess_musical_flow,
+    derive_musical_role,
+    initial_set_flow_state,
+)
 from djenius.core.reference_selector import (
     ReferenceTransitionSelection,
     select_reference_transition,
 )
+from djenius.core.reference_templates import ReferenceArchetype
 from djenius.utils.camelot import score_key_compatibility
 
 
-JOINT_REFERENCE_SET_SCHEMA_VERSION = "joint-reference-set-1"
+JOINT_REFERENCE_SET_SCHEMA_VERSION = "joint-reference-set-2"
 
 
 @dataclass(frozen=True)
@@ -35,7 +43,10 @@ class JointSetConfig:
     closing_establishment_sec: float = 45.0
     max_energy_jump: float = 0.22
     preferred_max_consecutive_same_archetype: int = 2
+    set_role_sequence: tuple[str, ...] = ("OPEN", "HOLD", "HOLD", "PEAK")
+    max_contrast_events: int = 1
     excluded_ordered_pairs: tuple[tuple[str, str], ...] = ()
+    excluded_track_sequences: tuple[tuple[str, ...], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -155,8 +166,13 @@ class JointReferenceSetPlan:
                 "closing_establishment_sec": self.config.closing_establishment_sec,
                 "max_energy_jump": self.config.max_energy_jump,
                 "preferred_max_consecutive_same_archetype": self.config.preferred_max_consecutive_same_archetype,
+                "set_role_sequence": list(self.config.set_role_sequence),
+                "max_contrast_events": self.config.max_contrast_events,
                 "excluded_ordered_pairs": [
                     list(item) for item in self.config.excluded_ordered_pairs
+                ],
+                "excluded_track_sequences": [
+                    list(item) for item in self.config.excluded_track_sequences
                 ],
             },
             "transitions": [item.to_dict() for item in self.transitions],
@@ -198,16 +214,19 @@ def _set_flow(
     target: TrackProfile,
     *,
     used_track_ids: set[str],
-    max_energy_jump: float,
+    state: SetFlowState,
+    target_phase: SetRole,
+    selected_archetype: ReferenceArchetype | None,
+    selected_evidence: dict[str, Any],
+    config: JointSetConfig,
 ) -> SetFlowEvaluation:
     energy_change = float(target.mean_energy - source.mean_energy)
     tempo_delta = _tempo_delta_pct(source, target)
     harmonic = score_key_compatibility(source.camelot, target.camelot)
     same_artist = bool(_artist(source) and _artist(source) == _artist(target))
-    hard_gates = {
+    identity_gates = {
         "target_not_already_used": target.id not in used_track_ids,
         "different_track": source.id != target.id,
-        "energy_jump_within_pilot_bound": abs(energy_change) <= max_energy_jump,
         "artist_not_immediately_repeated": not same_artist,
         "analysis_confidence_usable": min(
             source.analysis.analysis_confidence,
@@ -215,7 +234,25 @@ def _set_flow(
         )
         >= 0.75,
     }
-    rejection = tuple(name for name, passed in hard_gates.items() if not passed)
+    tempo_for_performance = float(selected_evidence.get("tempo_delta_pct", tempo_delta))
+    groove_distance = float(selected_evidence.get("groove_distance", 1.0))
+    musical = assess_musical_flow(
+        source,
+        target,
+        state=state,
+        target_phase=target_phase,
+        archetype=selected_archetype,
+        tempo_delta_pct=tempo_for_performance,
+        groove_distance=groove_distance,
+        max_energy_jump=config.max_energy_jump,
+        max_contrast_events=config.max_contrast_events,
+    )
+    hard_gates = {
+        **identity_gates,
+        **{f"set_story_{name}": passed for name, passed in musical.hard_gates.items()},
+    }
+    rejection = [name for name, passed in identity_gates.items() if not passed]
+    rejection.extend(musical.rejection_reasons)
     source_vocal = _median_vocal_activity(source)
     target_vocal = _median_vocal_activity(target)
     evidence = {
@@ -238,7 +275,16 @@ def _set_flow(
         "source_vocal_density": round(source_vocal, 4),
         "target_vocal_density": round(target_vocal, 4),
         "vocal_density_change": round(target_vocal - source_vocal, 4),
-        "genre_or_style_evidence": "not available in deterministic TrackAnalysis",
+        "genre_or_style_evidence": {
+            "source": musical.source_role.style,
+            "target": musical.target_role.style,
+        },
+        "mood_or_affect_evidence": {
+            "source": musical.source_role.mood,
+            "target": musical.target_role.mood,
+            "claim_deferred": musical.evidence["mood_claim_deferred"],
+        },
+        "musical_role_and_set_story": musical.to_dict(),
         "artist_continuity": "different_or_unknown"
         if not same_artist
         else "same_artist",
@@ -273,7 +319,7 @@ def _set_flow(
         },
     )
     return SetFlowEvaluation(
-        all(hard_gates.values()), hard_gates, evidence, ranking, rejection
+        all(hard_gates.values()), hard_gates, evidence, ranking, tuple(rejection)
     )
 
 
@@ -294,6 +340,7 @@ def _opening_evidence(track: TrackProfile) -> dict[str, Any]:
             )
             / window
         )
+    role = derive_musical_role(track)
     return {
         "track_id": track.id,
         "opening_section": first_section,
@@ -301,7 +348,10 @@ def _opening_evidence(track: TrackProfile) -> dict[str, Any]:
         "mean_energy": round(track.mean_energy, 4),
         "bpm": round(track.bpm, 4),
         "analysis_confidence": round(track.analysis.analysis_confidence, 4),
+        "musical_role": role.to_dict(),
+        "opening_role_supported": role.role_suitability[SetRole.OPEN.value],
         "opening_rank_vector": [
+            0 if role.role_suitability[SetRole.OPEN.value] else 1,
             0 if first_section == "intro" else 1,
             round(abs(track.mean_energy - 0.72), 6),
             round(float(np.clip(early_vocal, 0, 1)), 6),
@@ -317,8 +367,12 @@ def _candidate_key(
     archetype = selected.value if selected is not None else ""
     repeated = 1 if recent_archetypes and archetype == recent_archetypes[-1] else 0
     e = candidate.set_flow.evidence
+    relationship = e.get("musical_role_and_set_story", {}).get(
+        "relationship", "COHERENT_CONTINUATION"
+    )
     # This is a disclosed lexicographic ordering, not a weighted compatibility score.
     return (
+        0 if relationship == "COHERENT_CONTINUATION" else 1,
         abs(float(e["energy_change"])),
         float(e["tempo_delta_pct"]),
         -float(e["harmonic_compatibility"]),
@@ -333,14 +387,10 @@ def _evaluate_candidate(
     *,
     used_track_ids: set[str],
     prior_target_landing_sec: float | None,
+    set_flow_state: SetFlowState,
+    target_phase: SetRole,
     config: JointSetConfig,
 ) -> JointCandidateDecision:
-    flow = _set_flow(
-        source,
-        target,
-        used_track_ids=used_track_ids,
-        max_energy_jump=config.max_energy_jump,
-    )
     excluded = (source.id, target.id) in set(config.excluded_ordered_pairs)
     selection = select_reference_transition(
         source.analysis,
@@ -351,6 +401,28 @@ def _evaluate_candidate(
         target_duration_sec=target.duration_sec,
     )
     instance = selection.selected_instance
+    selected_evidence: dict[str, Any] = {}
+    if selection.selected_archetype is not None:
+        selected_evaluation = next(
+            (
+                item
+                for item in selection.evaluations
+                if item.archetype == selection.selected_archetype
+            ),
+            None,
+        )
+        if selected_evaluation is not None:
+            selected_evidence = selected_evaluation.evidence
+    flow = _set_flow(
+        source,
+        target,
+        used_track_ids=used_track_ids,
+        state=set_flow_state,
+        target_phase=target_phase,
+        selected_archetype=selection.selected_archetype,
+        selected_evidence=selected_evidence,
+        config=config,
+    )
     establishment_sec = (
         None
         if prior_target_landing_sec is None or instance is None
@@ -373,7 +445,7 @@ def _evaluate_candidate(
     }
     reasons = list(flow.rejection_reasons)
     if excluded:
-        reasons.append("ordered_pair_reserved_by_prior_listening_gate")
+        reasons.append("ordered_pair_excluded_by_prior_human_evidence")
     if not selection.pair_transitionable:
         reasons.extend(selection.pair_rejection_reasons or ("pair_not_transitionable",))
     if not establishment_pass:
@@ -417,6 +489,14 @@ def plan_joint_reference_set(
         raise ValueError("track pool is smaller than requested set")
     if config.candidate_limit < 1:
         raise ValueError("candidate_limit must be positive")
+    if len(config.set_role_sequence) != config.track_count:
+        raise ValueError("set_role_sequence must contain one role per track")
+    try:
+        role_sequence = tuple(SetRole(item) for item in config.set_role_sequence)
+    except ValueError as exc:
+        raise ValueError("set_role_sequence contains an unknown role") from exc
+    if role_sequence[0] != SetRole.OPEN:
+        raise ValueError("set_role_sequence must begin with OPEN")
     ids = [track.id for track in pool]
     if len(ids) != len(set(ids)):
         raise ValueError("track ids must be unique")
@@ -437,8 +517,17 @@ def plan_joint_reference_set(
         path: tuple[TrackProfile, ...],
         chosen: tuple[JointCandidateDecision, ...],
         prior_landing: float | None,
+        flow_state: SetFlowState,
     ) -> None:
         if len(path) == config.track_count:
+            if tuple(item.id for item in path) in set(config.excluded_track_sequences):
+                explored["dead_ends"].append(
+                    {
+                        "path": [item.id for item in path],
+                        "reason": "exact_track_sequence_excluded",
+                    }
+                )
+                return
             archetypes = tuple(
                 item.transition_selection.selected_archetype.value for item in chosen
             )
@@ -451,10 +540,16 @@ def plan_joint_reference_set(
                 (_tempo_delta_pct(a, b) for a, b in zip(path[:-1], path[1:])),
                 default=0.0,
             )
+            intentional_contrasts = sum(
+                item.set_flow.evidence["musical_role_and_set_story"]["relationship"]
+                == "INTENTIONAL_ENERGY_MOOD_SHIFT"
+                for item in chosen
+            )
             diversity_excess = max(
                 0, max_run - config.preferred_max_consecutive_same_archetype
             )
             key = (
+                intentional_contrasts,
                 round(energy_jump, 8),
                 round(tempo_jump, 8),
                 diversity_excess,
@@ -470,6 +565,8 @@ def plan_joint_reference_set(
                 target,
                 used_track_ids={item.id for item in path},
                 prior_target_landing_sec=prior_landing,
+                set_flow_state=flow_state,
+                target_phase=role_sequence[len(path)],
                 config=config,
             )
             for target in pool
@@ -492,14 +589,28 @@ def plan_joint_reference_set(
         for candidate in retained:
             target = by_id[candidate.candidate_track_id]
             landing = candidate.transition_selection.selected_instance.anchors.target_landing_sec
-            search(path + (target,), chosen + (candidate,), landing)
+            state_after = candidate.set_flow.evidence["musical_role_and_set_story"][
+                "state_after"
+            ]
+            next_state = SetFlowState(
+                phase=SetRole(state_after["phase"]),
+                recent_track_ids=tuple(state_after["recent_track_ids"]),
+                recent_energy=tuple(state_after["recent_energy"]),
+                recent_dance_functions=tuple(state_after["recent_dance_functions"]),
+                recent_rhythmic_characters=tuple(
+                    state_after["recent_rhythmic_characters"]
+                ),
+                reliable_moods=tuple(state_after["reliable_moods"]),
+                contrast_events=int(state_after["contrast_events"]),
+            )
+            search(path + (target,), chosen + (candidate,), landing, next_state)
 
     # Opening rank remains the first criterion.  Path existence is a hard gate,
     # not a hidden optimization around a hand-picked first pair.
     for row in opening_rows:
         before = len(complete)
         opener = by_id[row["track_id"]]
-        search((opener,), (), None)
+        search((opener,), (), None, initial_set_flow_state(opener))
         found = len(complete) > before
         explored["openers"].append({**row, "complete_path_exists": found})
         if found:
@@ -513,6 +624,7 @@ def plan_joint_reference_set(
     path, chosen_candidates, path_rank = min(complete, key=lambda item: item[2])
     decisions: list[JointTransitionDecision] = []
     prior_landing = None
+    flow_state = initial_set_flow_state(path[0])
     for index, (source, winner) in enumerate(zip(path[:-1], chosen_candidates), 1):
         table = tuple(
             _evaluate_candidate(
@@ -520,6 +632,8 @@ def plan_joint_reference_set(
                 target,
                 used_track_ids={item.id for item in path[:index]},
                 prior_target_landing_sec=prior_landing,
+                set_flow_state=flow_state,
+                target_phase=role_sequence[index],
                 config=config,
             )
             for target in pool
@@ -551,6 +665,18 @@ def plan_joint_reference_set(
         prior_landing = (
             winner.transition_selection.selected_instance.anchors.target_landing_sec
         )
+        state_after = winner.set_flow.evidence["musical_role_and_set_story"][
+            "state_after"
+        ]
+        flow_state = SetFlowState(
+            phase=SetRole(state_after["phase"]),
+            recent_track_ids=tuple(state_after["recent_track_ids"]),
+            recent_energy=tuple(state_after["recent_energy"]),
+            recent_dance_functions=tuple(state_after["recent_dance_functions"]),
+            recent_rhythmic_characters=tuple(state_after["recent_rhythmic_characters"]),
+            reliable_moods=tuple(state_after["reliable_moods"]),
+            contrast_events=int(state_after["contrast_events"]),
+        )
 
     opening = {
         "selected_track_id": path[0].id,
@@ -559,6 +685,7 @@ def plan_joint_reference_set(
         "opening_candidates": explored["openers"],
         "selected_path_rank_vector": list(path_rank[:-1]) + [list(path_rank[-1])],
         "path_rank_order": [
+            "fewest_intentional_contrasts after all declared-role hard gates",
             "smallest_max_energy_jump",
             "smallest_max_tempo_jump",
             "least_excess_over_preferred_consecutive_archetype_limit_after_quality_evidence",

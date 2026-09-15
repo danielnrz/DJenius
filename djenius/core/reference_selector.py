@@ -399,10 +399,19 @@ def _performance_acceptance(
         rule = "a stable source motif and compatible groove/harmony build into a clear target and bass payoff"
     else:
         overlap = e.get("pair_context", {}).get("expected_overlap_conflicts", {})
+        phrase_boundary = float(entry.get("nearest_vocal_boundary_sec", 99.0))
+        section_boundary = float(entry.get("nearest_section_boundary_sec", 99.0))
+        launch_boundary = min(phrase_boundary, section_boundary)
+        groove_distance = float(e.get("groove_distance", 1.0))
+        harmonic_compatibility = float(e.get("harmonic_compatibility", 0.0))
         checks = {
             "tempo_has_long_overlap_margin": e.get("tempo_delta_pct", 99.0) <= 6.0,
-            "groove_has_long_overlap_margin": e.get("groove_distance", 1.0) <= .22,
-            "harmony_supports_long_overlap": e.get("harmonic_compatibility", 0.0) >= .70,
+            "groove_has_long_overlap_margin": groove_distance <= .22,
+            "harmony_supports_long_overlap": harmonic_compatibility >= .70,
+            "source_launch_and_groove_have_margin": (
+                groove_distance <= .20
+                or (harmonic_compatibility >= .90 and launch_boundary <= .25)
+            ),
             "shared_arrangement_has_space": e.get("shared_arrangement_density_pressure", 2.0) <= 1.46,
             "energy_trajectory_is_restrained": abs(
                 e.get("target_landing_energy", 0.0) - e.get("source_energy", 0.0)
@@ -413,7 +422,10 @@ def _performance_acceptance(
                 and e.get("target_bass_stem_activity", 0.0) >= .55
             ),
         }
-        rule = "spacious, compatible material sustains a restrained long overlap with deliberate bass ownership"
+        rule = (
+            "spacious, compatible material with a clean launch/groove margin sustains "
+            "a restrained long overlap with deliberate bass ownership"
+        )
     return {
         "gate": "USABLE_FOR_PERFORMANCE",
         "rule": rule,
