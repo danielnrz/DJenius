@@ -66,10 +66,10 @@ scope.
 `v2-professional-autonomous-dj`
 
 ## LATEST REFERENCE-AUTOMATION COMMIT
-`3b1d882` - "Refine reference template entry eligibility". It contains
-contextual cue refinement, inspectable eligibility/rejection evidence, two
-controlled private renders, focused regression coverage, and durable
-public-safe human labels. It was pushed to
+`6e3f2b8` - "Add constrained reference transition selector". It contains the
+four-template explainable selector, bounded cue search, mandatory abstention,
+focused regression coverage, frozen accepted labels, and the private
+eight-pair blind gate. It was pushed to
 `origin/v2-professional-autonomous-dj`; a docs-only handoff finalization follows,
 so resolve the current tip from Git.
 

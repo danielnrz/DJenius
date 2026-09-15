@@ -70,6 +70,12 @@ four rendered choices and the four abstentions. Do not proceed to Set Director,
 Candidate Composer, Audition Lab, UI, personalization, new families, or full
 mixes until the user passes this gate.
 
+Validated implementation checkpoint: commit `6e3f2b8` ("Add constrained
+reference transition selector"), pushed to
+`origin/v2-professional-autonomous-dj`. This handoff finalization follows as a
+docs-only commit; resolve the current tip from Git. Apart from the pre-existing
+untracked `.claude/` directory, the worktree is clean.
+
 ## GENERALIZATION ROUND 2 — PASSED
 
 2026-09-15. The user completed the first eight-render listening gate. Human
