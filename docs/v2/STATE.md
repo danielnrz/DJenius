@@ -2,13 +2,40 @@
 
 ## CURRENT PHASE
 All roadmap phases (0-10) remain frozen. **There is no new roadmap phase.**
-The user passed the manual-reference and automated same-pair reproduction
-gates for F, C3, B8, and D2, then supplied labels for the first eight new-pair
-renders. The active gate is now human listening of two targeted source-entry
-fixes. Candidate Composer, Audition Lab selection, Set Director, UI,
-personalization, new families, and full mixes remain out of scope.
+The user passed manual reference quality, same-pair automated reproduction,
+new-pair generalization, and the two targeted source-entry fixes. The active
+gate is blind human listening of a constrained autonomous selector over only
+the four proven templates plus abstention. Candidate Composer, Audition Lab,
+Set Director, UI, personalization, new families, and full mixes remain out of
+scope.
 
-## GENERALIZATION ROUND 2 CHECKPOINT (HUMAN GATE PENDING)
+## REFERENCE-BACKED AUTONOMOUS SELECTION (HUMAN GATE PENDING)
+
+- `select_reference_transition` evaluates all four approved archetypes,
+  searches bounded nearby source/target downbeat windows, and returns one
+  template instance or `NO_SUITABLE_TEMPLATE`.
+- Each evaluation exposes source phrase/vocal/gap/motif/energy/transient
+  context, target cue/phrase/vocal/drum/bass/density/establishment context,
+  pair tempo/groove/harmony/energy/stem/overlap context, and a named
+  template-specific musical-story contract. No aggregate winner score is
+  used or exposed.
+- The selector is isolated from Candidate Composer, Audition Lab, and Set
+  Director. The legacy generalization `fit_score` is deliberately ignored.
+- Exactly eight unseen ordered pairs were fixed by an analysis-only stratified
+  sampling policy before render. Decisions: F for PAIR_02, B8 for PAIR_03/04,
+  C3 for PAIR_05, and abstain for PAIR_01/06/07/08. No D2 was forced.
+- Four WAVs and the complete private manifest are under
+  `/tmp/djenius_reference_dj_transition/autonomous_selection/`. The WAVs are
+  finite, unclipped stereo 44.1 kHz PCM24 and byte-identical on rerender.
+- The twelve accepted manual/AUTO/generalization references are frozen by
+  hash in `REFERENCE_GENERALIZATION_LABELS.json` and were verified unchanged
+  before and after rendering.
+- Focused tests: **34 passed**. Complete regression: **1136 passed in 81.99s**
+  with two existing dependency warnings.
+- Human listening decides whether the chosen behaviors, cue placements, and
+  abstentions were appropriate.
+
+## GENERALIZATION ROUND 2 CHECKPOINT (PASSED)
 
 - The four manual and four automated references are immutable and reverified
   by SHA-256. Their choreography and hashes are recorded in
@@ -32,8 +59,8 @@ personalization, new families, and full mixes remain out of scope.
   prior B8_02 contribution; F target timing/choreography is unchanged.
 - Focused reference-template tests pass (**24 passed**). Complete regression
   passes (**1126 passed in 82.45s**, 2 pre-existing dependency warnings).
-- Human listening of the two fixes, not eligibility or technical metrics,
-  decides whether this gate passes.
+- Human listening passed both fixes: their source placement restored coherent,
+  clearly audible DJ behavior without changing the proven target handoffs.
 
 ## CURRENT BRANCH
 `v2-professional-autonomous-dj`
@@ -138,13 +165,12 @@ performance.** Two deeper findings, confirmed but deliberately not fixed
   visualization).
 
 ## CURRENT BLOCKERS
-The only immediate blocker is the eight-render cross-pair human listening
-gate. Technical checks cannot establish that the fixed F/C3/B8/D2
-choreographies make intentional musical sense on their selected new pairs.
-Autonomous selection remains paused.
+The only immediate blocker is blind human listening of the four rendered
+autonomous choices and review of the four abstentions. Technical checks cannot
+establish musical appropriateness.
 
 ## EXACT NEXT ACTION
-Stop for the user to listen to `GEN_F_01/02`, `GEN_C3_01/02`,
-`GEN_B8_01/02`, and `GEN_D2_01/02`. Record success/failure against the
-manifest's eligibility evidence. Do not tune, add pairs, broaden scoring, or
-resume Candidate Composer, Audition Lab, Set Director, UI, or full mixes.
+Stop for the user to blind-listen to `PAIR_02.wav` through `PAIR_05.wav` and
+judge whether PAIR_01/06/07/08 correctly abstained. Record labels against the
+manifest evidence. Do not tune, add pairs, broaden selection, or resume
+Candidate Composer, Audition Lab, Set Director, UI, or full mixes.

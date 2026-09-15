@@ -1,7 +1,7 @@
 {
   "schema_version": "reference-generalization-human-labels-1",
   "recorded_date": "2026-09-15",
-  "status": "round_2_fixes_awaiting_human_listening",
+  "status": "round_2_passed_autonomous_selection_gate_active",
   "purpose": "Durable public-safe engineering evidence for reference-template eligibility. These labels are not machine-learning targets.",
   "round_1": {
     "GEN_B8_01.wav": {
@@ -48,11 +48,63 @@
   "round_2_renders": {
     "GEN_B8_02_FIX.wav": {
       "sha256": "2f8dc2e6bfd4c95b97cdcc38a1e7090504af4a4296c6968d9149b08825d3b1b6",
+      "human_label": "PASS",
       "change": "Move source phrase 40 beats earlier so release begins on a vocal phrase tail and the loop starts in instrumental space; apply an equal-power source-to-loop entry only during bars 4.00-4.22. Target anchors, gain, components, reveal, timing map, tail, and establishment are unchanged."
     },
     "GEN_F_02_FIX.wav": {
       "sha256": "c54353a189650e6e52e35618e537b10e628cdbd1d05182379bc03ae8dc574430",
+      "human_label": "PASS",
       "change": "Move the four-bar source phrase 12 beats earlier to a downbeat vocal gap after one self-contained unit. Target anchors, natural adjacent target samples, gain, reset envelope, and choreography are unchanged."
+    }
+  },
+  "frozen_accepted_listening_set": {
+    "REFERENCE_F.wav": {
+      "sha256": "947a1a2556efb6e1d6b6ffd3ebb9c16c851d3d97bdd5026b57ec3bd5f1056f48",
+      "human_label": "MANUAL_STRONGEST"
+    },
+    "REFERENCE_C3.wav": {
+      "sha256": "ecdd7b694a3d9f5100f02e3aa62df0ec68cb90e874de1b863eec846a8a8eff03",
+      "human_label": "MANUAL_PASS"
+    },
+    "B8_RESIDUAL_FIX.wav": {
+      "sha256": "47824cc9b923c708f261c7d3db82e46e2f910fec47b802111bcd26c1c5aa1205",
+      "human_label": "MANUAL_ACCEPTED"
+    },
+    "REFERENCE_D2.wav": {
+      "sha256": "5c1f72c9ae6edff9c7e51c0f6386f15abb72455a8421561cf242ef4864ade586",
+      "human_label": "MANUAL_ACCEPTED"
+    },
+    "AUTO_F.wav": {
+      "sha256": "13c3691cf81b40467d8adce0c9cf2408206199500554648ef29ae32584ab6f2b",
+      "human_label": "AUTO_PASS_BEST"
+    },
+    "AUTO_C3.wav": {
+      "sha256": "0c89bb5f9024baacdb419556f2fbd8c4a1b60099b13a26a0dcc9738b16426a32",
+      "human_label": "AUTO_PASS"
+    },
+    "AUTO_B8.wav": {
+      "sha256": "f6ff0d862739e8c0b71993d3fc5ba1b4eb8a73468354d59f2f525ce747c5e3b1",
+      "human_label": "AUTO_ACCEPTED"
+    },
+    "AUTO_D2.wav": {
+      "sha256": "ab2dbd9156eb18b3c450495ffab8b21060841abe430e23d38f7b9340fc532634",
+      "human_label": "AUTO_PASS_RESTRAINED"
+    },
+    "GEN_B8_01.wav": {
+      "sha256": "3871f3ae02b5fe4884b884a8218b22a7dd76de4fa668f9a8e22d105cd4809e4b",
+      "human_label": "GENERALIZATION_PASS"
+    },
+    "GEN_B8_02_FIX.wav": {
+      "sha256": "2f8dc2e6bfd4c95b97cdcc38a1e7090504af4a4296c6968d9149b08825d3b1b6",
+      "human_label": "GENERALIZATION_PASS"
+    },
+    "GEN_C3_01.wav": {
+      "sha256": "2d019af332416fa5d62143daec7072f9f33f260b91d02e01e87db492258a55a9",
+      "human_label": "GENERALIZATION_PASS"
+    },
+    "GEN_F_02_FIX.wav": {
+      "sha256": "c54353a189650e6e52e35618e537b10e628cdbd1d05182379bc03ae8dc574430",
+      "human_label": "GENERALIZATION_PASS"
     }
   },
   "eligibility_rules": {
@@ -61,5 +113,5 @@
     "stem_echo_handoff": "Dense source arrangement combined with greater than 8 percent stretch and groove distance above 0.18 is explicitly borderline.",
     "restrained_ownership_blend": "Reject global harmonic compatibility below 0.50 or combined source/target arrangement-density pressure above 1.65."
   },
-  "gate": "Human listening of GEN_B8_02_FIX.wav and GEN_F_02_FIX.wav. No C3 or D2 fix was rendered."
+  "gate": "Round 2 passed. The active gate is blind human listening of constrained autonomous reference-template selections."
 }

@@ -224,3 +224,17 @@ second bounded step: source-entry and contextual eligibility. Delivered:
 
 Focused tests pass at 24 and the complete regression passes at 1126. Stop for
 human comparison of the two fixes. Autonomous integration remains prohibited.
+
+The user passed both source-entry fixes. The next bounded layer is now
+delivered: a constrained reference-backed selector that evaluates only F, C3,
+B8, and D2 and may abstain. It searches nearby source and target cues as part
+of each template evaluation, exposes explicit source/target/pair/template
+evidence, and applies named story rules rather than an aggregate winner score.
+It is not integrated with Candidate Composer, Audition Lab, or Set Director.
+
+The controlled blind panel contains exactly eight unseen ordered pairs fixed
+before rendering by analysis-only strata. Four received one transition each
+(F, B8, B8, C3) and four returned `NO_SUITABLE_TEMPLATE`; D2 was not forced
+onto a pair that failed its long-overlap contract. Focused tests pass at 34;
+complete regression passes at 1136. Stop for human listening and abstention
+review before any broader autonomous integration.

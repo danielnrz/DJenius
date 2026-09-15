@@ -17,9 +17,10 @@ regions; the templates contain no approved-reference timestamps. The private
 same-pair driver records the independently known manual anchors only for the
 comparison manifest.
 
-The first cross-pair gate has human labels. The current gate is human listening
-of exactly two targeted source-entry fixes; the successful and borderline
-controls remain frozen. Autonomous selection remains prohibited.
+The first cross-pair gate and both targeted source-entry fixes passed human
+listening. A separate constrained selector may now choose among only these
+four archetypes or abstain; Candidate Composer, Audition Lab, Set Director,
+and full-set integration remain prohibited until its blind gate passes.
 
 ## Frozen human reference set
 
@@ -249,5 +250,26 @@ fixes. Public-safe labels and diagnoses are also in
 
 Round 2 rendered only `GEN_B8_02_FIX.wav` and `GEN_F_02_FIX.wav`. C3_02 showed
 compound tempo/groove/density/vocal risk rather than one local defect; D2_01
-showed a pair that should have been rejected. The user must listen to the two
-fixes before any further generalization or autonomous integration.
+showed a pair that should have been rejected. Both fixes passed human
+listening; broader planning integration remains gated separately.
+
+The user passed both fixes on 2026-09-15. The frozen accepted listening set is
+now four manual references, four AUTO reproductions, and `GEN_B8_01`,
+`GEN_B8_02_FIX`, `GEN_C3_01`, and `GEN_F_02_FIX`; exact hashes and labels are
+in `REFERENCE_GENERALIZATION_LABELS.json`.
+
+## Constrained autonomous selector
+
+`select_reference_transition(...)` evaluates every archetype independently,
+including bounded nearby source and target cue searches. Each result exposes
+the complete eligibility evidence, rejected cue conditions, selected cue
+rank, and a template-specific musical-story rule. The cross-template decision
+tree can return `NO_SUITABLE_TEMPLATE`; it does not compare one aggregate fit
+score and does not render alternatives for waveform ranking.
+
+The first private blind panel is in
+`/tmp/djenius_reference_dj_transition/autonomous_selection/`. Four of eight
+unseen pairs were rendered (F, B8, B8, C3) and four abstained. No D2 was forced
+because none of these eight pairs satisfied its complete long-overlap story.
+Human listening of the rendered choices and review of the abstentions is the
+only active gate.

@@ -1,6 +1,76 @@
 # DJenius V2 Active Handoff
 
-## GENERALIZATION ROUND 2 — READY FOR HUMAN LISTENING
+## REFERENCE-BACKED AUTONOMOUS SELECTION GATE — READY FOR BLIND LISTENING
+
+2026-09-15. Human listening passed both Round 2 fixes:
+
+- `GEN_B8_02_FIX` = `PASS`; phrase-ending/instrumental-gap placement fixed
+  the major source-entry problem and restored clearly audible DJ work.
+- `GEN_F_02_FIX` = `PASS`; the self-contained vocal unit made the F behavior
+  work substantially better.
+
+The practical gate is musical acceptance, not endless polish. Freeze these
+two files plus `GEN_B8_01`, `GEN_C3_01`, all four AUTO references, and their
+four manual references. The active task is a constrained, explainable
+reference-backed selector over exactly the four proven archetypes plus
+mandatory `NO_SUITABLE_TEMPLATE`. Cue placement is part of selection. Evaluate
+exactly eight unseen private pairs, render at most one chosen transition per
+pair, preserve all candidate reasoning in a private manifest, and stop for
+blind human listening. Candidate Composer, Audition Lab, Set Director, UI,
+personalization, new families, and full mixes remain prohibited.
+
+Implementation milestone: `core/reference_selector.py` now evaluates all four
+approved templates, searches bounded nearby source/target downbeat windows,
+retains every cue rejection, requires a named template-specific musical-story
+contract, and returns either one instance or `NO_SUITABLE_TEMPLATE`. It does
+not use the legacy aggregate pair fit value and has no imports from Candidate
+Composer, Audition Lab, or Set Director. Source evidence includes section,
+vocal completion/gaps, motif descriptors, transient/energy context; target
+evidence includes cue/phrase/section cleanliness, vocal/drum/bass onset
+proxies, density, and establishment; pair evidence includes tempo, groove,
+harmony, energy, stems, and explicit overlap risks/deferred facts.
+
+The eight-pair private panel was fixed before audio rendering using five
+analysis-only strata and excludes every prior reference/generalization ordered
+pair. Current deterministic decisions are four renders and four abstentions:
+
+- `PAIR_01`: abstain.
+- `PAIR_02`: F/reset-release; source launch shifted -28 beats.
+- `PAIR_03`: B8/loop-build; source launch shifted -48 beats; target baseline.
+- `PAIR_04`: B8/loop-build; source launch shifted -8 beats; target baseline.
+- `PAIR_05`: C3/stem-echo; source launch shifted -36 beats; target baseline.
+- `PAIR_06`, `PAIR_07`, `PAIR_08`: abstain.
+
+No D2 render was forced: the restrained probe lacks a usable local source
+window, and the other seven pairs do not satisfy D2's complete long-overlap
+contract. The four rendered WAVs are finite, unclipped stereo 44.1 kHz PCM24;
+the accepted listening set was hash-verified unchanged before and after both
+render passes. Exact private outputs:
+
+- `PAIR_02.wav` — F/reset-release —
+  `e196d2d1904dbb3e5d178b12ccd9762fa77fc5aa5d12efcc8f5e1d82d6869f72`
+- `PAIR_03.wav` — B8/loop-build —
+  `746a0e472b6dfd466166fd1e795ffac5f5c45eac482b7d0d708f72c500f80c9b`
+- `PAIR_04.wav` — B8/loop-build —
+  `a7faf8bf62091d3f6d766511ccec6dfb782b443e8f3d8c15d90b179741513fc5`
+- `PAIR_05.wav` — C3/stem-echo —
+  `53d3e60cc46f98fc3b330d68f2e255ea4224db9337e6625c376d425f56c5099b`
+
+The private manifest is
+`/tmp/djenius_reference_dj_transition/autonomous_selection/AUTONOMOUS_SELECTION_MANIFEST.json`
+(SHA-256 `6aff71a2cee3ebbb2e6ae109be88c2f601ed6826a97a6aa71aa7a2f82289f159`).
+It contains identities, all four evaluations per pair, every rejection and
+story-rule check, selected cues/shifts, choreography, provenance, and technical
+checks. Focused reference-template/selector tests: **34 passed**. Complete
+regression: **1136 passed in 81.99s**, with the two existing Typer/Click
+deprecation warnings. Touched-file `ruff check` passes.
+
+**STOP/GATE:** blind-listen only to `PAIR_02` through `PAIR_05`, then judge the
+four rendered choices and the four abstentions. Do not proceed to Set Director,
+Candidate Composer, Audition Lab, UI, personalization, new families, or full
+mixes until the user passes this gate.
+
+## GENERALIZATION ROUND 2 — PASSED
 
 2026-09-15. The user completed the first eight-render listening gate. Human
 labels are authoritative engineering evidence, not machine-learning targets:
@@ -67,11 +137,10 @@ template entry eligibility"), pushed to
 docs-only commit; resolve the current tip from Git. Apart from the pre-existing
 untracked `.claude/` directory, the checkpoint worktree is clean.
 
-**STOP/GATE:** the user must compare B8_02 with `GEN_B8_02_FIX.wav` and F_02
-with `GEN_F_02_FIX.wav`. Human listening remains authoritative. Do not render
-C3/D2 replacements, restore autonomous selection, use Audition Lab to
-overrule labels, touch Set Director/UI, create new families/full mixes, or
-force an unsuitable template.
+Human result: both fixes were much better and passed the practical acceptance
+threshold. B8's phrase-ending/instrumental-gap placement repaired the major
+problem; F's self-contained vocal unit made the repeat behavior work far
+better. Their hashes remain frozen in the active selector gate above.
 
 ## CROSS-PAIR GENERALIZATION GATE — READY FOR HUMAN LISTENING
 

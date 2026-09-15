@@ -19,6 +19,7 @@ from djenius.core.reference_templates import (
     assess_reference_template_pair,
     instantiate_reference_template,
 )
+from djenius.core.reference_selector import select_reference_transition
 
 
 SR = 4000
@@ -395,3 +396,132 @@ def test_target_and_pair_context_remain_inspectable_not_opaque():
         "tempo_delta_pct", "groove_distance", "harmonic_compatibility",
         "source_to_target_energy_change", "stem_quality_scope",
     }
+
+
+def _selection(source=None, target=None):
+    return select_reference_transition(
+        source or _analysis(source=True),
+        target or _analysis(source=False),
+        source_track_id="selector-source",
+        target_track_id="selector-target",
+        source_duration_sec=62,
+        target_duration_sec=62,
+    )
+
+
+def _evaluation(selection, archetype):
+    return next(item for item in selection.evaluations if item.archetype == archetype)
+
+
+def test_selector_is_deterministic_and_reasoning_has_no_aggregate_winner_score():
+    first, second = _selection(), _selection()
+    assert first == second
+    assert first.selector_id == second.selector_id
+    serialized = first.to_dict(include_instances=False)
+    assert "score" not in serialized
+    assert all("story_rule" in item and "cue_search" in item for item in serialized["evaluations"])
+    assert first.selected_archetype == ReferenceArchetype.LOOP_BUILD_COHERENT_HANDOFF
+
+
+def test_selector_abstains_when_every_template_is_structurally_ineligible():
+    source = replace(_analysis(source=True), stems={})
+    target = replace(_analysis(source=False), stems={})
+    selection = _selection(source, target)
+    assert selection.selected_archetype is None
+    assert selection.decision == "NO_SUITABLE_TEMPLATE"
+    assert all(not item.eligible for item in selection.evaluations)
+
+
+def test_selector_f_requires_complete_repeatable_motif():
+    source = replace(
+        _analysis(source=True),
+        bpm=160,
+        camelot="1A",
+        vocal_regions=[(0.0, 61.5)],
+    )
+    target = replace(_analysis(source=False), bpm=100, camelot="7B")
+    selection = _selection(source, target)
+    evaluation = _evaluation(selection, ReferenceArchetype.RESET_RELEASE)
+    assert evaluation.eligible is False
+    assert "complete repeatable motif" in " ".join(evaluation.rejection_reasons)
+
+
+def test_selector_f_selects_a_self_contained_motif_for_material_reset():
+    source = replace(
+        _analysis(source=True), bpm=160, camelot="1A", vocal_regions=[(40.0, 44.0)],
+    )
+    target = replace(_analysis(source=False), bpm=100, camelot="7B")
+    selection = _selection(source, target)
+    assert selection.selected_archetype == ReferenceArchetype.RESET_RELEASE
+    evaluation = _evaluation(selection, ReferenceArchetype.RESET_RELEASE)
+    assert evaluation.story_rule["checks"]["repeatable_motif_is_complete"] is True
+
+
+def test_selector_shifts_b8_launch_away_from_vocal_interruption():
+    source = replace(
+        _analysis(source=True),
+        vocal_regions=[(22.0, 31.0), (38.0, 44.0)],
+    )
+    selection = _selection(source, _analysis(source=False))
+    evaluation = _evaluation(selection, ReferenceArchetype.LOOP_BUILD_COHERENT_HANDOFF)
+    assert evaluation.eligible is True
+    assert evaluation.cue_search["source_cue_shift_beats"] != 0
+    assert evaluation.evidence["source_entry"]["selected"]["vocal_active"] is False
+    assert "source launch shifted" in " ".join(evaluation.cue_search["cue_shift_rationale"])
+
+
+def test_selector_shifts_b8_target_off_a_vocal_collision_cue():
+    target = replace(
+        _analysis(source=False),
+        vocal_regions=[(30.0, 31.5), (36.0, 37.0)],
+    )
+    selection = _selection(_analysis(source=True), target)
+    evaluation = _evaluation(selection, ReferenceArchetype.LOOP_BUILD_COHERENT_HANDOFF)
+    assert evaluation.eligible is True
+    assert evaluation.cue_search["target_cue_shift_beats"] == 4
+    assert evaluation.evidence["target_vocal_onset_sec_after_landing"] == 4.0
+    assert "target landing shifted" in " ".join(evaluation.cue_search["cue_shift_rationale"])
+
+
+def test_selector_rejects_b8_when_every_launch_interrupts_active_vocal():
+    source = replace(_analysis(source=True), vocal_regions=[(0.0, 60.0)])
+    selection = _selection(source, _analysis(source=False))
+    evaluation = _evaluation(selection, ReferenceArchetype.LOOP_BUILD_COHERENT_HANDOFF)
+    assert evaluation.eligible is False
+    assert "unpredictable active vocal phrase" in " ".join(evaluation.rejection_reasons)
+
+
+def test_selector_rejects_c3_persistent_source_target_vocal_conflict():
+    source = replace(_analysis(source=True), vocal_regions=[(0.0, 60.0)])
+    target = replace(_analysis(source=False), vocal_regions=[(0.0, 60.0)])
+    selection = _selection(source, target)
+    evaluation = _evaluation(selection, ReferenceArchetype.STEM_ECHO_HANDOFF)
+    assert evaluation.eligible is False
+    assert "vocals remain active" in " ".join(evaluation.rejection_reasons)
+
+
+def test_selector_rejects_d2_when_shared_overlap_has_no_arrangement_space():
+    source = _analysis(source=True)
+    target = _analysis(source=False)
+    for section in source.section_profiles:
+        section["drum_density"] = .90
+    for section in target.section_profiles:
+        section["drum_density"] = .90
+    selection = _selection(source, target)
+    evaluation = _evaluation(selection, ReferenceArchetype.RESTRAINED_OWNERSHIP_BLEND)
+    assert evaluation.eligible is False
+    assert "arrangement density" in " ".join(evaluation.rejection_reasons)
+
+
+def test_selector_reports_source_target_pair_and_template_specific_evidence():
+    selection = _selection()
+    evaluation = _evaluation(selection, ReferenceArchetype.LOOP_BUILD_COHERENT_HANDOFF)
+    assert evaluation.eligible is True
+    assert set(evaluation.evidence) >= {"source_entry", "target_entry", "pair_context"}
+    assert set(evaluation.evidence["target_entry"]) >= {
+        "drum_activity_onset_sec_after_runway_start",
+        "bass_activity_onset_sec_after_runway_start",
+        "landing_vocal_onset_sec",
+    }
+    assert "expected_overlap_conflicts" in evaluation.evidence["pair_context"]
+    assert evaluation.story_rule["checks"]

@@ -27,7 +27,7 @@ from djenius.core.performance_recipe import (
 from djenius.utils.camelot import score_key_compatibility
 
 
-REFERENCE_TEMPLATE_SCHEMA_VERSION = "1.1"
+REFERENCE_TEMPLATE_SCHEMA_VERSION = "1.2"
 REQUIRED_STEMS = frozenset({"drums", "bass", "other", "vocals"})
 
 
@@ -317,6 +317,33 @@ def _curve_window_mean(curve: list[float], start: float, end: float, duration: f
     return float(np.mean(window)) if len(window) else 0.0
 
 
+def _curve_activity_onset(
+    curve: list[float],
+    start: float,
+    end: float,
+    duration: float,
+) -> float | None:
+    """Return a conservative relative onset from a duration-scaled curve.
+
+    This is an analysis proxy, not a stem-transient detector.  It finds the
+    first point reaching 60% of the strongest value inside the window.
+    """
+    values = np.asarray(curve, dtype=float)
+    if not len(values) or duration <= 0 or end <= start:
+        return None
+    left = max(0, min(len(values) - 1, int(start / duration * len(values))))
+    right = max(left + 1, min(len(values), int(np.ceil(end / duration * len(values)))))
+    window = np.nan_to_num(values[left:right], nan=0.0, posinf=0.0, neginf=0.0)
+    peak = float(np.max(window)) if len(window) else 0.0
+    if peak <= 1e-9:
+        return None
+    indexes = np.flatnonzero(window >= peak * .60)
+    if not len(indexes):
+        return None
+    absolute_index = left + int(indexes[0])
+    return max(0.0, absolute_index / len(values) * duration - start)
+
+
 def _boundary_distance(values: list[float], time_sec: float) -> float | None:
     return min((abs(float(value) - time_sec) for value in values), default=None)
 
@@ -413,6 +440,7 @@ def _source_entry_context(
     evidence.update({name: round(value, 4) if isinstance(value, float) else value for name, value in timing.items()})
     if archetype == ReferenceArchetype.RESET_RELEASE:
         last_bar_start = float(grid[start_index + bars - 1])
+        previous_bar_start = float(grid[max(start_index, start_index + bars - 2)])
         regions = [
             (max(start_sec, float(left)), min(end_sec, float(right)))
             for left, right in analysis.vocal_regions
@@ -424,6 +452,40 @@ def _source_entry_context(
             "largest_vocal_unit_window_coverage": round(
                 max((right - left for left, right in regions), default=0.0) / max(end_sec - start_sec, 1e-9), 4,
             ),
+            "repeatable_motif_evidence": {
+                "ends_near_vocal_boundary": (
+                    timing["nearest_vocal_boundary_sec"] is not None
+                    and timing["nearest_vocal_boundary_sec"] <= 1.0
+                ),
+                "final_bar_vocal_coverage": round(
+                    _vocal_coverage(analysis, last_bar_start, end_sec), 4,
+                ),
+                "previous_to_final_rhythm_similarity": round(
+                    _descriptor_similarity(
+                        _local_descriptor_mean(
+                            analysis, "local_rhythm_curve", previous_bar_start, last_bar_start,
+                        ),
+                        _local_descriptor_mean(
+                            analysis, "local_rhythm_curve", last_bar_start, end_sec,
+                        ),
+                        2.0,
+                    ),
+                    4,
+                ),
+                "previous_to_final_spectral_similarity": round(
+                    _descriptor_similarity(
+                        _local_descriptor_mean(
+                            analysis, "local_spectral_curve", previous_bar_start, last_bar_start,
+                        ),
+                        _local_descriptor_mean(
+                            analysis, "local_spectral_curve", last_bar_start, end_sec,
+                        ),
+                        .7,
+                    ),
+                    4,
+                ),
+                "scope": "boundary, vocal coverage, and local descriptor evidence; semantic lyric completeness requires human listening",
+            },
         })
     elif archetype == ReferenceArchetype.LOOP_BUILD_COHERENT_HANDOFF:
         motif_start, motif_end = float(grid[start_index + 1]), float(grid[start_index + 2])
@@ -488,11 +550,40 @@ def _refine_source_window(
     bars: int,
     archetype: ReferenceArchetype,
     duration_sec: float,
+    requested_start_index: int | None = None,
 ) -> tuple[int, int, dict[str, Any]]:
     baseline_start, baseline_end = _source_window(
         analysis, bars, archetype == ReferenceArchetype.RESET_RELEASE,
     )
     baseline = _source_entry_context(analysis, baseline_start, bars, archetype, duration_sec)
+    if requested_start_index is not None:
+        grid = _grid(analysis)
+        if requested_start_index < 0 or requested_start_index + bars >= len(grid):
+            raise ReferenceTemplateEligibilityError("requested source cue cannot contain the template phrase")
+        selected = _source_entry_context(
+            analysis, requested_start_index, bars, archetype, duration_sec,
+        )
+        if archetype == ReferenceArchetype.RESET_RELEASE and not _f_entry_is_safe(selected):
+            raise ReferenceTemplateEligibilityError(
+                "requested F cue has no complete repeatable motif at its release boundary"
+            )
+        if (
+            archetype == ReferenceArchetype.LOOP_BUILD_COHERENT_HANDOFF
+            and not any(_b8_entry_modes(selected))
+        ):
+            raise ReferenceTemplateEligibilityError(
+                "requested B8 cue interrupts an unpredictable active vocal phrase"
+            )
+        return requested_start_index, requested_start_index + bars, {
+            "adjusted": requested_start_index != baseline_start,
+            "adjustment_beats": float((requested_start_index - baseline_start) * 4),
+            "selection_rule": "selector_requested_musically_valid_downbeat_window",
+            "source_phrase_duration_change_sec": round(
+                selected["source_phrase_duration_sec"] - baseline["source_phrase_duration_sec"], 6,
+            ),
+            "baseline": baseline,
+            "selected": selected,
+        }
     if archetype not in {ReferenceArchetype.RESET_RELEASE, ReferenceArchetype.LOOP_BUILD_COHERENT_HANDOFF}:
         return baseline_start, baseline_end, {
             "adjusted": False,
@@ -784,6 +875,8 @@ def instantiate_reference_template(
     target_track_id: str,
     source_duration_sec: float,
     target_duration_sec: float,
+    source_start_bar_index: int | None = None,
+    target_landing_bar_index: int | None = None,
 ) -> ReferenceTemplateInstance:
     """Instantiate one explicitly requested reference-backed performance.
 
@@ -823,8 +916,13 @@ def instantiate_reference_template(
         definition.transition_bars,
         archetype,
         source_duration_sec,
+        source_start_bar_index,
     )
-    landing_index = _target_landing_index(target, archetype)
+    landing_index = (
+        _target_landing_index(target, archetype)
+        if target_landing_bar_index is None
+        else int(target_landing_bar_index)
+    )
     runway_bars = 1 if archetype == ReferenceArchetype.RESET_RELEASE else definition.transition_bars
     runway_index = landing_index - runway_bars
     post_index = landing_index + definition.postlanding_bars
@@ -949,6 +1047,8 @@ def assess_reference_template_pair(
     target_track_id: str,
     source_duration_sec: float,
     target_duration_sec: float,
+    source_start_bar_index: int | None = None,
+    target_landing_bar_index: int | None = None,
 ) -> ReferencePairAssessment:
     """Return deterministic analysis-only suitability evidence.
 
@@ -966,6 +1066,8 @@ def assess_reference_template_pair(
             target_track_id=target_track_id,
             source_duration_sec=source_duration_sec,
             target_duration_sec=target_duration_sec,
+            source_start_bar_index=source_start_bar_index,
+            target_landing_bar_index=target_landing_bar_index,
         )
     except ReferenceTemplateEligibilityError as exc:
         return ReferencePairAssessment(
@@ -1021,9 +1123,16 @@ def assess_reference_template_pair(
     source_other_activity = float(source_stem_profiles.get("other", {}).get("active_fraction", 0.0))
     source_drum_activity = float(source_stem_profiles.get("drums", {}).get("active_fraction", 0.0))
     target_bass_activity = float(target_stem_profiles.get("bass", {}).get("active_fraction", 0.0))
+    source_vocal_stem_confidence = float(
+        source_stem_profiles.get("vocals", {}).get("activity_confidence", 0.0)
+    )
+    target_vocal_stem_confidence = float(
+        target_stem_profiles.get("vocals", {}).get("activity_confidence", 0.0)
+    )
     target_arrangement_density = float(target_profile.get("drum_density", target_drum_activity))
     source_arrangement_density = float(source_profile.get("drum_density", source_drum_activity))
     shared_density_pressure = source_arrangement_density + target_arrangement_density
+    raw_vocal_overlap_pressure = min(source_vocal_density, target_runway_vocal)
     source_bass_window = _curve_window_mean(
         source.low_energy_curve,
         anchors.source_start_sec,
@@ -1040,6 +1149,18 @@ def assess_reference_template_pair(
         target.low_energy_curve,
         anchors.target_landing_sec,
         target_first_end,
+        target_duration_sec,
+    )
+    target_drum_onset = _curve_activity_onset(
+        target.rhythmic_density_curve,
+        anchors.target_runway_start_sec,
+        anchors.target_landing_sec,
+        target_duration_sec,
+    )
+    target_bass_onset = _curve_activity_onset(
+        target.low_energy_curve,
+        anchors.target_runway_start_sec,
+        anchors.target_landing_sec,
         target_duration_sec,
     )
 
@@ -1081,6 +1202,8 @@ def assess_reference_template_pair(
         "source_drum_stem_activity": round(source_drum_activity, 4),
         "target_drum_stem_activity": round(target_drum_activity, 4),
         "target_bass_stem_activity": round(target_bass_activity, 4),
+        "source_vocal_stem_confidence": round(source_vocal_stem_confidence, 4),
+        "target_vocal_stem_confidence": round(target_vocal_stem_confidence, 4),
         "source_stems": sorted((source.stems or {}).keys()),
         "target_stems": sorted((target.stems or {}).keys()),
         "stem_quality_scope": "activity/confidence only; bleed/artifact quality unavailable",
@@ -1116,10 +1239,20 @@ def assess_reference_template_pair(
             ),
             "runway_vocal_density": round(target_runway_vocal, 4),
             "landing_vocal_onset_sec": round(vocal_onset, 4) if vocal_onset is not None else None,
+            "drum_activity_onset_sec_after_runway_start": _round_optional(target_drum_onset),
+            "bass_activity_onset_sec_after_runway_start": _round_optional(target_bass_onset),
+            "activity_onset_scope": "duration-scaled rhythmic/low-energy curve proxy; not a stem transient detector",
             "runway_bass_ratio": round(target_runway_bass, 4),
             "landing_bass_ratio": round(target_landing_bass, 4),
             "arrangement_density": round(target_arrangement_density, 4),
             "cue_confidence": round(float(target_cue.get("confidence", 0.0)), 4),
+            "cue_cleanliness": {
+                "mix_in_score": round(float(target_cue.get("mix_in_score", 0.0)), 4),
+                "vocal_state": str(target_cue.get("vocal_state", "unknown")),
+                "runway_vocal_density": round(target_runway_vocal, 4),
+                "landing_section": anchors.target_landing_section,
+            },
+            "target_establishment_bars": instance.definition.postlanding_bars,
         },
         "pair_context": {
             "tempo_delta_pct": round(tempo_delta, 4),
@@ -1127,6 +1260,12 @@ def assess_reference_template_pair(
             "harmonic_compatibility": round(harmonic, 4),
             "source_to_target_energy_change": round(target_landing_energy - source_energy, 4),
             "stem_quality_scope": "presence/activity/confidence only; bleed/artifact quality requires audio",
+            "expected_overlap_conflicts": {
+                "raw_vocal_overlap_pressure": round(raw_vocal_overlap_pressure, 4),
+                "shared_arrangement_density_pressure": round(shared_density_pressure, 4),
+                "bass_ownership_is_choreography_controlled": True,
+                "stem_bleed_conflict_deferred": True,
+            },
         },
         "anchors": anchors.to_dict(),
     }
@@ -1161,6 +1300,12 @@ def assess_reference_template_pair(
             rejected.append("source and target groove descriptors are too far apart for a stem handoff")
         if harmonic < .30:
             rejected.append("harmonic overlap risk is too high for the staged stem edit")
+        if source_capture_vocal > .85 and target_runway_vocal > .90:
+            rejected.append(
+                "source and target vocals remain active throughout the useful C3 shared window"
+            )
+        if source_vocal_stem_confidence < .75 or target_vocal_stem_confidence < .75:
+            rejected.append("vocal-stem activity confidence is too weak for a controlled C3 handoff")
         score = .24 * (1 - min(groove / .42, 1)) + .22 * source_capture_vocal + .20 * target_drum_activity + .14 * target_landing_energy + .10 * harmonic + .10 * target.analysis_confidence
         reasons.extend((
             "late source vocal supports a captured echo continuation",

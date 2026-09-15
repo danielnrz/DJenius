@@ -321,3 +321,35 @@ The `NO` above is deliberate: reverse sweep/cymbal passed deterministic synthesi
   Both are finite, unclipped stereo 44.1 kHz PCM24 and deterministic.
 - Focused suite: **24 passed**; complete regression: **1126 passed in 82.45s**
   with the same two dependency warnings. Human listening remains the gate.
+
+## Constrained autonomous reference-template selection gate
+
+- Human listening passed both Round-2 source-entry fixes. The frozen accepted
+  set now contains four manual, four AUTO, and four new-pair references; all
+  twelve hashes are durable in `REFERENCE_GENERALIZATION_LABELS.json` and
+  were verified unchanged before/after both private selector render runs.
+- Eight unseen ordered pairs were fixed before audio rendering using
+  analysis-only strata: two material tempo contrasts, two progressive target
+  cases, one vocal/stem-edit probe, one restrained-overlap probe, and two
+  explicit conflict-pressure probes. Every prior reference/generalization
+  ordered pair was excluded.
+- Decisions: PAIR_02 F/reset-release (source cue -28 beats); PAIR_03 B8
+  (-48 beats); PAIR_04 B8 (-8 beats); PAIR_05 C3 (-36 beats). All selected
+  target landings retain their baseline cues. PAIR_01/06/07/08 abstain. No D2
+  pair met its entire explicit long-overlap story, so no D2 was forced.
+- Render hashes: PAIR_02
+  `e196d2d1904dbb3e5d178b12ccd9762fa77fc5aa5d12efcc8f5e1d82d6869f72`,
+  PAIR_03
+  `746a0e472b6dfd466166fd1e795ffac5f5c45eac482b7d0d708f72c500f80c9b`,
+  PAIR_04
+  `a7faf8bf62091d3f6d766511ccec6dfb782b443e8f3d8c15d90b179741513fc5`,
+  PAIR_05
+  `53d3e60cc46f98fc3b330d68f2e255ea4224db9337e6625c376d425f56c5099b`.
+  All are finite, unclipped stereo 44.1 kHz PCM24 and reproduced byte-for-byte.
+- The private manifest contains every evaluation, rejection count, story
+  check, cue rank/shift, instance, provenance, and technical metric. Semantic
+  lyric completeness, stem bleed, and exact stem-transient onset remain
+  explicitly deferred rather than fabricated.
+- Focused suite: **34 passed**; complete regression: **1136 passed in 81.99s**
+  with the two existing dependency warnings. These establish deterministic
+  decision/execution, not musical quality; blind human listening is the gate.
