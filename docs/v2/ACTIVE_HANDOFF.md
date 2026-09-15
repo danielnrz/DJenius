@@ -1,5 +1,63 @@
 # DJenius V2 Active Handoff
 
+## CONSTRAINED JOINT SET-DIRECTOR PILOT — COMPLETE; HUMAN GATE PENDING
+
+2026-09-15. One isolated four-track/three-transition joint-planning pilot is
+complete. `joint_reference_set.py` jointly evaluates next-track set flow,
+`PAIR_TRANSITIONABLE`, all four frozen archetypes, cue placement,
+`USABLE_FOR_PERFORMANCE`, and the middle track's minimum establishment time.
+It does not import or call the legacy Set Director, Candidate Composer, or
+Audition Lab. A deterministic bounded path search rejects prior listening-test
+ordered pairs and never admits an attractive but untransitionable track.
+
+The private fourteen-track library could not provide four individually unused
+tracks, so individual-track reuse was unavoidable; all prior manual,
+generalization, and blind-test **ordered pair edges** were excluded. The chosen
+anonymous path is `SET_TRACK_01 -> SET_TRACK_02 -> SET_TRACK_03 ->
+SET_TRACK_04`, using `D2 -> F -> F`. Energy is `.747 -> .745 -> .770 ->
+.707`. The first two tracks have close BPM/harmonic evidence for D2; the two F
+resets carry the later material tempo contrasts. Variety is only a late
+tie-breaker after performance and set-flow evidence, and consecutive use is a
+soft preference rather than permission to choose a weaker transition.
+
+`joint_reference_set_renderer.py` executes each frozen template intact and
+keeps every tail through its declared postlanding establishment window. The
+middle track then continues from the exact target source clock into natural
+playback, and later enters its outgoing frozen performance through a 40 ms
+sample-aligned seam. A slow gain bridge joins independently level-matched
+windows; the assembled set receives one final uniform master pass. No
+transition WAVs were concatenated to make the set: the excerpts are cut from
+the final continuous set render.
+
+Private deliverables are in
+`/tmp/djenius_reference_dj_transition/joint_set_pilot/`:
+
+- `JOINT_SET_PILOT.wav` — 391.595283 s, stereo 44.1 kHz PCM24, SHA-256
+  `7ac329b346a29168184ed5797e603cf25f00c3cfaea8c04d235c0463673b3a71`;
+- `TRANSITION_01.wav` — D2, 35.477188 s,
+  `e3862cbc43085567bdb8c238794cceb3f05a22a2d06fb306311966a854c32a4e`;
+- `TRANSITION_02.wav` — F, 22.868753 s,
+  `b44f440c9511b8b93e641c4525c1f7a1ae328479dc669d1bb7e97d63cb1b29ad`;
+- `TRANSITION_03.wav` — F, 29.254240 s,
+  `96facb35b19a30650baf81885ce1be21c225d069c0a67cfbc63fed78ec027a81`;
+- `JOINT_SET_PLAN.json` and `JOINT_SET_DECISIONS.json` contain the opening
+  choice, every per-step candidate table, all four template evaluations,
+  cue/establishment evidence, complete choreography, render provenance, and
+  all rejection reasons.
+
+The set has sample peak `.935026`, zero clipping, and exact-boundary maximum
+sample deltas `.072240/.012311/.072921/.071492/.055813/.044374` at its six
+natural/template joins. All twelve accepted reference WAVs were hash-verified
+unchanged before the final render. Focused joint/reference tests pass at **45**;
+complete regression passes at **1147 passed in 83.79s**, with the same two
+Typer/Click dependency warnings. These facts prove deterministic planning,
+continuity, and safety only. Whether the three moves and the sequence sound
+like a convincing DJ set remains exclusively the pending human listening gate.
+
+STOP. Do not render a second mini-set or reconnect the unrestricted Set
+Director, Candidate Composer, Audition Lab, UI, personalization, generic
+families, or new choreography before the user evaluates this pilot.
+
 ## AUTONOMOUS SELECTION POSTMORTEM — COMPLETE
 
 2026-09-15. The first blind autonomous-selection gate failed human listening:

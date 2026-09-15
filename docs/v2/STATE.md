@@ -4,11 +4,32 @@
 All roadmap phases (0-10) remain frozen. **There is no new roadmap phase.**
 The user passed manual reference quality, same-pair automated reproduction,
 new-pair generalization, and the two targeted source-entry fixes. The first
-blind autonomous selector gate then failed: none of its four rendered choices
-was a convincing pass. Postmortem shows a combination of cue-search defects
-and an over-permissive acceptance floor. Candidate Composer, Audition Lab, Set
-Director, UI, personalization, new families, and full mixes remain out of
-scope.
+blind autonomous selector gate failed; its postmortem produced a calibrated,
+conservative `PAIR_TRANSITIONABLE`/`USABLE_FOR_PERFORMANCE` selector. One
+isolated four-track joint-planning pilot has now been rendered and is awaiting
+human listening. The legacy Set Director, Candidate Composer, Audition Lab,
+UI, personalization, generic families, and unrestricted/full-set automation
+remain disconnected.
+
+## CONSTRAINED JOINT SET-DIRECTOR PILOT (HUMAN GATE PENDING)
+
+- `joint_reference_set.py` makes track, frozen archetype, source cue, and target
+  cue one decision. Set-flow and performance evidence stay explicit; a pair
+  failing the transition floor cannot enter a path.
+- Opening choice is deterministic and requires a complete hard-gated path.
+  Bounded path search records each candidate table and uses diversity only
+  after transition and set-flow evidence.
+- `joint_reference_set_renderer.py` renders frozen reference choreography
+  intact, preserves target/tail state through the full template window, and
+  continues each middle track by sample-aligned natural playback before its
+  outgoing move. The three review excerpts come from the continuous set.
+- The anonymous four-track path uses D2, F, F across three previously unused
+  ordered edges. All prior listening-test ordered pairs were excluded.
+- Private output: 391.595283 s stereo 44.1 kHz PCM24, sample peak `.935026`,
+  zero clipping. Focused tests: **45 passed**; full regression: **1147 passed
+  in 83.79s** with two existing dependency warnings.
+- These are technical gates only. Human listening decides whether the order
+  and all three transitions pass; no second pilot is authorized.
 
 ## REFERENCE-BACKED AUTONOMOUS SELECTION POSTMORTEM
 

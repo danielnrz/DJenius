@@ -390,3 +390,28 @@ The `NO` above is deliberate: reverse sweep/cymbal passed deterministic synthesi
   transition regression: **136 passed**; complete repository regression:
   **1142 passed in 84.58s**, with only the two existing Typer/Click dependency
   warnings. Touched-file ruff and `git diff --check` pass.
+
+## Constrained joint set-director pilot
+
+- Private library: fourteen analyzable tracks. Individual-track reuse was
+  unavoidable at this library size, but every prior manual, generalization,
+  and blind-test ordered pair was excluded before planning.
+- One deterministic four-track path cleared set-flow, pair-transitionability,
+  template-acceptance, cue, and establishment gates. Anonymous mean-energy
+  trajectory: `.747 -> .745 -> .770 -> .707`; frozen archetypes: `D2 -> F ->
+  F`. The repeated F reflects the only hard-qualified edges on that path;
+  diversity remained a post-quality preference.
+- Continuous output duration: **391.595283 s**, stereo 44.1 kHz PCM24, sample
+  peak `.935026`, clipping fraction `0`. Six natural/template joins use 40 ms
+  sample-aligned seams; their exact-boundary maximum sample deltas are
+  `.072240/.012311/.072921/.071492/.055813/.044374`.
+- Transition excerpt durations: **35.477188 / 22.868753 / 29.254240 s**. Each
+  is sliced from the final set and contains two source bars before the move
+  and four target bars after landing.
+- All twelve accepted reference WAV hashes were verified unchanged before the
+  final render. Focused joint/reference suite: **45 passed**. Complete
+  regression: **1147 passed in 83.79s**, with the same two dependency warnings.
+- This benchmark proves deterministic joint planning, hard rejection,
+  continuous cursor/tail handling, finite output, and absence of clipping. It
+  does **not** prove DJ quality, transition appropriateness, or set-flow
+  success; those claims remain pending human listening of the one pilot.

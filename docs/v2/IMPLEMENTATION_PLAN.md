@@ -238,3 +238,22 @@ before rendering by analysis-only strata. Four received one transition each
 onto a pair that failed its long-overlap contract. Focused tests pass at 34;
 complete regression passes at 1136. Stop for human listening and abstention
 review before any broader autonomous integration.
+
+The failed selector panel and Case-2 postmortem authorized exactly one thin
+joint set-level pilot. Delivered without changing roadmap phase status:
+
+- a standalone planner that jointly binds next track, frozen F/C3/B8/D2
+  archetype, and both cues behind set-flow, `PAIR_TRANSITIONABLE`,
+  `USABLE_FOR_PERFORMANCE`, and establishment hard gates;
+- deterministic opening/path choice, complete inspectable candidate tables,
+  conservative dead-end behavior, and performance-quality-before-diversity
+  ordering;
+- one continuous four-track/three-transition renderer that preserves each
+  template's target clock and tail before sample-aligned natural target
+  continuation;
+- one private pilot plus three excerpts cut from that set, with all prior
+  listening-test ordered pairs excluded.
+
+Focused tests pass at 45 and complete regression at 1147. Stop for the human
+joint-set listening gate. Do not create a second set or reconnect the legacy
+Set Director/Candidate Composer/Audition Lab path.
