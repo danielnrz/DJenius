@@ -353,3 +353,40 @@ The `NO` above is deliberate: reverse sweep/cymbal passed deterministic synthesi
 - Focused suite: **34 passed**; complete regression: **1136 passed in 81.99s**
   with the two existing dependency warnings. These establish deterministic
   decision/execution, not musical quality; blind human listening is the gate.
+
+## Autonomous selector postmortem and counterfactual gate
+
+- Human listening rejected all four rendered choices as passes. Relative
+  ordering was PAIR_05 best, then PAIR_04, PAIR_03, and PAIR_02, but none met
+  the practical acceptance threshold.
+- The untouched baseline selector was replayed blind on four accepted
+  generalization pairs. It found B8 for both B8 controls and C3 for C3_01, but
+  selected source bars `82/44/91` instead of accepted `93/44/89`, and
+  abstained on F_02_FIX instead of selecting accepted source/target bars
+  `51/4`. This proves real cue-search/ranking defects independent of the four
+  failed pairs.
+- Selector-only corrections admit the proven clean F intro pickup, retain an
+  equally-safe analysis phrase rather than drifting to an arbitrary hook, and
+  recognize the sparse/quiet-boundary C3 case whose frozen stem choreography
+  controls raw vocal overlap. The revised replay recovers **4/4 exact
+  template/source-bar/target-bar choices**.
+- The new second gate is an explicit list of archetype-specific checks, not a
+  score. It covers motif completion/boundary/reset space for F; quiet edit
+  boundary/stem confidence/groove/harmony/density for C3; motif stability,
+  backing, groove/harmony, tail runway, payoff, and bass transfer for B8; and
+  sustained tempo/groove/harmony/density/energy/vocal/bass space for D2.
+- Re-evaluation at best nearby cues marks PAIR_02-05 all
+  `PAIR_TRANSITIONABLE = NO`. PAIR_02 has only an F candidate but its motif is
+  not complete at effect onset and target reset space is weak. PAIR_03's best
+  B8 cue lacks backing/groove margin. PAIR_04's B8 lacks groove/harmonic
+  margin. PAIR_05's only C3 option lacks density/groove/harmonic margin.
+- No other frozen archetype clears its own strong floor on any failed pair,
+  so **zero counterfactual WAVs** were rendered. This is the requested Case 2:
+  pair selection/acceptance, not an alternative-template win.
+- The four prior abstentions remain abstentions under the new floor. Detailed
+  private identities/evidence are in `POSTMORTEM_DIAGNOSIS.json`; public-safe
+  labels and hashes are in `REFERENCE_SELECTOR_LABELS.json`.
+- Focused selector/template suite: **40 passed**; broader recipe/technique/
+  transition regression: **136 passed**; complete repository regression:
+  **1142 passed in 84.58s**, with only the two existing Typer/Click dependency
+  warnings. Touched-file ruff and `git diff --check` pass.

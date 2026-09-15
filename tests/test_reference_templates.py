@@ -419,8 +419,15 @@ def test_selector_is_deterministic_and_reasoning_has_no_aggregate_winner_score()
     assert first.selector_id == second.selector_id
     serialized = first.to_dict(include_instances=False)
     assert "score" not in serialized
-    assert all("story_rule" in item and "cue_search" in item for item in serialized["evaluations"])
-    assert first.selected_archetype == ReferenceArchetype.LOOP_BUILD_COHERENT_HANDOFF
+    assert all(
+        "story_rule" in item
+        and "cue_search" in item
+        and "performance_acceptance" in item
+        for item in serialized["evaluations"]
+    )
+    assert first.selected_archetype is None
+    assert first.pair_transitionable is False
+    assert first.pair_rejection_reasons
 
 
 def test_selector_abstains_when_every_template_is_structurally_ineligible():
@@ -448,13 +455,43 @@ def test_selector_f_requires_complete_repeatable_motif():
 
 def test_selector_f_selects_a_self_contained_motif_for_material_reset():
     source = replace(
-        _analysis(source=True), bpm=160, camelot="1A", vocal_regions=[(40.0, 44.0)],
+        _analysis(source=True), bpm=160, camelot="1A", vocal_regions=[(37.0, 44.0)],
     )
     target = replace(_analysis(source=False), bpm=100, camelot="7B")
     selection = _selection(source, target)
     assert selection.selected_archetype == ReferenceArchetype.RESET_RELEASE
     evaluation = _evaluation(selection, ReferenceArchetype.RESET_RELEASE)
     assert evaluation.story_rule["checks"]["repeatable_motif_is_complete"] is True
+    assert evaluation.usable_for_performance is True
+    assert evaluation.performance_acceptance["usable"] is True
+    assert selection.pair_transitionable is True
+    assert selection.pair_rejection_reasons == ()
+
+
+def test_selector_f_can_use_a_clean_intro_pickup_at_the_section_boundary():
+    source = replace(
+        _analysis(source=True), bpm=160, camelot="1A", vocal_regions=[(37.0, 44.0)],
+    )
+    target = _analysis(source=False)
+    sections = [dict(item) for item in target.section_profiles]
+    sections[0]["end_sec"] = 24.1
+    sections[1]["start_sec"], sections[1]["end_sec"] = 24.1, 28.1
+    sections[2]["start_sec"] = 28.1
+    target = replace(
+        target,
+        bpm=100,
+        camelot="7B",
+        section_profiles=sections,
+        structural_sections=[
+            (float(item["start_sec"]), float(item["end_sec"]), str(item["label"]))
+            for item in sections
+        ],
+    )
+    selection = _selection(source, target)
+    evaluation = _evaluation(selection, ReferenceArchetype.RESET_RELEASE)
+    assert selection.selected_archetype == ReferenceArchetype.RESET_RELEASE
+    assert evaluation.evidence["target_landing_section"] == "intro"
+    assert evaluation.cue_search["selected_target_landing_bar_index"] == 12
 
 
 def test_selector_shifts_b8_launch_away_from_vocal_interruption():
@@ -468,6 +505,15 @@ def test_selector_shifts_b8_launch_away_from_vocal_interruption():
     assert evaluation.cue_search["source_cue_shift_beats"] != 0
     assert evaluation.evidence["source_entry"]["selected"]["vocal_active"] is False
     assert "source launch shifted" in " ".join(evaluation.cue_search["cue_shift_rationale"])
+
+
+def test_selector_retains_an_equally_safe_analysis_b8_phrase():
+    selection = _selection()
+    evaluation = _evaluation(selection, ReferenceArchetype.LOOP_BUILD_COHERENT_HANDOFF)
+    assert evaluation.eligible is True
+    assert evaluation.cue_search["source_cue_shift_beats"] == 0
+    rank_names = [item["criterion"] for item in evaluation.cue_search["lexicographic_rank_evidence"]]
+    assert "analysis_phrase_retained" in rank_names
 
 
 def test_selector_shifts_b8_target_off_a_vocal_collision_cue():
@@ -525,3 +571,45 @@ def test_selector_reports_source_target_pair_and_template_specific_evidence():
     }
     assert "expected_overlap_conflicts" in evaluation.evidence["pair_context"]
     assert evaluation.story_rule["checks"]
+
+
+def test_selector_abstains_when_technical_eligibility_lacks_performance_margin():
+    selection = _selection()
+    b8 = _evaluation(selection, ReferenceArchetype.LOOP_BUILD_COHERENT_HANDOFF)
+    assert b8.eligible is True
+    assert b8.story_rule["qualified"] is True
+    assert b8.usable_for_performance is False
+    assert b8.performance_acceptance["checks"]["loop_motif_is_rhythmically_stable"] is False
+    assert selection.decision == "NO_SUITABLE_TEMPLATE"
+    assert selection.pair_transitionable is False
+    assert "performance margin" in " ".join(selection.pair_rejection_reasons)
+
+
+def test_selector_f_abstains_when_repeat_window_is_not_one_complete_unit():
+    source = replace(
+        _analysis(source=True), bpm=160, camelot="1A", vocal_regions=[(40.0, 44.0)],
+    )
+    target = replace(_analysis(source=False), bpm=100, camelot="7B")
+    selection = _selection(source, target)
+    evaluation = _evaluation(selection, ReferenceArchetype.RESET_RELEASE)
+    assert evaluation.eligible is True
+    assert evaluation.usable_for_performance is False
+    assert evaluation.performance_acceptance["checks"]["motif_is_one_self_contained_unit"] is False
+    assert selection.selected_archetype is None
+
+
+def test_selector_c3_eligible_candidate_can_fail_explicit_performance_floor():
+    selection = _selection()
+    evaluation = _evaluation(selection, ReferenceArchetype.STEM_ECHO_HANDOFF)
+    assert evaluation.eligible is True
+    assert evaluation.usable_for_performance is False
+    assert any(not passed for passed in evaluation.performance_acceptance["checks"].values())
+    assert evaluation.performance_acceptance["no_aggregate_score"] is True
+
+
+def test_pair_transitionability_is_serialized_separately_from_template_eligibility():
+    selection = _selection()
+    payload = selection.to_dict(include_instances=False)
+    assert any(item["eligible"] for item in payload["evaluations"])
+    assert payload["pair_transitionable"] is False
+    assert payload["pair_rejection_reasons"]

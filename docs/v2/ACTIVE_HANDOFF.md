@@ -1,5 +1,56 @@
 # DJenius V2 Active Handoff
 
+## AUTONOMOUS SELECTION POSTMORTEM — COMPLETE
+
+2026-09-15. The first blind autonomous-selection gate failed human listening:
+`PAIR_02 = FAIL_NOT_GOOD`, `PAIR_03 = FAIL_BETTER_THAN_02`,
+`PAIR_04 = NEAR_PASS_BUT_NOT_GOOD`, and
+`PAIR_05 = BEST_OF_ROUND_BUT_NOT_PASS`. None is a pass. The previous
+abstentions (`PAIR_01`, `PAIR_06`, `PAIR_07`, `PAIR_08`) remain evidence to
+audit rather than rerender. The active task is restricted to: blind calibration
+replay on the four accepted generalization pairs; selection/cue/pair-suitability
+postmortem; explicit `USABLE_FOR_PERFORMANCE` and `PAIR_TRANSITIONABLE` gates;
+and only demonstrably credible frozen-template counterfactuals. Renderer,
+approved template choreography, accepted references, Set Director, Candidate
+Composer, Audition Lab, new families, and full mixes remain untouched.
+
+Recovery verification: branch `v2-professional-autonomous-dj`; local and
+remote-tracking HEAD both `f0febb705328a9565bd688f38217a1c14b14abfc` after
+fetch; the worktree was otherwise clean except the pre-existing untracked
+`.claude/` directory.
+
+Diagnosis milestone: the untouched baseline selector failed blind calibration.
+It chose B8 source bar 82 instead of accepted 93 for B8_01, C3 source bar 91
+instead of accepted 89 for C3_01, and abstained on accepted F_02_FIX because
+its proven intro pickup was absent from target search; only B8_02_FIX was exact.
+Selector-only cue corrections now rediscover all four accepted templates and
+exact source/target bar anchors. A new explicit `USABLE_FOR_PERFORMANCE` gate
+separates technical eligibility from permission to render, and
+`PAIR_TRANSITIONABLE` separately records whether any frozen behavior clears
+that floor.
+
+Postmortem result: PAIR_02-05 each fail the revised floor at their best nearby
+cues and no other frozen archetype is credible. All four are marked
+`SHOULD_HAVE_ABSTAINED`; zero ALT WAVs were created. PAIR_01/06/07/08 remain
+abstentions and were appropriately conservative. The private report is
+`/tmp/djenius_reference_dj_transition/autonomous_selection/postmortem/POSTMORTEM_DIAGNOSIS.json`
+(SHA-256 `a535baa424f00c8daba58bb4d0bfa2f8704f2a59eafea67572f850743568aa08`),
+and the updated private manifest SHA-256 is
+`75b861d38cd9676830e3a3cd66d76aa3c24ae3c9b6a12ed7bce80bef56e3971a`.
+All 12 accepted references and all four failed-round WAVs were hash-verified
+unchanged. Focused selector/template tests: **40 passed**; focused structural
+regression: **136 passed**. Touched-file ruff and `git diff --check` pass.
+Complete repository regression: **1142 passed in 84.58s**, with the two
+existing Typer/Click deprecation warnings. No test is currently running.
+
+**STOP/GATE:** there are no counterfactual WAVs to listen to. This is a valid
+and material result: every alternative would violate its own performance floor.
+The experiment resolves to Case 2 (`PAIR_SELECTION_AND_ACCEPTANCE`), not an
+alternative-template win. Do not launch a second blind round and do not
+reconnect Set Director. The next product step requires user direction after
+reviewing this diagnosis; when autonomy eventually resumes, next-track,
+template, and cue choice must be joint.
+
 ## REFERENCE-BACKED AUTONOMOUS SELECTION GATE — READY FOR BLIND LISTENING
 
 2026-09-15. Human listening passed both Round 2 fixes:

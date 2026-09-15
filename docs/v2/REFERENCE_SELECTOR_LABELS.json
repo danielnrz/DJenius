@@ -1,0 +1,48 @@
+{
+  "schema_version": "reference-selector-labels-1",
+  "recorded_at": "2026-09-15",
+  "authority": "human listening labels are engineering evidence, not machine-learning targets",
+  "gate_result": "FAILED_FALSE_POSITIVE_SELECTIONS",
+  "human_labels": {
+    "PAIR_02": "FAIL_NOT_GOOD",
+    "PAIR_03": "FAIL_BETTER_THAN_02",
+    "PAIR_04": "NEAR_PASS_BUT_NOT_GOOD",
+    "PAIR_05": "BEST_OF_ROUND_BUT_NOT_PASS"
+  },
+  "original_abstentions": {
+    "PAIR_01": "ABSTAINED",
+    "PAIR_06": "ABSTAINED",
+    "PAIR_07": "ABSTAINED",
+    "PAIR_08": "ABSTAINED"
+  },
+  "postmortem": {
+    "baseline_calibration": "the selector failed to recover every accepted template/cue",
+    "revised_calibration": "4 of 4 accepted generalization choices rediscovered at the exact accepted bar anchors",
+    "failed_pair_result": {
+      "PAIR_02": "SHOULD_HAVE_ABSTAINED",
+      "PAIR_03": "SHOULD_HAVE_ABSTAINED",
+      "PAIR_04": "SHOULD_HAVE_ABSTAINED",
+      "PAIR_05": "SHOULD_HAVE_ABSTAINED"
+    },
+    "credible_alternative_archetypes": 0,
+    "counterfactual_wavs": [],
+    "conclusion": "CASE_2_PAIR_SELECTION_AND_ACCEPTANCE"
+  },
+  "private_report": {
+    "path": "/tmp/djenius_reference_dj_transition/autonomous_selection/postmortem/POSTMORTEM_DIAGNOSIS.json",
+    "sha256": "a535baa424f00c8daba58bb4d0bfa2f8704f2a59eafea67572f850743568aa08"
+  },
+  "frozen_blind_outputs": {
+    "PAIR_02.wav": "e196d2d1904dbb3e5d178b12ccd9762fa77fc5aa5d12efcc8f5e1d82d6869f72",
+    "PAIR_03.wav": "746a0e472b6dfd466166fd1e795ffac5f5c45eac482b7d0d708f72c500f80c9b",
+    "PAIR_04.wav": "a7faf8bf62091d3f6d766511ccec6dfb782b443e8f3d8c15d90b179741513fc5",
+    "PAIR_05.wav": "53d3e60cc46f98fc3b330d68f2e255ea4224db9337e6625c376d425f56c5099b"
+  },
+  "invariants": [
+    "renderer and approved choreography were not modified",
+    "technical eligibility is distinct from USABLE_FOR_PERFORMANCE",
+    "pair transitionability requires at least one usable approved performance",
+    "false-positive selection is worse than conservative abstention",
+    "future next-track and transition choice must be joint"
+  ]
+}

@@ -3,17 +3,41 @@
 ## CURRENT PHASE
 All roadmap phases (0-10) remain frozen. **There is no new roadmap phase.**
 The user passed manual reference quality, same-pair automated reproduction,
-new-pair generalization, and the two targeted source-entry fixes. The active
-gate is blind human listening of a constrained autonomous selector over only
-the four proven templates plus abstention. Candidate Composer, Audition Lab,
-Set Director, UI, personalization, new families, and full mixes remain out of
+new-pair generalization, and the two targeted source-entry fixes. The first
+blind autonomous selector gate then failed: none of its four rendered choices
+was a convincing pass. Postmortem shows a combination of cue-search defects
+and an over-permissive acceptance floor. Candidate Composer, Audition Lab, Set
+Director, UI, personalization, new families, and full mixes remain out of
 scope.
 
-## REFERENCE-BACKED AUTONOMOUS SELECTION (HUMAN GATE PENDING)
+## REFERENCE-BACKED AUTONOMOUS SELECTION POSTMORTEM
 
-- `select_reference_transition` evaluates all four approved archetypes,
-  searches bounded nearby source/target downbeat windows, and returns one
-  template instance or `NO_SUITABLE_TEMPLATE`.
+- Human labels are `PAIR_02 = FAIL_NOT_GOOD`,
+  `PAIR_03 = FAIL_BETTER_THAN_02`, `PAIR_04 = NEAR_PASS_BUT_NOT_GOOD`, and
+  `PAIR_05 = BEST_OF_ROUND_BUT_NOT_PASS`. None is a pass.
+- Blind calibration at the pre-postmortem selector checkpoint recovered the
+  correct template for three accepted cases but missed two accepted source
+  cues and abstained on accepted F_02_FIX because the proven intro pickup was
+  excluded. The revised selector recovers all four templates and exact
+  accepted bar anchors.
+- `select_reference_transition` now separates technical `eligible` from
+  explicit archetype-specific `USABLE_FOR_PERFORMANCE`, and exposes separate
+  `PAIR_TRANSITIONABLE` state and reasons. No aggregate winner score is used.
+- Re-evaluation of every frozen archetype at its best nearby cues finds no
+  credible alternative for PAIR_02-05. All four are now
+  `SHOULD_HAVE_ABSTAINED`; zero counterfactual WAVs were fabricated.
+- PAIR_01/06/07/08 remain abstentions under the stronger floor, so their
+  conservative behavior was appropriate relative to the four false positives.
+- Human labels and anonymous hashes are durable in
+  `REFERENCE_SELECTOR_LABELS.json`; the detailed private report is under
+  `/tmp/djenius_reference_dj_transition/autonomous_selection/postmortem/`.
+- Renderer and frozen template choreography are unchanged. This is selection
+  and cue-discovery work only.
+- Focused selector/template tests: **40 passed**; focused structural regression:
+  **136 passed**; complete repository regression: **1142 passed in 84.58s**
+  with the two existing dependency warnings.
+
+## FIRST AUTONOMOUS SELECTION GATE (FAILED; HISTORICAL INPUT)
 - Each evaluation exposes source phrase/vocal/gap/motif/energy/transient
   context, target cue/phrase/vocal/drum/bass/density/establishment context,
   pair tempo/groove/harmony/energy/stem/overlap context, and a named
@@ -165,12 +189,12 @@ performance.** Two deeper findings, confirmed but deliberately not fixed
   visualization).
 
 ## CURRENT BLOCKERS
-The only immediate blocker is blind human listening of the four rendered
-autonomous choices and review of the four abstentions. Technical checks cannot
-establish musical appropriateness.
+The postmortem is complete. No counterfactual cleared the explicit performance
+floor, so there is no new audio listening artifact. Broader autonomy remains
+blocked on product direction for joint next-track/template/cue selection and a
+future human gate; technical tests cannot substitute for that decision.
 
 ## EXACT NEXT ACTION
-Stop for the user to blind-listen to `PAIR_02.wav` through `PAIR_05.wav` and
-judge whether PAIR_01/06/07/08 correctly abstained. Record labels against the
-manifest evidence. Do not tune, add pairs, broaden selection, or resume
-Candidate Composer, Audition Lab, Set Director, UI, or full mixes.
+Stop for user review of the Case-2 diagnosis. Do not render unqualified
+alternatives, launch a second blind-selection round, tune frozen templates, or
+resume Candidate Composer, Audition Lab, Set Director, UI, or full mixes.

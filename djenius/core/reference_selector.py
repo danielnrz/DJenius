@@ -27,7 +27,7 @@ from djenius.core.reference_templates import (
 )
 
 
-REFERENCE_SELECTOR_SCHEMA_VERSION = "reference-selector-1"
+REFERENCE_SELECTOR_SCHEMA_VERSION = "reference-selector-2"
 
 
 @dataclass(frozen=True)
@@ -40,6 +40,8 @@ class ReferenceTemplateEvaluation:
     evidence: dict[str, Any]
     cue_search: dict[str, Any]
     story_rule: dict[str, Any]
+    usable_for_performance: bool
+    performance_acceptance: dict[str, Any]
     instance: ReferenceTemplateInstance | None = None
 
     def to_dict(self, *, include_instance: bool = True) -> dict[str, Any]:
@@ -52,6 +54,8 @@ class ReferenceTemplateEvaluation:
             "evidence": self.evidence,
             "cue_search": self.cue_search,
             "story_rule": self.story_rule,
+            "usable_for_performance": self.usable_for_performance,
+            "performance_acceptance": self.performance_acceptance,
         }
         if include_instance and self.instance is not None:
             result["instance"] = self.instance.to_dict()
@@ -64,6 +68,8 @@ class ReferenceTransitionSelection:
     target_track_id: str
     evaluations: tuple[ReferenceTemplateEvaluation, ...]
     selected_archetype: ReferenceArchetype | None
+    pair_transitionable: bool
+    pair_rejection_reasons: tuple[str, ...]
     decision: str
     decision_trace: tuple[dict[str, Any], ...]
     selector_id: str
@@ -83,6 +89,8 @@ class ReferenceTransitionSelection:
             "source_track_id": self.source_track_id,
             "target_track_id": self.target_track_id,
             "selected_template": self.selected_archetype.value if self.selected_archetype else None,
+            "pair_transitionable": self.pair_transitionable,
+            "pair_rejection_reasons": list(self.pair_rejection_reasons),
             "decision": self.decision,
             "decision_trace": list(self.decision_trace),
             "evaluations": [
@@ -134,10 +142,12 @@ def _target_candidate_indices(
     definition = ARCHETYPE_DEFINITIONS[archetype]
     runway = 1 if archetype == ReferenceArchetype.RESET_RELEASE else definition.transition_bars
     allowed = {
-        ReferenceArchetype.RESET_RELEASE: {"verse", "build", "drop", "bridge", "chorus"},
+        # The accepted GEN_F_02_FIX landing is an analysis-labelled intro bar:
+        # reset/release only needs a clean one-bar pickup plus measurable lift.
+        ReferenceArchetype.RESET_RELEASE: {"intro", "verse", "build", "drop", "bridge", "chorus"},
         ReferenceArchetype.STEM_ECHO_HANDOFF: {"drop", "chorus"},
         ReferenceArchetype.LOOP_BUILD_COHERENT_HANDOFF: {"drop", "chorus"},
-        ReferenceArchetype.RESTRAINED_OWNERSHIP_BLEND: {"build", "verse", "bridge", "drop"},
+        ReferenceArchetype.RESTRAINED_OWNERSHIP_BLEND: {"intro", "build", "verse", "bridge", "drop"},
     }[archetype]
     try:
         baseline = _target_landing_index(analysis, archetype)
@@ -192,8 +202,11 @@ def _rank_evidence(
     ]
     if assessment.archetype == ReferenceArchetype.RESET_RELEASE:
         ordered = common + [
-            ("self_contained_vocal_unit", -source.get("vocal_units_intersecting_window", 99), "higher"),
+            ("one_self_contained_vocal_unit", 1.0 if source.get("vocal_units_intersecting_window") == 1 else 0.0, "higher"),
+            ("nearby_source_cue", -abs(evidence["source_entry"].get("adjustment_beats", 0.0)), "higher"),
+            ("motif_unit_coverage", source.get("largest_vocal_unit_window_coverage", 0.0), "higher"),
             ("final_bar_motif_coverage", evidence["source_final_bar_vocal_density"], "higher"),
+            ("natural_vocal_boundary", -source.get("nearest_vocal_boundary_sec", 99.0), "higher"),
             ("target_pickup_space", 1.0 - evidence["target_final_runway_bar_vocal_density"], "higher"),
             ("landing_energy_lift", evidence["landing_energy_change"], "higher"),
         ]
@@ -201,6 +214,7 @@ def _rank_evidence(
         ordered = common + [
             ("tempo_closeness", -evidence["tempo_delta_pct"], "higher"),
             ("groove_closeness", -evidence["groove_distance"], "higher"),
+            ("nearby_source_cue", -abs(evidence["source_entry"].get("adjustment_beats", 0.0)), "higher"),
             ("late_vocal_capture", evidence["source_capture_region_vocal_density"], "higher"),
             ("target_drum_activity", evidence["target_drum_stem_activity"], "higher"),
             ("lower_source_density", -evidence["source_arrangement_density"], "higher"),
@@ -216,18 +230,27 @@ def _rank_evidence(
             else:
                 mode_value = 1.0
         ordered = common + [
+            ("analysis_phrase_retained", 1.0 if not evidence["source_entry"].get("adjustment_beats", 0.0) else 0.0, "higher"),
             ("source_entry_mode", mode_value, "higher"),
+            ("next_vocal_runway", min(source.get("distance_until_next_vocal_sec") or 2.0, 2.0), "higher"),
+            ("section_continuity", 1.0 if source.get("source_window_section_continuous") else 0.0, "higher"),
+            ("motif_spectral_stability", source.get("motif_entry_spectral_similarity", 0.0), "higher"),
+            ("motif_rhythmic_stability", source.get("motif_entry_rhythm_similarity", 0.0), "higher"),
+            ("nearby_source_cue", -abs(evidence["source_entry"].get("adjustment_beats", 0.0)), "higher"),
             ("target_vocal_runway", target.get("landing_vocal_onset_sec") or 0.0, "higher"),
             ("target_landing_energy", evidence["target_landing_energy"], "higher"),
             ("stable_two_bar_cadence", -evidence["target_two_bar_energy_spread"], "higher"),
             ("groove_closeness", -evidence["groove_distance"], "higher"),
         ]
     else:
-        ordered = common + [
+        ordered = [
+            ("analysis_phrase_retained", 1.0 if not evidence["source_entry"].get("adjustment_beats", 0.0) else 0.0, "higher"),
+            ("nearby_target_cue", -target_shift, "higher"),
             ("harmonic_compatibility", evidence["harmonic_compatibility"], "higher"),
             ("lower_shared_density", -evidence["shared_arrangement_density_pressure"], "higher"),
             ("energy_closeness", -abs(evidence["target_landing_energy"] - evidence["source_energy"]), "higher"),
             ("groove_closeness", -evidence["groove_distance"], "higher"),
+            ("fewer_cautions", -len(assessment.cautions), "higher"),
         ]
     rank = tuple(float(value) for _, value, _ in ordered)
     return rank, [
@@ -289,6 +312,141 @@ def _story_rule(assessment: ReferencePairAssessment) -> dict[str, Any]:
     }
 
 
+def _c3_controlled_overlap_exception(assessment: ReferencePairAssessment) -> bool:
+    """Admit the evidence pattern already proven by GEN_C3_01.
+
+    This is a selector-only cue exception, not a template/DSP change.  The
+    frozen C3 choreography withholds target vocals and releases source stems
+    sequentially, so raw vocal-region overlap is not by itself disqualifying
+    when the source effect boundary is quiet and the arrangement is sparse.
+    """
+    if assessment.archetype != ReferenceArchetype.STEM_ECHO_HANDOFF:
+        return False
+    if assessment.rejection_reasons != (
+        "source and target vocals remain active throughout the useful C3 shared window",
+    ):
+        return False
+    e = assessment.evidence
+    entry = e.get("source_entry", {}).get("selected", {})
+    return all((
+        e.get("groove_distance", 1.0) <= .12,
+        e.get("harmonic_compatibility", 0.0) >= .50,
+        e.get("source_arrangement_density", 1.0) <= .40,
+        entry.get("effect_entry_vocal_activity", 1.0) <= .10,
+        e.get("source_vocal_stem_confidence", 0.0) >= .90,
+        e.get("target_vocal_stem_confidence", 0.0) >= .90,
+        e.get("target_first_landing_bar_vocal_density", 1.0) <= .65,
+    ))
+
+
+def _performance_acceptance(
+    assessment: ReferencePairAssessment,
+    story: dict[str, Any],
+) -> dict[str, Any]:
+    """Return the explicit, conservative post-eligibility performance gate."""
+    e = assessment.evidence
+    entry = e.get("source_entry", {}).get("selected", {})
+    if assessment.archetype == ReferenceArchetype.RESET_RELEASE:
+        checks = {
+            "technical_story_is_complete": story["qualified"],
+            "motif_is_one_self_contained_unit": (
+                entry.get("vocal_units_intersecting_window", 99) == 1
+                and entry.get("largest_vocal_unit_window_coverage", 0.0) >= .75
+            ),
+            "effect_begins_after_motif_completion": not entry.get("vocal_active", True),
+            "effect_boundary_is_natural": entry.get("nearest_vocal_boundary_sec", 99.0) <= .25,
+            "repeat_capture_is_substantial": entry.get("final_bar_vocal_coverage", 0.0) >= .75,
+            "target_pickup_is_genuinely_spacious": e.get("target_final_runway_bar_vocal_density", 1.0) <= .35,
+            "target_continuation_has_clear_lift": e.get("landing_energy_change", 0.0) >= .15,
+        }
+        rule = "a completed, recognizable unit repeats from a natural boundary into a spacious reset and clear target lift"
+    elif assessment.archetype == ReferenceArchetype.STEM_ECHO_HANDOFF:
+        checks = {
+            "technical_story_is_complete": story["qualified"],
+            "vocal_stems_are_reliable": (
+                e.get("source_vocal_stem_confidence", 0.0) >= .90
+                and e.get("target_vocal_stem_confidence", 0.0) >= .90
+            ),
+            "source_effect_boundary_is_quiet": entry.get("effect_entry_vocal_activity", 1.0) <= .15,
+            "source_arrangement_is_sparse_enough": e.get("source_arrangement_density", 1.0) <= .65,
+            "groove_margin_is_strong": e.get("groove_distance", 1.0) <= .12,
+            "harmonic_overlap_is_supported": e.get("harmonic_compatibility", 0.0) >= .50,
+            "shared_arrangement_is_controllable": e.get("shared_arrangement_density_pressure", 2.0) <= 1.35,
+            "target_ownership_bar_is_manageable": (
+                e.get("target_drum_stem_activity", 0.0) >= .70
+                and e.get("target_first_landing_bar_vocal_density", 1.0) <= .65
+            ),
+        }
+        rule = "reliable stems and a quiet edit boundary support a sparse, harmonically controlled ownership sequence"
+    elif assessment.archetype == ReferenceArchetype.LOOP_BUILD_COHERENT_HANDOFF:
+        checks = {
+            "technical_story_is_complete": story["qualified"],
+            "source_launch_is_vocal_safe_or_predictable": story["checks"].get(
+                "source_launch_is_vocal_safe_or_predictable", False,
+            ),
+            "loop_motif_is_rhythmically_stable": entry.get("motif_entry_rhythm_similarity", 0.0) >= .95,
+            "loop_motif_is_spectrally_stable": entry.get("motif_entry_spectral_similarity", 0.0) >= .93,
+            "source_backing_can_carry_the_loop": e.get("source_other_stem_activity", 0.0) >= .90,
+            "pair_groove_has_performance_margin": e.get("groove_distance", 1.0) <= .20,
+            "progressive_overlap_is_harmonically_supported": e.get("harmonic_compatibility", 0.0) >= .50,
+            "target_has_tail_runway": (e.get("target_vocal_onset_sec_after_landing") or 0.0) >= .50,
+            "target_payoff_and_cadence_are_stable": (
+                e.get("target_landing_energy", 0.0) >= .80
+                and e.get("target_two_bar_energy_spread", 1.0) <= .10
+            ),
+            "bass_transfer_is_material": e.get("target_bass_change_at_landing", 0.0) >= .15,
+        }
+        rule = "a stable source motif and compatible groove/harmony build into a clear target and bass payoff"
+    else:
+        overlap = e.get("pair_context", {}).get("expected_overlap_conflicts", {})
+        checks = {
+            "tempo_has_long_overlap_margin": e.get("tempo_delta_pct", 99.0) <= 6.0,
+            "groove_has_long_overlap_margin": e.get("groove_distance", 1.0) <= .22,
+            "harmony_supports_long_overlap": e.get("harmonic_compatibility", 0.0) >= .70,
+            "shared_arrangement_has_space": e.get("shared_arrangement_density_pressure", 2.0) <= 1.46,
+            "energy_trajectory_is_restrained": abs(
+                e.get("target_landing_energy", 0.0) - e.get("source_energy", 0.0)
+            ) <= .28,
+            "raw_vocal_overlap_has_margin": overlap.get("raw_vocal_overlap_pressure", 1.0) <= .80,
+            "target_can_take_bass_and_drums": (
+                e.get("target_drum_stem_activity", 0.0) >= .60
+                and e.get("target_bass_stem_activity", 0.0) >= .55
+            ),
+        }
+        rule = "spacious, compatible material sustains a restrained long overlap with deliberate bass ownership"
+    return {
+        "gate": "USABLE_FOR_PERFORMANCE",
+        "rule": rule,
+        "checks": checks,
+        "usable": all(checks.values()),
+        "no_aggregate_score": True,
+    }
+
+
+def _pair_rejection_reasons(
+    evaluations: tuple[ReferenceTemplateEvaluation, ...],
+) -> tuple[str, ...]:
+    failed = {
+        name
+        for item in evaluations
+        for name, passed in item.performance_acceptance.get("checks", {}).items()
+        if not passed
+    }
+    reasons: list[str] = []
+    if any("source" in name or "motif" in name or "effect_boundary" in name for name in failed):
+        reasons.append("no approved archetype has a sufficiently clean and intentional source launch")
+    if any("target" in name or "payoff" in name or "runway" in name for name in failed):
+        reasons.append("no approved archetype has a sufficiently strong target entry and establishment window")
+    if any("vocal" in name for name in failed):
+        reasons.append("vocal activity remains conflicting or insufficiently bounded in the usable windows")
+    if any("groove" in name or "harmony" in name or "energy" in name for name in failed):
+        reasons.append("pair groove, harmony, or energy trajectory lacks performance margin")
+    if not reasons:
+        reasons.append("no approved archetype has an eligible source/target cue combination")
+    reasons.append("all approved archetypes fail the explicit USABLE_FOR_PERFORMANCE floor")
+    return tuple(reasons)
+
+
 def _evaluate_template(
     source: TrackAnalysis,
     target: TrackAnalysis,
@@ -305,7 +463,9 @@ def _evaluate_template(
         target_baseline = _target_landing_index(target, archetype)
     except Exception:
         target_baseline = -1
-    accepted: list[tuple[tuple[float, ...], ReferencePairAssessment, list[dict[str, Any]]]] = []
+    accepted: list[
+        tuple[tuple[float, ...], ReferencePairAssessment, list[dict[str, Any]], str | None]
+    ] = []
     rejected = Counter()
     baseline_assessment: ReferencePairAssessment | None = None
     if not source_candidates or not target_candidates:
@@ -332,9 +492,14 @@ def _evaluate_template(
                 source_start_bar_index=source_index,
                 target_landing_bar_index=target_index,
             )
-            if assessment.eligible and assessment.instance is not None:
+            cue_exception = (
+                "controlled_c3_overlap_at_quiet_effect_boundary"
+                if _c3_controlled_overlap_exception(assessment)
+                else None
+            )
+            if (assessment.eligible or cue_exception) and assessment.instance is not None:
                 rank, rank_evidence = _rank_evidence(assessment, target_baseline)
-                accepted.append((rank, assessment, rank_evidence))
+                accepted.append((rank, assessment, rank_evidence, cue_exception))
             else:
                 rejected.update(assessment.rejection_reasons)
     if not accepted:
@@ -364,9 +529,17 @@ def _evaluate_template(
                 "rejection_reason_counts": dict(sorted(rejected.items())),
             },
             story_rule={"qualified": False, "rule": "template has no eligible cue combination", "checks": {}},
+            usable_for_performance=False,
+            performance_acceptance={
+                "gate": "USABLE_FOR_PERFORMANCE",
+                "rule": "template has no eligible cue combination",
+                "checks": {},
+                "usable": False,
+                "no_aggregate_score": True,
+            },
         )
     accepted.sort(key=lambda item: (item[0], -item[1].instance.anchors.source_start_bar_index, -item[1].instance.anchors.target_landing_bar_index), reverse=True)
-    _, selected, rank_evidence = accepted[0]
+    _, selected, rank_evidence, cue_exception = accepted[0]
     anchors = selected.instance.anchors
     source_entry = selected.evidence["source_entry"]
     if target_baseline < 0:
@@ -383,12 +556,20 @@ def _evaluate_template(
     else:
         rationale.append("target landing retains the analysis-derived baseline")
     story = _story_rule(selected)
+    acceptance = _performance_acceptance(selected, story)
+    selection_reasons = selected.selection_reasons
+    cautions = selected.cautions
+    if cue_exception:
+        selection_reasons = (
+            "frozen C3 stem withholding controls target vocals while the source effect boundary is quiet",
+        )
+        cautions = (*cautions, "raw vocal regions overlap; frozen sequential stem ownership is mandatory")
     return ReferenceTemplateEvaluation(
         archetype=archetype,
         eligible=True,
         rejection_reasons=(),
-        cautions=selected.cautions,
-        selection_reasons=selected.selection_reasons,
+        cautions=cautions,
+        selection_reasons=selection_reasons,
         evidence=selected.evidence,
         cue_search={
             "source_candidate_windows": len(source_candidates),
@@ -402,9 +583,12 @@ def _evaluate_template(
             "target_cue_shift_beats": target_shift,
             "cue_shift_rationale": rationale,
             "lexicographic_rank_evidence": rank_evidence,
+            "selector_cue_exception": cue_exception,
             "no_aggregate_cue_score": True,
         },
         story_rule=story,
+        usable_for_performance=acceptance["usable"],
+        performance_acceptance=acceptance,
         instance=selected.instance,
     )
 
@@ -432,23 +616,23 @@ def select_reference_transition(
         for archetype in ReferenceArchetype
     )
     by_type = {item.archetype: item for item in evaluations}
-    qualified = {
+    usable = {
         archetype: item
         for archetype, item in by_type.items()
-        if item.eligible and item.story_rule["qualified"]
+        if item.eligible and item.usable_for_performance
     }
     trace: list[dict[str, Any]] = []
 
     def matches(archetype: ReferenceArchetype, condition: bool, reason: str) -> bool:
-        matched = archetype in qualified and condition
+        matched = archetype in usable and condition
         trace.append({"template": archetype.value, "rule": reason, "matched": matched})
         return matched
 
     selected: ReferenceArchetype | None = None
-    f = qualified.get(ReferenceArchetype.RESET_RELEASE)
-    d2 = qualified.get(ReferenceArchetype.RESTRAINED_OWNERSHIP_BLEND)
-    b8 = qualified.get(ReferenceArchetype.LOOP_BUILD_COHERENT_HANDOFF)
-    c3 = qualified.get(ReferenceArchetype.STEM_ECHO_HANDOFF)
+    f = usable.get(ReferenceArchetype.RESET_RELEASE)
+    d2 = usable.get(ReferenceArchetype.RESTRAINED_OWNERSHIP_BLEND)
+    b8 = usable.get(ReferenceArchetype.LOOP_BUILD_COHERENT_HANDOFF)
+    c3 = usable.get(ReferenceArchetype.STEM_ECHO_HANDOFF)
     if matches(
         ReferenceArchetype.RESET_RELEASE,
         bool(f and f.evidence["tempo_delta_pct"] > 12.0),
@@ -479,15 +663,23 @@ def select_reference_transition(
         "harmonic contrast and complete motif support a reset even without a large tempo jump",
     ):
         selected = ReferenceArchetype.RESET_RELEASE
+    elif matches(
+        ReferenceArchetype.RESTRAINED_OWNERSHIP_BLEND,
+        bool(d2),
+        "compatible shared territory supports the approved restrained ownership transfer",
+    ):
+        selected = ReferenceArchetype.RESTRAINED_OWNERSHIP_BLEND
     else:
         trace.append({
             "template": None,
-            "rule": "no eligible template also satisfies its explicit musical-story contract",
+            "rule": "no eligible template also satisfies its explicit USABLE_FOR_PERFORMANCE contract",
             "matched": True,
         })
 
+    pair_transitionable = selected is not None
+    pair_rejection_reasons = () if pair_transitionable else _pair_rejection_reasons(evaluations)
     decision = (
-        f"selected {selected.value}: {by_type[selected].story_rule['rule']}"
+        f"selected {selected.value}: {by_type[selected].performance_acceptance['rule']}"
         if selected is not None
         else "NO_SUITABLE_TEMPLATE"
     )
@@ -507,6 +699,8 @@ def select_reference_transition(
         target_track_id=target_track_id,
         evaluations=evaluations,
         selected_archetype=selected,
+        pair_transitionable=pair_transitionable,
+        pair_rejection_reasons=pair_rejection_reasons,
         decision=decision,
         decision_trace=tuple(trace),
         selector_id=selector_id,
