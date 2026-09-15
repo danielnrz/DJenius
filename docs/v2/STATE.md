@@ -90,10 +90,10 @@ scope.
 `v2-professional-autonomous-dj`
 
 ## LATEST REFERENCE-AUTOMATION COMMIT
-`6e3f2b8` - "Add constrained reference transition selector". It contains the
-four-template explainable selector, bounded cue search, mandatory abstention,
-focused regression coverage, frozen accepted labels, and the private
-eight-pair blind gate. It was pushed to
+`cce15d2` - "Tighten reference selector abstention gate". It contains the
+selector calibration corrections, explicit `USABLE_FOR_PERFORMANCE` and
+`PAIR_TRANSITIONABLE` contracts, stricter conservative abstention, focused
+regression coverage, and durable human labels. It was pushed to
 `origin/v2-professional-autonomous-dj`; a docs-only handoff finalization follows,
 so resolve the current tip from Git.
 
