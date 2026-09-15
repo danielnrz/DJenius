@@ -476,7 +476,14 @@ def _evaluate_template(
     except Exception:
         target_baseline = -1
     accepted: list[
-        tuple[tuple[float, ...], ReferencePairAssessment, list[dict[str, Any]], str | None]
+        tuple[
+            tuple[float, ...],
+            ReferencePairAssessment,
+            list[dict[str, Any]],
+            str | None,
+            dict[str, Any],
+            dict[str, Any],
+        ]
     ] = []
     rejected = Counter()
     baseline_assessment: ReferencePairAssessment | None = None
@@ -511,7 +518,16 @@ def _evaluate_template(
             )
             if (assessment.eligible or cue_exception) and assessment.instance is not None:
                 rank, rank_evidence = _rank_evidence(assessment, target_baseline)
-                accepted.append((rank, assessment, rank_evidence, cue_exception))
+                story = _story_rule(assessment)
+                performance_acceptance = _performance_acceptance(assessment, story)
+                accepted.append((
+                    rank,
+                    assessment,
+                    rank_evidence,
+                    cue_exception,
+                    story,
+                    performance_acceptance,
+                ))
             else:
                 rejected.update(assessment.rejection_reasons)
     if not accepted:
@@ -538,6 +554,7 @@ def _evaluate_template(
             cue_search={
                 "combinations_considered": len(source_candidates) * len(target_candidates),
                 "eligible_combinations": 0,
+                "usable_combinations": 0,
                 "rejection_reason_counts": dict(sorted(rejected.items())),
             },
             story_rule={"qualified": False, "rule": "template has no eligible cue combination", "checks": {}},
@@ -551,7 +568,12 @@ def _evaluate_template(
             },
         )
     accepted.sort(key=lambda item: (item[0], -item[1].instance.anchors.source_start_bar_index, -item[1].instance.anchors.target_landing_bar_index), reverse=True)
-    _, selected, rank_evidence, cue_exception = accepted[0]
+    usable = [item for item in accepted if item[5]["usable"]]
+    # Cue placement is part of selection.  A technically eligible first cue
+    # must not make the pair abstain when another nearby cue satisfies the
+    # already-frozen USABLE_FOR_PERFORMANCE contract.
+    chosen = usable[0] if usable else accepted[0]
+    _, selected, rank_evidence, cue_exception, story, acceptance = chosen
     anchors = selected.instance.anchors
     source_entry = selected.evidence["source_entry"]
     if target_baseline < 0:
@@ -567,8 +589,6 @@ def _evaluate_template(
         rationale.append(f"target landing shifted {target_shift:+d} beats for cleaner phrase/ownership evidence")
     else:
         rationale.append("target landing retains the analysis-derived baseline")
-    story = _story_rule(selected)
-    acceptance = _performance_acceptance(selected, story)
     selection_reasons = selected.selection_reasons
     cautions = selected.cautions
     if cue_exception:
@@ -588,6 +608,7 @@ def _evaluate_template(
             "target_candidate_windows": len(target_candidates),
             "combinations_considered": len(source_candidates) * len(target_candidates),
             "eligible_combinations": len(accepted),
+            "usable_combinations": len(usable),
             "rejection_reason_counts": dict(sorted(rejected.items())),
             "selected_source_start_bar_index": anchors.source_start_bar_index,
             "selected_target_landing_bar_index": anchors.target_landing_bar_index,

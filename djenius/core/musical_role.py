@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 from enum import Enum
+import math
 from typing import Any
 
 import numpy as np
@@ -16,10 +17,40 @@ import numpy as np
 from djenius.core.models import TrackProfile
 from djenius.core.reference_templates import ReferenceArchetype
 from djenius.core.semantic import distribution_similarity
+from djenius.utils.camelot import score_key_compatibility
 
 
-MUSICAL_ROLE_SCHEMA_VERSION = "musical-role-1"
+MUSICAL_ROLE_SCHEMA_VERSION = "musical-role-2"
 SEMANTIC_RELIABILITY_FLOOR = 0.55
+
+
+@dataclass(frozen=True)
+class MusicalContextCalibration:
+    """Unlabelled, pool-relative bands for the existing local descriptors.
+
+    These are distribution bands, not human-label-fitted success thresholds.
+    They keep CLAP's model-specific cosine scale and the descriptor scales
+    inspectable while avoiding claims that a cosine value denotes a mood.
+    """
+
+    track_count: int
+    embedding_pair_count: int
+    embedding_outlier_floor: float
+    embedding_same_territory_floor: float
+    rhythm_anchor_ceiling: float
+    rhythm_outlier_floor: float
+    spectral_anchor_ceiling: float
+    spectral_outlier_floor: float
+    cue_style_anchor_ceiling: float
+    cue_style_shift_floor: float
+    cue_style_outlier_floor: float
+    cue_intensity_anchor_ceiling: float
+    cue_intensity_shift_floor: float
+    cue_intensity_outlier_floor: float
+    source: str = "unlabelled_candidate_pool_quantiles"
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
 
 
 class SetRole(str, Enum):
@@ -340,6 +371,196 @@ def _phase_energy_gate(
     return abs(change) <= 0.12
 
 
+def _raw_cosine(first: list[float], second: list[float]) -> float | None:
+    left = np.asarray(first, dtype=float).reshape(-1)
+    right = np.asarray(second, dtype=float).reshape(-1)
+    if not len(left) or len(left) != len(right):
+        return None
+    denominator = float(np.linalg.norm(left) * np.linalg.norm(right))
+    if denominator <= 1e-12:
+        return None
+    return float(np.clip(np.dot(left, right) / denominator, -1.0, 1.0))
+
+
+def _descriptor_distance(
+    source: TrackProfile,
+    target: TrackProfile,
+    attribute: str,
+) -> float | None:
+    left = np.asarray(getattr(source.analysis, attribute, []), dtype=float)
+    right = np.asarray(getattr(target.analysis, attribute, []), dtype=float)
+    if left.ndim != 2 or right.ndim != 2 or not len(left) or not len(right):
+        return None
+    if left.shape[1] != right.shape[1]:
+        return None
+    return float(np.mean(np.abs(np.mean(left, axis=0) - np.mean(right, axis=0))))
+
+
+def _pair_context_values(
+    source: TrackProfile,
+    target: TrackProfile,
+) -> tuple[float | None, float | None, float | None]:
+    embedding = (
+        _raw_cosine(source.semantic.embedding, target.semantic.embedding)
+        if source.semantic is not None and target.semantic is not None
+        else None
+    )
+    return (
+        embedding,
+        _descriptor_distance(source, target, "local_rhythm_curve"),
+        _descriptor_distance(source, target, "local_spectral_curve"),
+    )
+
+
+def _window_group_distance(
+    source_window: dict[str, Any],
+    target_window: dict[str, Any],
+    group: str,
+) -> float | None:
+    left = source_window.get("scores", {}).get(group, {})
+    right = target_window.get("scores", {}).get(group, {})
+    labels = set(left) | set(right)
+    if not labels:
+        return None
+    return float(
+        sum(abs(float(left.get(label, 0.0)) - float(right.get(label, 0.0))) for label in labels)
+        / len(labels)
+    )
+
+
+def _nearest_semantic_window(
+    track: TrackProfile,
+    context_sec: float | None,
+) -> dict[str, Any] | None:
+    if track.semantic is None or not track.semantic.sample_windows:
+        return None
+    if context_sec is None:
+        return None
+    return min(
+        track.semantic.sample_windows,
+        key=lambda item: abs(
+            (float(item.get("start_sec", 0.0)) + float(item.get("end_sec", 0.0)))
+            / 2.0
+            - context_sec
+        ),
+    )
+
+
+def _cue_semantic_distances(
+    source: TrackProfile,
+    target: TrackProfile,
+    source_context_sec: float | None,
+    target_context_sec: float | None,
+) -> tuple[dict[str, float | None], dict[str, Any]]:
+    source_window = _nearest_semantic_window(source, source_context_sec)
+    target_window = _nearest_semantic_window(target, target_context_sec)
+    groups = ("mood_scores", "activity_scores", "intensity_scores", "style_scores")
+    distances = {
+        group: (
+            _window_group_distance(source_window, target_window, group)
+            if source_window is not None and target_window is not None
+            else None
+        )
+        for group in groups
+    }
+    provenance = {
+        "source_window": (
+            {
+                "start_sec": source_window.get("start_sec"),
+                "end_sec": source_window.get("end_sec"),
+            }
+            if source_window is not None
+            else None
+        ),
+        "target_window": (
+            {
+                "start_sec": target_window.get("start_sec"),
+                "end_sec": target_window.get("end_sec"),
+            }
+            if target_window is not None
+            else None
+        ),
+        "selection": "nearest cached representative semantic window to the actual transition context",
+    }
+    return distances, provenance
+
+
+def calibrate_musical_context(
+    tracks: list[TrackProfile] | tuple[TrackProfile, ...],
+) -> MusicalContextCalibration:
+    """Calibrate descriptor bands from the unlabelled candidate pool."""
+    embeddings: list[float] = []
+    rhythm: list[float] = []
+    spectral: list[float] = []
+    cue_style: list[float] = []
+    cue_intensity: list[float] = []
+    ordered = tuple(sorted(tracks, key=lambda item: item.id))
+    for index, source in enumerate(ordered):
+        for target in ordered[index + 1:]:
+            semantic_value, rhythm_value, spectral_value = _pair_context_values(
+                source, target
+            )
+            if semantic_value is not None:
+                embeddings.append(semantic_value)
+            if rhythm_value is not None:
+                rhythm.append(rhythm_value)
+            if spectral_value is not None:
+                spectral.append(spectral_value)
+            if source.semantic is not None and target.semantic is not None:
+                for source_window in source.semantic.sample_windows:
+                    for target_window in target.semantic.sample_windows:
+                        style_value = _window_group_distance(
+                            source_window, target_window, "style_scores"
+                        )
+                        intensity_value = _window_group_distance(
+                            source_window, target_window, "intensity_scores"
+                        )
+                        if style_value is not None:
+                            cue_style.append(style_value)
+                        if intensity_value is not None:
+                            cue_intensity.append(intensity_value)
+
+    def quantile(values: list[float], q: float, fallback: float) -> float:
+        return float(np.quantile(values, q)) if values else fallback
+
+    return MusicalContextCalibration(
+        track_count=len(ordered),
+        embedding_pair_count=len(embeddings),
+        embedding_outlier_floor=round(quantile(embeddings, .10, .86), 6),
+        embedding_same_territory_floor=round(quantile(embeddings, .25, .885), 6),
+        rhythm_anchor_ceiling=round(quantile(rhythm, .50, .055), 6),
+        rhythm_outlier_floor=round(quantile(rhythm, .90, .10), 6),
+        spectral_anchor_ceiling=round(quantile(spectral, .50, .065), 6),
+        spectral_outlier_floor=round(quantile(spectral, .90, .14), 6),
+        cue_style_anchor_ceiling=round(quantile(cue_style, .50, .02), 6),
+        cue_style_shift_floor=round(quantile(cue_style, .75, .025), 6),
+        cue_style_outlier_floor=round(quantile(cue_style, .90, .03), 6),
+        cue_intensity_anchor_ceiling=round(quantile(cue_intensity, .50, .02), 6),
+        cue_intensity_shift_floor=round(quantile(cue_intensity, .75, .03), 6),
+        cue_intensity_outlier_floor=round(quantile(cue_intensity, .90, .04), 6),
+    )
+
+
+def _default_context_calibration() -> MusicalContextCalibration:
+    return MusicalContextCalibration(
+        track_count=0,
+        embedding_pair_count=0,
+        embedding_outlier_floor=.72,
+        embedding_same_territory_floor=.77,
+        rhythm_anchor_ceiling=.055,
+        rhythm_outlier_floor=.10,
+        spectral_anchor_ceiling=.065,
+        spectral_outlier_floor=.14,
+        cue_style_anchor_ceiling=.02,
+        cue_style_shift_floor=.025,
+        cue_style_outlier_floor=.03,
+        cue_intensity_anchor_ceiling=.02,
+        cue_intensity_shift_floor=.03,
+        cue_intensity_outlier_floor=.04,
+        source="documented_model_scale_fallback",
+    )
+
+
 def assess_musical_flow(
     source: TrackProfile,
     target: TrackProfile,
@@ -351,6 +572,9 @@ def assess_musical_flow(
     groove_distance: float,
     max_energy_jump: float,
     max_contrast_events: int,
+    context_calibration: MusicalContextCalibration | None = None,
+    source_context_sec: float | None = None,
+    target_context_sec: float | None = None,
 ) -> MusicalFlowAssessment:
     """Require an explainable continuation or a phase-supported intentional shift."""
     source_role = derive_musical_role(source)
@@ -402,9 +626,93 @@ def assess_musical_flow(
         and source_mood != target_mood
         and mood_similarity < 0.90
     )
-    contrast_detected = (
-        rhythmic_jump or dance_jump or style_jump or valence_jump or semantic_mood_jump
+    calibration = context_calibration or _default_context_calibration()
+    embedding_similarity, rhythm_descriptor_distance, spectral_descriptor_distance = (
+        _pair_context_values(source, target)
     )
+    cue_semantic_distances, cue_semantic_provenance = _cue_semantic_distances(
+        source,
+        target,
+        source_context_sec,
+        target_context_sec,
+    )
+    cue_style_distance = cue_semantic_distances["style_scores"]
+    cue_intensity_distance = cue_semantic_distances["intensity_scores"]
+    harmonic_compatibility = score_key_compatibility(source.camelot, target.camelot)
+    source_centroid = max(float(source.analysis.spectral_centroid_mean), 1.0)
+    target_centroid = max(float(target.analysis.spectral_centroid_mean), 1.0)
+    centroid_distance_octaves = abs(math.log2(target_centroid / source_centroid))
+    embedding_is_outlier = (
+        embedding_similarity is not None
+        and embedding_similarity < calibration.embedding_outlier_floor
+    )
+    embedding_supports_same_territory = (
+        embedding_similarity is not None
+        and embedding_similarity >= calibration.embedding_same_territory_floor
+    )
+    rhythm_anchor = (
+        rhythm_descriptor_distance is not None
+        and rhythm_descriptor_distance <= calibration.rhythm_anchor_ceiling
+    )
+    spectral_anchor = (
+        spectral_descriptor_distance is not None
+        and spectral_descriptor_distance <= calibration.spectral_anchor_ceiling
+    )
+    harmonic_anchor = harmonic_compatibility >= .70
+    cue_style_anchor = (
+        cue_style_distance is not None
+        and cue_style_distance <= calibration.cue_style_anchor_ceiling
+    )
+    cue_intensity_anchor = (
+        cue_intensity_distance is not None
+        and cue_intensity_distance <= calibration.cue_intensity_anchor_ceiling
+    )
+    continuity_anchors = {
+        "audio_embedding_same_territory": embedding_supports_same_territory,
+        "whole_track_rhythm_descriptor": rhythm_anchor,
+        "whole_track_spectral_descriptor": spectral_anchor,
+        "harmonic_relation": harmonic_anchor,
+        "cue_style_distribution": cue_style_anchor,
+        "cue_intensity_distribution": cue_intensity_anchor,
+    }
+    continuity_anchor_count = sum(continuity_anchors.values())
+    rhythm_descriptor_outlier = (
+        rhythm_descriptor_distance is not None
+        and rhythm_descriptor_distance > calibration.rhythm_outlier_floor
+    )
+    spectral_descriptor_outlier = (
+        spectral_descriptor_distance is not None
+        and spectral_descriptor_distance > calibration.spectral_outlier_floor
+    )
+    material_tempo_transform = tempo_delta_pct > 18.0
+    cue_style_outlier = (
+        cue_style_distance is not None
+        and cue_style_distance > calibration.cue_style_outlier_floor
+    )
+    cue_intensity_outlier = (
+        cue_intensity_distance is not None
+        and cue_intensity_distance > calibration.cue_intensity_outlier_floor
+    )
+    cue_multi_axis_shift = (
+        cue_style_distance is not None
+        and cue_intensity_distance is not None
+        and cue_style_distance > calibration.cue_style_shift_floor
+        and cue_intensity_distance > calibration.cue_intensity_shift_floor
+    )
+    context_contrast_axes = {
+        "pool_relative_audio_embedding_outlier": embedding_is_outlier,
+        "material_tempo_or_meter_change": material_tempo_transform,
+        "whole_track_rhythm_outlier": rhythm_descriptor_outlier,
+        "whole_track_spectral_outlier": spectral_descriptor_outlier,
+        "rhythmic_role_change": rhythmic_jump,
+        "dance_function_change": dance_jump,
+        "reliable_style_change": style_jump,
+        "reliable_mood_or_valence_change": valence_jump or semantic_mood_jump,
+        "cue_style_distribution_outlier": cue_style_outlier,
+        "cue_intensity_distribution_outlier": cue_intensity_outlier,
+        "cue_style_and_intensity_shift_together": cue_multi_axis_shift,
+    }
+    contrast_detected = any(context_contrast_axes.values())
     phase_direction_supports_shift = (
         (
             target_phase == SetRole.PEAK
@@ -421,11 +729,24 @@ def assess_musical_flow(
     )
     reset_communicates_shift = archetype == ReferenceArchetype.RESET_RELEASE
     contrast_budget_available = state.contrast_events < max_contrast_events
+    unresolved_cue_context_split = (
+        cue_style_outlier or cue_intensity_outlier or cue_multi_axis_shift
+    )
+    cue_context_available = (
+        cue_style_distance is not None and cue_intensity_distance is not None
+    )
+    context_has_bridge_anchors = (
+        not embedding_is_outlier
+        and not unresolved_cue_context_split
+        and cue_context_available
+        and continuity_anchor_count >= 2
+    )
     intentional_shift = (
         contrast_detected
         and phase_direction_supports_shift
         and reset_communicates_shift
         and contrast_budget_available
+        and context_has_bridge_anchors
     )
     role_supported = bool(target_role.role_suitability.get(target_phase.value, False))
     hard_gates = {
@@ -445,6 +766,8 @@ def assess_musical_flow(
             valence_jump or semantic_mood_jump
         )
         or intentional_shift,
+        "musical_context_is_natural_or_bridgeable": not contrast_detected
+        or intentional_shift,
         "contrast_has_declared_bridge": not contrast_detected or intentional_shift,
         "contrast_budget_not_exceeded": not contrast_detected or contrast_budget_available,
     }
@@ -456,6 +779,7 @@ def assess_musical_flow(
         "rhythmic_role_is_coherent_or_intentional": "incompatible rhythmic role lacks a supported bridge",
         "style_change_is_coherent_or_intentional": "genre/style change lacks reliable bridging evidence",
         "reliable_mood_change_is_coherent_or_intentional": "reliable mood/valence discontinuity lacks a supported arc",
+        "musical_context_is_natural_or_bridgeable": "musical-territory contrast lacks enough continuity anchors for a proven bridge",
         "contrast_has_declared_bridge": "detected contrast lacks a phase-supported reset/release bridge",
         "contrast_budget_not_exceeded": "set has already spent its allowed intentional contrast",
     }
@@ -465,12 +789,12 @@ def assess_musical_flow(
     accepted = all(hard_gates.values())
     if contrast_detected:
         relationship = (
-            "INTENTIONAL_ENERGY_MOOD_SHIFT"
+            "INTENTIONAL_BRIDGEABLE_CONTRAST"
             if intentional_shift
             else "UNJUSTIFIED_DISCONTINUITY"
         )
     else:
-        relationship = "COHERENT_CONTINUATION"
+        relationship = "NATURAL_CONTINUATION"
     reliable_moods = tuple(
         item
         for item in (
@@ -501,6 +825,9 @@ def assess_musical_flow(
             "contrast_detected": contrast_detected,
             "phase_direction_supports_shift": phase_direction_supports_shift,
             "reset_release_archetype_communicates_shift": reset_communicates_shift,
+            "context_has_at_least_two_continuity_anchors": context_has_bridge_anchors,
+            "continuity_anchor_count": continuity_anchor_count,
+            "continuity_anchors": continuity_anchors,
             "contrast_budget_before": state.contrast_events,
             "contrast_budget_limit": max_contrast_events,
             "contrast_budget_available": contrast_budget_available,
@@ -525,6 +852,48 @@ def assess_musical_flow(
             "mood_distribution_similarity": round(mood_similarity, 6),
             "valence_values": [source_valence, target_valence],
             "mood_claim_deferred": source_mood is None or target_mood is None,
+            "musical_context": {
+                "classification": relationship,
+                "audio_embedding_cosine": (
+                    round(embedding_similarity, 6)
+                    if embedding_similarity is not None
+                    else None
+                ),
+                "audio_embedding_interpretation": (
+                    "pool_relative_musical_territory_only; not a mood or genre label"
+                    if embedding_similarity is not None
+                    else "unavailable"
+                ),
+                "rhythm_descriptor_mean_absolute_distance": (
+                    round(rhythm_descriptor_distance, 6)
+                    if rhythm_descriptor_distance is not None
+                    else None
+                ),
+                "spectral_descriptor_mean_absolute_distance": (
+                    round(spectral_descriptor_distance, 6)
+                    if spectral_descriptor_distance is not None
+                    else None
+                ),
+                "spectral_centroid_distance_octaves": round(
+                    centroid_distance_octaves, 6
+                ),
+                "harmonic_compatibility": round(harmonic_compatibility, 6),
+                "cue_semantic_distribution_distances": {
+                    name: round(value, 6) if value is not None else None
+                    for name, value in cue_semantic_distances.items()
+                },
+                "cue_semantic_window_provenance": cue_semantic_provenance,
+                "cue_context_split_unresolved": unresolved_cue_context_split,
+                "cue_context_available_for_contrast_decision": cue_context_available,
+                "contrast_axes": context_contrast_axes,
+                "continuity_anchors": continuity_anchors,
+                "continuity_anchor_count": continuity_anchor_count,
+                "calibration": calibration.to_dict(),
+                "semantic_label_claims_deferred": (
+                    source_mood is None or target_mood is None
+                ),
+                "no_opaque_context_score": True,
+            },
             "section_role_evidence": {
                 "source_energy_direction": source_role.energy["direction"],
                 "target_energy_direction": target_role.energy["direction"],

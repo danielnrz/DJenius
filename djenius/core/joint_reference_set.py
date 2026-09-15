@@ -17,9 +17,11 @@ import numpy as np
 
 from djenius.core.models import TrackProfile
 from djenius.core.musical_role import (
+    MusicalContextCalibration,
     SetFlowState,
     SetRole,
     assess_musical_flow,
+    calibrate_musical_context,
     derive_musical_role,
     initial_set_flow_state,
 )
@@ -31,7 +33,7 @@ from djenius.core.reference_templates import ReferenceArchetype
 from djenius.utils.camelot import score_key_compatibility
 
 
-JOINT_REFERENCE_SET_SCHEMA_VERSION = "joint-reference-set-2"
+JOINT_REFERENCE_SET_SCHEMA_VERSION = "joint-reference-set-3"
 
 
 @dataclass(frozen=True)
@@ -219,6 +221,9 @@ def _set_flow(
     selected_archetype: ReferenceArchetype | None,
     selected_evidence: dict[str, Any],
     config: JointSetConfig,
+    context_calibration: MusicalContextCalibration | None = None,
+    source_context_sec: float | None = None,
+    target_context_sec: float | None = None,
 ) -> SetFlowEvaluation:
     energy_change = float(target.mean_energy - source.mean_energy)
     tempo_delta = _tempo_delta_pct(source, target)
@@ -246,6 +251,9 @@ def _set_flow(
         groove_distance=groove_distance,
         max_energy_jump=config.max_energy_jump,
         max_contrast_events=config.max_contrast_events,
+        context_calibration=context_calibration,
+        source_context_sec=source_context_sec,
+        target_context_sec=target_context_sec,
     )
     hard_gates = {
         **identity_gates,
@@ -368,11 +376,11 @@ def _candidate_key(
     repeated = 1 if recent_archetypes and archetype == recent_archetypes[-1] else 0
     e = candidate.set_flow.evidence
     relationship = e.get("musical_role_and_set_story", {}).get(
-        "relationship", "COHERENT_CONTINUATION"
+        "relationship", "NATURAL_CONTINUATION"
     )
     # This is a disclosed lexicographic ordering, not a weighted compatibility score.
     return (
-        0 if relationship == "COHERENT_CONTINUATION" else 1,
+        0 if relationship == "NATURAL_CONTINUATION" else 1,
         abs(float(e["energy_change"])),
         float(e["tempo_delta_pct"]),
         -float(e["harmonic_compatibility"]),
@@ -390,6 +398,7 @@ def _evaluate_candidate(
     set_flow_state: SetFlowState,
     target_phase: SetRole,
     config: JointSetConfig,
+    context_calibration: MusicalContextCalibration | None = None,
 ) -> JointCandidateDecision:
     excluded = (source.id, target.id) in set(config.excluded_ordered_pairs)
     selection = select_reference_transition(
@@ -422,6 +431,9 @@ def _evaluate_candidate(
         selected_archetype=selection.selected_archetype,
         selected_evidence=selected_evidence,
         config=config,
+        context_calibration=context_calibration,
+        source_context_sec=(instance.anchors.source_end_sec if instance else None),
+        target_context_sec=(instance.anchors.target_landing_sec if instance else None),
     )
     establishment_sec = (
         None
@@ -508,6 +520,7 @@ def plan_joint_reference_set(
         )
     )
     by_id = {track.id: track for track in pool}
+    context_calibration = calibrate_musical_context(pool)
     complete: list[
         tuple[tuple[TrackProfile, ...], tuple[JointCandidateDecision, ...], tuple]
     ] = []
@@ -542,7 +555,7 @@ def plan_joint_reference_set(
             )
             intentional_contrasts = sum(
                 item.set_flow.evidence["musical_role_and_set_story"]["relationship"]
-                == "INTENTIONAL_ENERGY_MOOD_SHIFT"
+                == "INTENTIONAL_BRIDGEABLE_CONTRAST"
                 for item in chosen
             )
             diversity_excess = max(
@@ -568,6 +581,7 @@ def plan_joint_reference_set(
                 set_flow_state=flow_state,
                 target_phase=role_sequence[len(path)],
                 config=config,
+                context_calibration=context_calibration,
             )
             for target in pool
             if target.id != source.id
@@ -635,6 +649,7 @@ def plan_joint_reference_set(
                 set_flow_state=flow_state,
                 target_phase=role_sequence[index],
                 config=config,
+                context_calibration=context_calibration,
             )
             for target in pool
             if target.id != source.id
@@ -692,6 +707,7 @@ def plan_joint_reference_set(
             "fewest_repeated_archetypes_after_quality_evidence",
             "stable_track_id_tiebreak",
         ],
+        "musical_context_calibration": context_calibration.to_dict(),
     }
     payload = {
         "schema": JOINT_REFERENCE_SET_SCHEMA_VERSION,
@@ -700,6 +716,7 @@ def plan_joint_reference_set(
             item.transition_selection.selector_id for item in chosen_candidates
         ],
         "config": config.__dict__,
+        "musical_context_calibration": context_calibration.to_dict(),
     }
     plan_id = (
         "jrsp_"

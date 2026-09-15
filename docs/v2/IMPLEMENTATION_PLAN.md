@@ -257,3 +257,33 @@ joint set-level pilot. Delivered without changing roadmap phase status:
 Focused tests pass at 45 and complete regression at 1147. Stop for the human
 joint-set listening gate. Do not create a second set or reconnect the legacy
 Set Director/Candidate Composer/Audition Lab path.
+
+The first pilot's set-story failure authorized one flow-aware second pilot.
+That pilot added an independent stateful set-flow gate and rendered one new
+four-track sequence. Human listening passed transition 1 locally and
+contextually, but transitions 2 and 3 remained contextual-world mismatches
+despite locally feasible F moves. This evidence does not authorize Pilot 3.
+
+The active bounded gate is musical context / bridgeability:
+
+- reuse the existing local/offline cached analysis before considering another
+  representation dependency;
+- distinguish `NATURAL_CONTINUATION`,
+  `INTENTIONAL_BRIDGEABLE_CONTRAST`, and `UNJUSTIFIED_DISCONTINUITY`;
+- require performance feasibility and set-context suitability independently;
+- permit a large contrast only when declared set intent, frozen transition
+  capacity, and multiple named continuity anchors explain it;
+- render one fresh natural control, at most one credible bridge control, and
+  abstain on one unsuitable control; do not render a third set.
+
+Delivered: existing whole-track embedding alone was insufficient, but the
+already-cached representative-window semantic distributions supplied the
+missing cue-local evidence without a new model. The planner now uses
+unlabelled-pool-relative distance bands and never turns them into mood or genre
+claims. Pilot 2 transitions 2/3 are rejected; transition 1 remains frozen. One
+natural and one bridgeable F control were rendered, while the discontinuous
+control abstained. A selector search-order defect was also fixed so every
+eligible cue is tested against the unchanged performance floor before ranking.
+Focused regression passes at 82 and full regression at 1159. Stop for human
+listening of the two controlled files; no Pilot 3 or broader reconnection is
+authorized.

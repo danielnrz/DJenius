@@ -124,7 +124,7 @@ def _candidate(
             "tempo_delta_pct": 0.0,
             "harmonic_compatibility": 1.0,
             "musical_role_and_set_story": {
-                "relationship": "COHERENT_CONTINUATION",
+                "relationship": "NATURAL_CONTINUATION",
                 "state_after": state_after,
             },
         },

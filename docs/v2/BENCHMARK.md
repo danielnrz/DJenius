@@ -438,3 +438,35 @@ The `NO` above is deliberate: reverse sweep/cymbal passed deterministic synthesi
   regression: **1154 passed in 88.07s**, with the same two Typer/Click
   dependency warnings. Human listening remains the only evidence for whether
   the second set's musical story and individual transitions succeed.
+
+## Musical context / bridgeability controlled gate
+
+- Human listening passed Pilot 2 transition 1 and rejected transitions 2/3 as
+  set-context choices despite locally functional effects. Transition 1 remains
+  frozen and hash-verified. The other two are now
+  `UNJUSTIFIED_DISCONTINUITY` and would be rejected before rendering.
+- Whole-track audio embedding did not by itself separate positive and negative
+  controls. The smallest sufficient representation reuses already-cached
+  local CLAP representative-window score distributions nearest the actual
+  source release and target landing. No new model/dependency was added.
+- Context bands are derived from every unlabelled pair/window in the bounded
+  private pool (78 embedding pairs and 1,248 cross-track representative-window
+  comparisons), not fitted to human labels. They remain relative musical-
+  territory evidence; unreliable mood/genre semantics are not asserted.
+- The controlled fresh panel classified one pair as
+  `NATURAL_CONTINUATION`, one material-tempo change as
+  `INTENTIONAL_BRIDGEABLE_CONTRAST`, and one technically feasible F pair as
+  `UNJUSTIFIED_DISCONTINUITY`. Exactly two WAVs were rendered; the third case
+  abstained.
+- `CONTEXT_NATURAL.wav`: **34.966349 s**, SHA-256
+  `0bcbdce2f242b7a9cde86153c7033e81fe58e8dde95a8e8e482bc416ae2959ce`.
+  `CONTEXT_BRIDGE.wav`: **39.076281 s**, SHA-256
+  `ab5534e6d10641fe7936805779ac89c566698866a78260ea9f177ec97e74df93`.
+  Both are stereo 44.1 kHz PCM24 and have zero clipped samples. These are
+  technical facts only; human listening decides musical success.
+- The selector now applies the unchanged `USABLE_FOR_PERFORMANCE` checks to
+  every eligible cue before ranking; a focused regression proves a nearby
+  usable pickup is no longer hidden by the first merely technical cue.
+- Focused context/semantic/selector/template/joint suite: **82 passed in
+  7.46s**. Complete regression: **1159 passed in 84.26s**. Private identities,
+  audio, and detailed diagnosis remain outside Git.

@@ -6,12 +6,45 @@ The user passed manual reference quality, same-pair automated reproduction,
 new-pair generalization, and the two targeted source-entry fixes. The first
 blind autonomous selector gate failed; its postmortem produced a calibrated,
 conservative `PAIR_TRANSITIONABLE`/`USABLE_FOR_PERFORMANCE` selector. One
-isolated joint-planning pilot then failed on set story. A second, flow-aware
-four-track pilot is now rendered and awaiting human listening. The legacy Set
+isolated joint-planning pilot then failed on set story. The second flow-aware
+pilot passed its first transition but exposed two musical-context failures.
+An explicit bridgeability layer and a two-render controlled gate are now
+awaiting human listening. The legacy Set
 Director, Candidate Composer, Audition Lab, UI, personalization, generic
 families, and unrestricted/full-set automation remain disconnected.
 
-## FLOW-AWARE JOINT SET PILOT 2 (HUMAN GATE PENDING)
+## MUSICAL CONTEXT / BRIDGEABILITY GATE (HUMAN LISTENING PENDING)
+
+- Existing cached analysis was sufficient only after using cue-local evidence:
+  whole-track embedding alone could not separate the Pilot 2 failures. The
+  planner now compares the nearest cached representative-window style and
+  intensity distributions, plus whole-track embedding, rhythm, spectral,
+  harmony, tempo, role, and set intent. No model/dependency was added.
+- The evidence remains epistemically bounded: distances mean relative musical
+  territory, never asserted mood/genre/lyrical facts. Quantile bands come from
+  the unlabelled candidate pool, not human pass/fail labels.
+- Adjacencies are explicitly `NATURAL_CONTINUATION`,
+  `INTENTIONAL_BRIDGEABLE_CONTRAST`, or `UNJUSTIFIED_DISCONTINUITY`.
+  Intentional contrast requires frozen F, phase/budget support, cue evidence,
+  at least two named continuity anchors, and no unresolved local
+  style/intensity split. Other frozen archetypes do not authorize a large
+  contextual jump.
+- Pilot 2 transition 1 remains a frozen natural-continuation PASS. Transitions
+  2 and 3 are now rejected as unjustified discontinuities. The prior
+  `GEN_F_02_FIX` PASS is retained as local-performance evidence; it is the same
+  pair/cues as transition 2 and is therefore not a set-context positive.
+- A selector defect was fixed without changing choreography: every technically
+  eligible cue now receives `USABLE_FOR_PERFORMANCE` evaluation before cue
+  ranking, preventing a weak first cue from hiding a valid nearby cue.
+- Private output contains exactly two WAVs and one abstention under
+  `/tmp/djenius_reference_dj_transition/musical_context_bridgeability/`.
+  `CONTEXT_NATURAL.wav` and `CONTEXT_BRIDGE.wav` are finite/unclipped;
+  `CONTEXT_REJECT` has no WAV. Full diagnosis is private in
+  `MUSICAL_CONTEXT_DIAGNOSIS.json`.
+- Focused regression: **82 passed**. Complete regression: **1159 passed in
+  84.26s**. Human listening is the quality gate; Pilot 3 is prohibited.
+
+## FLOW-AWARE JOINT SET PILOT 2 (POSTMORTEM INPUT)
 
 - The first pilot's three old choices now all fail an independent hard gate:
   D2 performance launch/groove margin; HOLD rhythmic-role continuity; and PEAK

@@ -1,5 +1,66 @@
 # DJenius V2 Active Handoff
 
+## MUSICAL CONTEXT / BRIDGEABILITY GATE — COMPLETE; HUMAN GATE PENDING
+
+2026-09-15. Pilot 2 transition 1 remains frozen positive evidence: D2 connects
+an anonymous close-tempo pair as `NATURAL_CONTINUATION`; its WAV and decision
+hashes were reverified unchanged. Transitions 2 and 3 are now both
+`UNJUSTIFIED_DISCONTINUITY`, even though their F performances remain locally
+feasible. The first has a cue-local style-distribution distance beyond the
+unlabelled pool's 90th-percentile band plus a simultaneous style/intensity
+shift; the second has style and intensity distances both beyond their
+upper-quartile bands. The frozen F move is not a large enough explanation for
+either contextual-world change, so both next tracks should have been rejected.
+
+This resolves an apparent evidence conflict: `GEN_F_02_FIX` and Pilot 2
+transition 2 use the same private pair and cues. The earlier PASS remains valid
+for F's local choreography/source placement, while the newer whole-set verdict
+shows that it is not a positive set-context adjacency. Performance feasibility
+and musical bridgeability are independent labels.
+
+No new model or dependency was added. Existing analysis already caches a local
+CLAP track embedding and four representative-window relative semantic
+distributions. Whole-track embedding alone did not separate the controls; the
+smallest sufficient change compares the cached window distributions nearest
+the actual source release and target landing. Values are interpreted only as
+pool-relative musical-territory distances—not mood, genre, or lyrical facts.
+All bands come from unlabelled pool/window quantiles, never human-label fitting.
+
+`musical_role.py` now reports exactly `NATURAL_CONTINUATION`,
+`INTENTIONAL_BRIDGEABLE_CONTRAST`, or `UNJUSTIFIED_DISCONTINUITY`. Intentional
+contrast requires phase direction, remaining contrast budget, usable frozen F
+reset/release choreography, cue-context evidence, at least two explicit
+continuity anchors, and no unresolved cue-local style/intensity split. C3/B8/D2
+remain natural-continuation tools under their frozen contracts. Technical
+transitionability cannot override an unjustified discontinuity. A cue-search
+defect was also fixed: performance acceptance is now evaluated for every
+technically eligible cue before ranking, so one weak first cue cannot hide a
+nearby cue that already satisfies the unchanged performance contract.
+
+The controlled private panel is in
+`/tmp/djenius_reference_dj_transition/musical_context_bridgeability/`:
+
+- `CONTEXT_NATURAL.wav` — 34.966349 s, SHA-256
+  `0bcbdce2f242b7a9cde86153c7033e81fe58e8dde95a8e8e482bc416ae2959ce`;
+- `CONTEXT_BRIDGE.wav` — 39.076281 s, SHA-256
+  `ab5534e6d10641fe7936805779ac89c566698866a78260ea9f177ec97e74df93`;
+- `CONTEXT_REJECT` — documented abstention; no WAV was rendered;
+- `MUSICAL_CONTEXT_DIAGNOSIS.json` — private identities, positive/negative
+  feature audit, Pilot 2 postmortem, all four template results, exact cues,
+  classifications, choreography, and render provenance; SHA-256
+  `90af9218abdc2209a7b9635bd4139ae74fcc325039a3aa26039d17c892c3d100`.
+
+Both WAVs are stereo 44.1 kHz PCM24 with zero clipped samples. Focused context,
+semantic, selector, template, and joint-planner regression: **82 passed in
+7.46s**. Complete regression: **1159 passed in 84.26s**. Ruff passes on all
+touched Python files; `git diff --check` remains required before commit. These
+checks establish determinism and technical correctness, not listening quality.
+
+**STOP/GATE:** human-listen only to `CONTEXT_NATURAL.wav` and
+`CONTEXT_BRIDGE.wav`; review the documented `CONTEXT_REJECT`. Do not make Pilot
+3, alter frozen templates/renderer, invent effects/archetypes, or reconnect the
+legacy Set Director/Candidate Composer/Audition Lab path.
+
 ## JOINT SET PILOT 2 — COMPLETE; HUMAN GATE PENDING
 
 2026-09-15. The first pilot's set-story failure is now explicit. Its planner had
@@ -16,7 +77,7 @@ vocal, optional reliable mood/style, and set-role profile. The joint planner
 maintains recent energy/function/rhythm/reliable-mood state, a declared phase,
 and an intentional-contrast budget. `PERFORMANCE_FEASIBILITY` and
 `SET_FLOW_SUITABILITY` are independent hard gates; relationships are disclosed
-as `COHERENT_CONTINUATION`, `INTENTIONAL_ENERGY_MOOD_SHIFT`, or
+as `NATURAL_CONTINUATION`, `INTENTIONAL_BRIDGEABLE_CONTRAST`, or
 `UNJUSTIFIED_DISCONTINUITY`, never one opaque score. The old pilot now rejects:
 
 - transition 1 because D2 no longer clears the source-launch/groove performance

@@ -495,6 +495,29 @@ def test_selector_f_can_use_a_clean_intro_pickup_at_the_section_boundary():
     assert evaluation.cue_search["selected_target_landing_bar_index"] == 12
 
 
+def test_selector_searches_past_first_eligible_cue_for_performance_usable_pickup():
+    source = replace(
+        _analysis(source=True), bpm=160, camelot="1A", vocal_regions=[(37.0, 44.0)],
+    )
+    # The analysis-derived landing at bar 12 is technically eligible (50%
+    # vocal occupancy is below the template's structural ceiling) but fails
+    # the stricter 35% performance-space contract.  Bar 15 is clean.
+    target = replace(
+        _analysis(source=False),
+        bpm=100,
+        camelot="7B",
+        vocal_regions=[(22.0, 23.0), (32.0, 35.0)],
+    )
+    evaluation = _evaluation(
+        _selection(source, target), ReferenceArchetype.RESET_RELEASE
+    )
+    assert evaluation.cue_search["eligible_combinations"] == 2
+    assert evaluation.cue_search["usable_combinations"] == 1
+    assert evaluation.cue_search["selected_target_landing_bar_index"] == 15
+    assert evaluation.cue_search["target_cue_shift_beats"] == 12
+    assert evaluation.usable_for_performance is True
+
+
 def test_selector_shifts_b8_launch_away_from_vocal_interruption():
     source = replace(
         _analysis(source=True),
