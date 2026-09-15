@@ -61,6 +61,12 @@ Focused tests: **24 passed**. Complete repository regression: **1126 passed in
 82.45s**, with the two existing Typer/Click deprecation warnings. Touched-file
 `ruff check` and `git diff --check` pass.
 
+Validated implementation checkpoint: commit `3b1d882` ("Refine reference
+template entry eligibility"), pushed to
+`origin/v2-professional-autonomous-dj`. This handoff finalization follows as a
+docs-only commit; resolve the current tip from Git. Apart from the pre-existing
+untracked `.claude/` directory, the checkpoint worktree is clean.
+
 **STOP/GATE:** the user must compare B8_02 with `GEN_B8_02_FIX.wav` and F_02
 with `GEN_F_02_FIX.wav`. Human listening remains authoritative. Do not render
 C3/D2 replacements, restore autonomous selection, use Audition Lab to

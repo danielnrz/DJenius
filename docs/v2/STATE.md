@@ -39,10 +39,12 @@ personalization, new families, and full mixes remain out of scope.
 `v2-professional-autonomous-dj`
 
 ## LATEST REFERENCE-AUTOMATION COMMIT
-The Round 2 source-entry/eligibility checkpoint follows `47c1a32`; resolve the
-current tip from Git. It contains contextual cue refinement, inspectable
-eligibility/rejection evidence, two controlled private renders, focused
-regression coverage, and durable public-safe human labels.
+`3b1d882` - "Refine reference template entry eligibility". It contains
+contextual cue refinement, inspectable eligibility/rejection evidence, two
+controlled private renders, focused regression coverage, and durable
+public-safe human labels. It was pushed to
+`origin/v2-professional-autonomous-dj`; a docs-only handoff finalization follows,
+so resolve the current tip from Git.
 
 ## PHASE COMPLETION HISTORY (unchanged, factual record)
 - Phases 0-9: frozen. Phase 9 pushed at `4f71818e2f2613d14db184c23901f43474ce04fd`
