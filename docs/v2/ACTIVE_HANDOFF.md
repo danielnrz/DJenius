@@ -9,6 +9,9 @@ complete. `joint_reference_set.py` jointly evaluates next-track set flow,
 It does not import or call the legacy Set Director, Candidate Composer, or
 Audition Lab. A deterministic bounded path search rejects prior listening-test
 ordered pairs and never admits an attractive but untransitionable track.
+Validated implementation checkpoint: `4f2629fd2a4c8ca6f963f02084641eef1ef4aeab`
+(`Add constrained joint reference set pilot`), pushed with local and remote
+branch tips equal before this handoff-only finalization.
 
 The private fourteen-track library could not provide four individually unused
 tracks, so individual-track reuse was unavoidable; all prior manual,
