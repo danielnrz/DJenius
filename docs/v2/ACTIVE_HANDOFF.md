@@ -64,7 +64,9 @@ quality.
 Do not render a third pilot, alter F/C3/B8/D2 or the renderer, or reconnect the
 legacy Set Director, Candidate Composer, Audition Lab, UI, personalization, or
 new families until the user evaluates this gate. The pre-existing untracked
-`.claude/` directory remains untouched.
+`.claude/` directory remains untouched. Validated implementation checkpoint:
+`1313c7f` (`Add flow-aware joint set planning`); a docs-only handoff commit
+follows, so resolve the current branch tip from Git.
 
 ## CONSTRAINED JOINT SET-DIRECTOR PILOT — COMPLETE; HUMAN GATE PENDING
 

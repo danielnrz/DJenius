@@ -31,6 +31,8 @@ families, and unrestricted/full-set automation remain disconnected.
 - Focused gate: **66 passed**. Full regression: **1154 passed in 88.07s** with
   two existing dependency warnings. Human listening remains the only quality
   gate; no third pilot is authorized.
+- Validated implementation checkpoint: `1313c7f` (`Add flow-aware joint set
+  planning`), pushed with its docs-only handoff finalization immediately after.
 
 ## CONSTRAINED JOINT SET-DIRECTOR PILOT (HUMAN GATE PENDING)
 
