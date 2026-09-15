@@ -1,0 +1,65 @@
+{
+  "schema_version": "reference-generalization-human-labels-1",
+  "recorded_date": "2026-09-15",
+  "status": "round_2_fixes_awaiting_human_listening",
+  "purpose": "Durable public-safe engineering evidence for reference-template eligibility. These labels are not machine-learning targets.",
+  "round_1": {
+    "GEN_B8_01.wav": {
+      "sha256": "3871f3ae02b5fe4884b884a8218b22a7dd76de4fa668f9a8e22d105cd4809e4b",
+      "human_label": "PASS",
+      "diagnosis": "Successful control: stable source section and predictable repeated-hook/motif context support the loop-build entry."
+    },
+    "GEN_B8_02.wav": {
+      "sha256": "30949ccbed4236981f1efe331bd07aaba87f08a67d6916bf7944cb82d3f2ef58",
+      "human_label": "NEAR_PASS_SOURCE_ENTRY",
+      "diagnosis": "Target connection and effect worked; source release began inside an active lyric and an unstable verse-to-outro source window."
+    },
+    "GEN_C3_01.wav": {
+      "sha256": "2d019af332416fa5d62143daec7072f9f33f260b91d02e01e87db492258a55a9",
+      "human_label": "PASS",
+      "diagnosis": "Successful control with close tempo/groove, sparse source arrangement, and non-dominant vocal stem."
+    },
+    "GEN_C3_02.wav": {
+      "sha256": "0f313c8b42ac3587953fbe6ac65530f0d9e113c94a0ca2d33caa4ba7c35d7718",
+      "human_label": "BORDERLINE",
+      "diagnosis": "No single renderer defect; near-limit stretch, larger groove distance, dense source arrangement, and dominant vocal compound."
+    },
+    "GEN_D2_01.wav": {
+      "sha256": "7129d81e7009bb32652280dd8730f75c11e2bc893cc2e5bb999c6fb49db86c1e",
+      "human_label": "REJECT",
+      "diagnosis": "Long overlap should reject weak global harmonic compatibility plus excessive combined arrangement density."
+    },
+    "GEN_D2_02.wav": {
+      "sha256": "8b03200b8df27db82c5c6219280704bdfa5e04d959ad2dbb6170ef59112ff77d",
+      "human_label": "BORDERLINE_PASS",
+      "diagnosis": "More compatible key relationship and lower shared density preserve room for a restrained ownership blend."
+    },
+    "GEN_F_01.wav": {
+      "sha256": "81e2d58f6be6666089c19d3eaa847b38a89243a26d056822037f872cbef5e626",
+      "human_label": "REJECT_EFFECT_ENTRY",
+      "diagnosis": "Reset/repetition begins inside a long continuing vocal unit rather than after a self-contained motif."
+    },
+    "GEN_F_02.wav": {
+      "sha256": "e926ca09eb9645d1f3e8a9ede0f335a2e90e17ce3942c9e2d9d4967e547f7247",
+      "human_label": "NEAR_PASS_EFFECT_ENTRY",
+      "diagnosis": "Better pair, but the selected release still occurs at high vocal level inside an incomplete lyric unit."
+    }
+  },
+  "round_2_renders": {
+    "GEN_B8_02_FIX.wav": {
+      "sha256": "2f8dc2e6bfd4c95b97cdcc38a1e7090504af4a4296c6968d9149b08825d3b1b6",
+      "change": "Move source phrase 40 beats earlier so release begins on a vocal phrase tail and the loop starts in instrumental space; apply an equal-power source-to-loop entry only during bars 4.00-4.22. Target anchors, gain, components, reveal, timing map, tail, and establishment are unchanged."
+    },
+    "GEN_F_02_FIX.wav": {
+      "sha256": "c54353a189650e6e52e35618e537b10e628cdbd1d05182379bc03ae8dc574430",
+      "change": "Move the four-bar source phrase 12 beats earlier to a downbeat vocal gap after one self-contained unit. Target anchors, natural adjacent target samples, gain, reset envelope, and choreography are unchanged."
+    }
+  },
+  "eligibility_rules": {
+    "reset_release": "Require capturable final-bar material and release within 0.75 seconds of its vocal-unit boundary; search other downbeat-aligned four-bar windows or return NOT SUITABLE.",
+    "loop_build_coherent_handoff": "Prefer instrumental space or a phrase-end release whose loop starts in a vocal gap. Active-vocal entry requires stable-section, high motif-context similarity indicating a predictable repeated hook. Preserve phrase duration when relocating the cue.",
+    "stem_echo_handoff": "Dense source arrangement combined with greater than 8 percent stretch and groove distance above 0.18 is explicitly borderline.",
+    "restrained_ownership_blend": "Reject global harmonic compatibility below 0.50 or combined source/target arrangement-density pressure above 1.65."
+  },
+  "gate": "Human listening of GEN_B8_02_FIX.wav and GEN_F_02_FIX.wav. No C3 or D2 fix was rendered."
+}

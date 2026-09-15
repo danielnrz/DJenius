@@ -235,3 +235,13 @@
 ## D054 - Hard effect-tail bounds round inward at sample conversion
 **Decision:** when an effect must end before a content event by a fixed margin, its continuous-time endpoint converts to a sample with `floor`, never nearest-sample rounding. The quantized endpoint may be slightly early but may not cross the declared bound.
 **Why:** the first new B8-style pair exposed a few-microsecond tail overrun caused solely by rounding. A hard target-vocal exclusion margin is a safety invariant, so sample quantization must preserve it directionally.
+
+## D055 - Template eligibility includes the exact source-entry moment
+**Decision:** F and B8 eligibility may relocate a template's source phrase to another downbeat-aligned local window using explicit vocal-boundary, instrumental-gap, section-stability, transient/density, and motif-repeatability evidence. F requires a self-contained repeatable unit close to its release boundary; B8 requires instrumental/phrase-end space or demonstrably predictable repeated-hook context. If no safe local cue exists, instantiation returns `NOT SUITABLE`. Selection uses an exposed lexicographic evidence tuple, not a new opaque compatibility score.
+**Why:** human labels showed the same proven choreography could fail before its effect even began. GEN_B8_02's target handoff worked, but its source manipulation interrupted a continuing lyric; both F generalizations likewise began inside incomplete vocal units. Pair-level BPM/key suitability cannot answer where a DJ move should launch.
+**Rejected:** treating "vocal present" as sufficient for F, always using the initially selected section, or globally blending entry evidence into one number whose reason cannot be inspected.
+
+## D056 - Human generalization labels constrain local fixes and future eligibility
+**Decision:** the eight Round-1 labels and diagnoses are stored durably in `REFERENCE_GENERALIZATION_LABELS.json` as engineering evidence, not ML targets. Passing renders remain immutable. A near-pass receives only the smallest diagnosed change; a borderline/reject without one local defect changes eligibility rather than producing a speculative rerender.
+**Why:** B8_01/C3_01 are positive controls, D2_01 is valuable negative evidence, and C3_02's weakness is a compound context problem rather than a renderer defect. Preserving these distinctions prevents metric-driven polishing from erasing what the human actually judged.
+**Rejected:** rerendering every non-pass, allowing Audition Lab to overrule labels, or redesigning an accepted archetype to rescue one unsuitable pair.

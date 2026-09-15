@@ -27,7 +27,7 @@ from djenius.core.performance_recipe import (
 from djenius.utils.camelot import score_key_compatibility
 
 
-REFERENCE_TEMPLATE_SCHEMA_VERSION = "1.0"
+REFERENCE_TEMPLATE_SCHEMA_VERSION = "1.1"
 REQUIRED_STEMS = frozenset({"drums", "bass", "other", "vocals"})
 
 
@@ -85,7 +85,7 @@ ARCHETYPE_DEFINITIONS: dict[ReferenceArchetype, ArchetypeDefinition] = {
         technique="echo_release",
         transition_bars=4,
         postlanding_bars=8,
-        suitable_source_sections=("bridge", "build", "drop", "outro"),
+        suitable_source_sections=("verse", "bridge", "build", "drop", "outro"),
         suitable_target_sections=("intro", "verse"),
         bpm_relationship="large or incompatible tempo relationship; no forced beatmatch",
         max_tempo_delta_pct=None,
@@ -104,9 +104,9 @@ ARCHETYPE_DEFINITIONS: dict[ReferenceArchetype, ArchetypeDefinition] = {
         post_release_tail="five bounded vocal-echo taps; final tap must end before landing",
         landing_behavior="clean adjacent-master entrance after the reset",
         target_establishment="at least four postlanding target bars; default eight",
-        failure_conditions=("no source vocal stem", "no one-bar target pickup", "target pickup and landing are non-adjacent", "tail reaches landing"),
-        variable_parameters=("capture position within final source bar", "tap damping", "target trim within safe loudness bounds"),
-        fixed_parameters=("sequential source-then-reset story", "one pickup bar", "five decreasing taps", "tail clears before landing"),
+        failure_conditions=("no self-contained final-bar vocal/musical unit", "release interrupts a continuing vocal unit", "no one-bar target pickup", "target pickup and landing are non-adjacent", "tail reaches landing"),
+        variable_parameters=("analysis-selected four-bar source window", "capture position within final source bar", "tap damping", "target trim within safe loudness bounds"),
+        fixed_parameters=("release within 0.75 seconds of the motif vocal boundary", "sequential source-then-reset story", "one pickup bar", "five decreasing taps", "tail clears before landing"),
     ),
     ReferenceArchetype.STEM_ECHO_HANDOFF: ArchetypeDefinition(
         archetype=ReferenceArchetype.STEM_ECHO_HANDOFF,
@@ -133,7 +133,7 @@ ARCHETYPE_DEFINITIONS: dict[ReferenceArchetype, ArchetypeDefinition] = {
         post_release_tail="four damped/diffused taps; final tap ends before landing",
         landing_behavior="target already owns rhythm and bass before full reveal",
         target_establishment="full target for at least four bars; default eight",
-        failure_conditions=("missing stems", "tempo delta above safe range", "weak target drum phrase", "source and target vocals overlap"),
+        failure_conditions=("missing stems", "tempo delta above safe range", "weak target drum phrase", "source and target vocals overlap", "dense source plus near-limit tempo/groove change is only borderline"),
         variable_parameters=("capture location", "echo cutoffs", "small target gain trim"),
         fixed_parameters=("eight bars", "four-bar drum phrase", "midpoint bass handoff", "target vocal withheld", "echo clears before landing"),
     ),
@@ -143,7 +143,7 @@ ARCHETYPE_DEFINITIONS: dict[ReferenceArchetype, ArchetypeDefinition] = {
         technique="loop_shortening",
         transition_bars=8,
         postlanding_bars=8,
-        suitable_source_sections=("build", "drop", "outro"),
+        suitable_source_sections=("verse", "build", "drop", "outro"),
         suitable_target_sections=("intro", "drop"),
         bpm_relationship="beatmatchable, normally within 12 percent",
         max_tempo_delta_pct=12.0,
@@ -162,9 +162,9 @@ ARCHETYPE_DEFINITIONS: dict[ReferenceArchetype, ArchetypeDefinition] = {
         post_release_tail="rhythmic tail and airy riser residue end before first target vocal",
         landing_behavior="full target appears on cue with shared stretch map and no false prelanding bass pocket",
         target_establishment="full target for at least four bars; default eight",
-        failure_conditions=("missing stems", "tempo delta above safe range", "no vocal onset bound", "unstable two-bar target low cadence", "tail overlaps target vocal"),
-        variable_parameters=("loop capture bar", "safe target trim", "tail endpoint before measured target vocal"),
-        fixed_parameters=("eight bars", "4/2/1-beat sequence", "two-bar low preview", "shared target time map", "bounded stateful tail"),
+        failure_conditions=("missing stems", "tempo delta above safe range", "source manipulation interrupts an unpredictable vocal phrase", "no vocal onset bound", "unstable two-bar target low cadence", "tail overlaps target vocal"),
+        variable_parameters=("analysis-selected source phrase", "loop capture bar", "safe target trim", "tail endpoint before measured target vocal"),
+        fixed_parameters=("source entry uses a vocal gap/phrase end or proven repeated-hook context", "eight bars", "4/2/1-beat sequence", "two-bar low preview", "shared target time map", "bounded stateful tail"),
     ),
     ReferenceArchetype.RESTRAINED_OWNERSHIP_BLEND: ArchetypeDefinition(
         archetype=ReferenceArchetype.RESTRAINED_OWNERSHIP_BLEND,
@@ -191,7 +191,7 @@ ARCHETYPE_DEFINITIONS: dict[ReferenceArchetype, ArchetypeDefinition] = {
         post_release_tail="none; this archetype relies on continuous ownership ramps",
         landing_behavior="restrained completion of an already-established target",
         target_establishment="full target for at least four bars; default eight",
-        failure_conditions=("missing stems", "tempo delta above safe range", "target runway too short", "simultaneous vocal ownership"),
+        failure_conditions=("missing stems", "tempo delta above safe range", "target runway too short", "global harmonic compatibility below 0.50", "combined arrangement-density pressure above 1.65", "simultaneous vocal ownership"),
         variable_parameters=("safe deck trim", "minor band-ramp offsets", "12-to-16-bar phrase length after future human validation"),
         fixed_parameters=("source bass held eight bars", "late bass-before-drums sequence", "sequential vocal handoff", "no decorative FX"),
     ),
@@ -300,6 +300,286 @@ def _vocal_coverage(analysis: TrackAnalysis, start: float, end: float) -> float:
         for left, right in analysis.vocal_regions
     )
     return max(0.0, min(1.0, covered / (end - start)))
+
+
+def _curve_window_mean(curve: list[float], start: float, end: float, duration: float) -> float:
+    """Return a duration-scaled mean for an analysis curve.
+
+    Energy curves are normally one-Hz, but scaling by track duration keeps
+    older caches with a different point count usable and deterministic.
+    """
+    values = np.asarray(curve, dtype=float)
+    if not len(values) or duration <= 0 or end <= start:
+        return 0.0
+    left = max(0, min(len(values) - 1, int(start / duration * len(values))))
+    right = max(left + 1, min(len(values), int(np.ceil(end / duration * len(values)))))
+    window = np.nan_to_num(values[left:right], nan=0.0, posinf=0.0, neginf=0.0)
+    return float(np.mean(window)) if len(window) else 0.0
+
+
+def _boundary_distance(values: list[float], time_sec: float) -> float | None:
+    return min((abs(float(value) - time_sec) for value in values), default=None)
+
+
+def _round_optional(value: float | None, digits: int = 4) -> float | None:
+    return round(value, digits) if value is not None else None
+
+
+def _vocal_timing(analysis: TrackAnalysis, time_sec: float) -> dict[str, Any]:
+    active = next(
+        ((float(left), float(right)) for left, right in analysis.vocal_regions if float(left) <= time_sec < float(right)),
+        None,
+    )
+    previous = [time_sec - float(right) for left, right in analysis.vocal_regions if float(right) <= time_sec]
+    following = [float(left) - time_sec for left, right in analysis.vocal_regions if float(left) >= time_sec]
+    boundaries = [float(value) for region in analysis.vocal_regions for value in region]
+    return {
+        "vocal_active": active is not None,
+        "active_vocal_remaining_sec": max(0.0, active[1] - time_sec) if active else 0.0,
+        "distance_since_previous_vocal_sec": min(previous) if previous else None,
+        "distance_until_next_vocal_sec": min(following) if following else None,
+        "nearest_vocal_boundary_sec": _boundary_distance(boundaries, time_sec),
+    }
+
+
+def _local_descriptor_mean(analysis: TrackAnalysis, field: str, start: float, end: float) -> np.ndarray:
+    times = np.asarray(analysis.local_context_times, dtype=float)
+    rows = np.asarray(getattr(analysis, field, []), dtype=float)
+    if rows.ndim != 2 or not len(times) or len(rows) != len(times):
+        return np.array([], dtype=float)
+    indexes = (times >= start - 1.0) & (times <= end + 1.0)
+    return np.mean(rows[indexes], axis=0) if np.any(indexes) else np.array([], dtype=float)
+
+
+def _descriptor_similarity(left: np.ndarray, right: np.ndarray, scale: float) -> float:
+    if not len(left) or len(left) != len(right):
+        return .5
+    return float(np.clip(1.0 - np.mean(np.abs(left - right)) / scale, 0.0, 1.0))
+
+
+def _source_entry_context(
+    analysis: TrackAnalysis,
+    start_index: int,
+    bars: int,
+    archetype: ReferenceArchetype,
+    duration_sec: float,
+) -> dict[str, Any]:
+    grid = _grid(analysis)
+    effect_axis = {
+        ReferenceArchetype.RESET_RELEASE: float(bars),
+        ReferenceArchetype.STEM_ECHO_HANDOFF: 6.92,
+        ReferenceArchetype.LOOP_BUILD_COHERENT_HANDOFF: 3.7,
+        ReferenceArchetype.RESTRAINED_OWNERSHIP_BLEND: 0.0,
+    }[archetype]
+    effect_time = float(np.interp(start_index + effect_axis, np.arange(len(grid)), grid))
+    start_sec, end_sec = float(grid[start_index]), float(grid[start_index + bars])
+    entry_bar_end = float(np.interp(start_index + min(effect_axis + 1.0, bars), np.arange(len(grid)), grid))
+    timing = _vocal_timing(analysis, effect_time)
+    section_start = _section_at(analysis, start_sec)
+    section_end = _section_at(analysis, max(start_sec, end_sec - .001))
+    section_boundaries = [
+        float(value)
+        for section in analysis.section_profiles
+        for value in (section.get("start_sec", 0.0), section.get("end_sec", duration_sec))
+    ]
+    evidence: dict[str, Any] = {
+        "source_start_bar_index": start_index,
+        "source_end_bar_index": start_index + bars,
+        "source_start_sec": round(start_sec, 6),
+        "source_end_sec": round(end_sec, 6),
+        "source_phrase_duration_sec": round(end_sec - start_sec, 6),
+        "effect_onset_bar": round(effect_axis, 4),
+        "effect_onset_sec": round(effect_time, 6),
+        "effect_entry_vocal_coverage": round(_vocal_coverage(analysis, effect_time - .25, effect_time + .25), 4),
+        "effect_entry_vocal_activity": round(
+            _curve_window_mean(analysis.vocal_activity_curve, effect_time - .5, effect_time + .5, duration_sec), 4,
+        ),
+        "effect_entry_transient_density": round(
+            _curve_window_mean(analysis.rhythmic_density_curve, effect_time - 1.0, entry_bar_end, duration_sec), 4,
+        ),
+        "effect_entry_energy": round(
+            _curve_window_mean(analysis.energy_curve, effect_time - 1.0, entry_bar_end, duration_sec), 4,
+        ),
+        "effect_entry_bass_ratio": round(
+            _curve_window_mean(analysis.low_energy_curve, effect_time - 1.0, entry_bar_end, duration_sec), 4,
+        ),
+        "source_section_at_start": section_start,
+        "source_section_at_effect": _section_at(analysis, effect_time),
+        "source_window_section_continuous": section_start == section_end,
+        "nearest_section_boundary_sec": _round_optional(_boundary_distance(section_boundaries, effect_time)),
+        "nearest_phrase_boundary_sec": _round_optional(_boundary_distance(analysis.phrase_boundaries, effect_time)),
+        "source_window_vocal_density": round(_vocal_coverage(analysis, start_sec, end_sec), 4),
+    }
+    evidence.update({name: round(value, 4) if isinstance(value, float) else value for name, value in timing.items()})
+    if archetype == ReferenceArchetype.RESET_RELEASE:
+        last_bar_start = float(grid[start_index + bars - 1])
+        regions = [
+            (max(start_sec, float(left)), min(end_sec, float(right)))
+            for left, right in analysis.vocal_regions
+            if float(right) > start_sec and float(left) < end_sec
+        ]
+        evidence.update({
+            "final_bar_vocal_coverage": round(_vocal_coverage(analysis, last_bar_start, end_sec), 4),
+            "vocal_units_intersecting_window": len(regions),
+            "largest_vocal_unit_window_coverage": round(
+                max((right - left for left, right in regions), default=0.0) / max(end_sec - start_sec, 1e-9), 4,
+            ),
+        })
+    elif archetype == ReferenceArchetype.LOOP_BUILD_COHERENT_HANDOFF:
+        motif_start, motif_end = float(grid[start_index + 1]), float(grid[start_index + 2])
+        loop_start = float(grid[start_index + 4])
+        loop_timing = _vocal_timing(analysis, loop_start)
+        entry_end = float(grid[start_index + 5])
+        motif_rhythm = _local_descriptor_mean(analysis, "local_rhythm_curve", motif_start, motif_end)
+        entry_rhythm = _local_descriptor_mean(analysis, "local_rhythm_curve", loop_start, entry_end)
+        motif_spectral = _local_descriptor_mean(analysis, "local_spectral_curve", motif_start, motif_end)
+        entry_spectral = _local_descriptor_mean(analysis, "local_spectral_curve", loop_start, entry_end)
+        evidence.update({
+            "loop_motif_start_sec": round(motif_start, 6),
+            "loop_motif_end_sec": round(motif_end, 6),
+            "loop_start_sec": round(loop_start, 6),
+            "loop_start_vocal_active": loop_timing["vocal_active"],
+            "loop_start_distance_until_next_vocal_sec": _round_optional(
+                loop_timing["distance_until_next_vocal_sec"],
+            ),
+            "motif_entry_rhythm_similarity": round(_descriptor_similarity(motif_rhythm, entry_rhythm, 2.0), 4),
+            "motif_entry_spectral_similarity": round(_descriptor_similarity(motif_spectral, entry_spectral, .7), 4),
+        })
+    return evidence
+
+
+def _f_entry_is_safe(context: dict[str, Any]) -> bool:
+    return (
+        context["final_bar_vocal_coverage"] >= .25
+        and context["active_vocal_remaining_sec"] <= .75
+        and context["nearest_vocal_boundary_sec"] is not None
+        and context["nearest_vocal_boundary_sec"] <= 1.0
+    )
+
+
+def _b8_entry_modes(context: dict[str, Any]) -> tuple[bool, bool, bool]:
+    next_vocal = context["distance_until_next_vocal_sec"]
+    clean_gap = not context["vocal_active"] and (next_vocal is None or next_vocal >= .75)
+    phrase_end_release = (
+        context["vocal_active"]
+        and context["active_vocal_remaining_sec"] <= .5
+        and not context["loop_start_vocal_active"]
+        and (
+            context["loop_start_distance_until_next_vocal_sec"] is None
+            or context["loop_start_distance_until_next_vocal_sec"] >= .75
+        )
+    )
+    predictable_hook = (
+        context["vocal_active"]
+        and context["motif_entry_rhythm_similarity"] >= .95
+        and (
+            context["motif_entry_spectral_similarity"] >= .98
+            or (
+                context["source_window_section_continuous"]
+                and context["motif_entry_spectral_similarity"] >= .93
+            )
+        )
+    )
+    return clean_gap, phrase_end_release, predictable_hook
+
+
+def _refine_source_window(
+    analysis: TrackAnalysis,
+    bars: int,
+    archetype: ReferenceArchetype,
+    duration_sec: float,
+) -> tuple[int, int, dict[str, Any]]:
+    baseline_start, baseline_end = _source_window(
+        analysis, bars, archetype == ReferenceArchetype.RESET_RELEASE,
+    )
+    baseline = _source_entry_context(analysis, baseline_start, bars, archetype, duration_sec)
+    if archetype not in {ReferenceArchetype.RESET_RELEASE, ReferenceArchetype.LOOP_BUILD_COHERENT_HANDOFF}:
+        return baseline_start, baseline_end, {
+            "adjusted": False,
+            "adjustment_beats": 0.0,
+            "selection_rule": "existing analysis-derived phrase window",
+            "selected": baseline,
+        }
+    if archetype == ReferenceArchetype.RESET_RELEASE and _f_entry_is_safe(baseline):
+        return baseline_start, baseline_end, {
+            "adjusted": False,
+            "adjustment_beats": 0.0,
+            "selection_rule": "final-bar motif ends within 0.75 s of its vocal-unit boundary",
+            "selected": baseline,
+        }
+    if archetype == ReferenceArchetype.LOOP_BUILD_COHERENT_HANDOFF and any(_b8_entry_modes(baseline)):
+        return baseline_start, baseline_end, {
+            "adjusted": False,
+            "adjustment_beats": 0.0,
+            "selection_rule": "clean vocal gap or stable section with predictable motif continuity",
+            "selected": baseline,
+        }
+
+    candidates: list[tuple[tuple[Any, ...], int, dict[str, Any], str]] = []
+    grid = _grid(analysis)
+    for start_index in range(0, len(grid) - bars):
+        context = _source_entry_context(analysis, start_index, bars, archetype, duration_sec)
+        bar_energy = _bar_mean(analysis, start_index, start_index + bars)
+        if archetype == ReferenceArchetype.RESET_RELEASE:
+            if not _f_entry_is_safe(context):
+                continue
+            rank = (
+                context["vocal_units_intersecting_window"] == 1,
+                -abs(start_index - baseline_start),
+                context["largest_vocal_unit_window_coverage"],
+                context["final_bar_vocal_coverage"],
+                -context["nearest_vocal_boundary_sec"],
+                bar_energy,
+            )
+            mode = "self_contained_final_bar_motif"
+        else:
+            clean_gap, phrase_end_release, predictable_hook = _b8_entry_modes(context)
+            if not (clean_gap or phrase_end_release or predictable_hook):
+                continue
+            previous = context["distance_since_previous_vocal_sec"]
+            following = context["distance_until_next_vocal_sec"]
+            rank = (
+                clean_gap or phrase_end_release,
+                phrase_end_release or ((previous is not None and previous <= .5) if clean_gap else False),
+                min(following if following is not None else 2.0, 2.0),
+                context["source_window_section_continuous"],
+                context["motif_entry_spectral_similarity"],
+                context["motif_entry_rhythm_similarity"],
+                bar_energy,
+                -abs(start_index - baseline_start),
+            )
+            mode = "instrumental_gap" if clean_gap else "phrase_end_release" if phrase_end_release else "predictable_hook"
+        candidates.append((rank, start_index, context, mode))
+    if not candidates:
+        label = "self-contained repeatable motif" if archetype == ReferenceArchetype.RESET_RELEASE else "safe loop-build source entry"
+        raise ReferenceTemplateEligibilityError(f"source has no {label}")
+    if archetype == ReferenceArchetype.LOOP_BUILD_COHERENT_HANDOFF:
+        baseline_duration = baseline["source_phrase_duration_sec"]
+        clock_stable = [
+            item for item in candidates
+            if abs(item[2]["source_phrase_duration_sec"] - baseline_duration) <= .005
+        ]
+        if clock_stable:
+            candidates = clock_stable
+    rank, selected_start, selected, mode = max(candidates, key=lambda item: (item[0], -item[1]))
+    return selected_start, selected_start + bars, {
+        "adjusted": True,
+        "adjustment_beats": float((selected_start - baseline_start) * 4),
+        "selection_rule": mode,
+        "selection_rank_evidence": {
+            "ordered_rule": (
+                "single vocal unit, nearest safe window, unit coverage, final-bar coverage, boundary distance, energy"
+                if archetype == ReferenceArchetype.RESET_RELEASE
+                else "instrumental gap, recent phrase end, next-vocal runway, section continuity, motif spectrum/rhythm, energy, proximity"
+            ),
+            "selected_rank_values": [round(float(value), 6) for value in rank],
+        },
+        "source_phrase_duration_change_sec": round(
+            selected["source_phrase_duration_sec"] - baseline["source_phrase_duration_sec"], 6,
+        ),
+        "baseline": baseline,
+        "selected": selected,
+    }
 
 
 def _source_window(analysis: TrackAnalysis, bars: int, reset: bool) -> tuple[int, int]:
@@ -538,8 +818,11 @@ def instantiate_reference_template(
         raise ReferenceTemplateEligibilityError("; ".join(failures))
 
     source_grid, target_grid = _grid(source), _grid(target)
-    source_start_index, source_end_index = _source_window(
-        source, definition.transition_bars, archetype == ReferenceArchetype.RESET_RELEASE,
+    source_start_index, source_end_index, source_entry = _refine_source_window(
+        source,
+        definition.transition_bars,
+        archetype,
+        source_duration_sec,
     )
     landing_index = _target_landing_index(target, archetype)
     runway_bars = 1 if archetype == ReferenceArchetype.RESET_RELEASE else definition.transition_bars
@@ -575,7 +858,7 @@ def instantiate_reference_template(
         bars=definition.transition_bars,
         actions=_recipe_actions(archetype, definition.transition_bars),
         clock_role=TrackRole.SOURCE,
-        provenance_version="reference-template-1",
+        provenance_version="reference-template-2",
         metadata={
             "phase": 11,
             "purpose": "reference_backed_reproduction",
@@ -584,6 +867,7 @@ def instantiate_reference_template(
             "template_schema_version": REFERENCE_TEMPLATE_SCHEMA_VERSION,
             "anchors": anchors.to_dict(),
             "choreography": choreography,
+            "source_entry": source_entry,
             "autonomous_selection_allowed": False,
         },
     ).with_deterministic_ids()
@@ -610,6 +894,7 @@ def instantiate_reference_template(
             "target_analysis_confidence": round(target.analysis_confidence, 4),
             "required_source_stems": list(definition.required_source_stems),
             "required_target_stems": list(definition.required_target_stems),
+            "source_entry": source_entry,
         },
         choreography=choreography,
         instance_id=instance_id,
@@ -624,21 +909,6 @@ def archetype_catalog() -> dict[str, dict[str, Any]]:
 def _bar_mean(analysis: TrackAnalysis, start: int, end: int) -> float:
     values = analysis.bar_energies[start:end]
     return float(np.mean(values)) if values else float(analysis.mean_energy)
-
-
-def _curve_window_mean(curve: list[float], start: float, end: float, duration: float) -> float:
-    """Return a duration-scaled mean for an analysis curve.
-
-    Energy curves are normally one-Hz, but scaling by track duration keeps
-    older caches with a different point count usable and deterministic.
-    """
-    values = np.asarray(curve, dtype=float)
-    if not len(values) or duration <= 0 or end <= start:
-        return 0.0
-    left = max(0, min(len(values) - 1, int(start / duration * len(values))))
-    right = max(left + 1, min(len(values), int(np.ceil(end / duration * len(values)))))
-    window = np.nan_to_num(values[left:right], nan=0.0, posinf=0.0, neginf=0.0)
-    return float(np.mean(window)) if len(window) else 0.0
 
 
 def _section_profile(analysis: TrackAnalysis, time_sec: float) -> dict[str, Any]:
@@ -753,6 +1023,7 @@ def assess_reference_template_pair(
     target_bass_activity = float(target_stem_profiles.get("bass", {}).get("active_fraction", 0.0))
     target_arrangement_density = float(target_profile.get("drum_density", target_drum_activity))
     source_arrangement_density = float(source_profile.get("drum_density", source_drum_activity))
+    shared_density_pressure = source_arrangement_density + target_arrangement_density
     source_bass_window = _curve_window_mean(
         source.low_energy_curve,
         anchors.source_start_sec,
@@ -801,6 +1072,7 @@ def assess_reference_template_pair(
         "target_vocal_onset_sec_after_landing": round(vocal_onset, 4) if vocal_onset is not None else None,
         "source_arrangement_density": round(source_arrangement_density, 4),
         "target_arrangement_density": round(target_arrangement_density, 4),
+        "shared_arrangement_density_pressure": round(shared_density_pressure, 4),
         "source_cue_bass_ratio": round(source_bass_window, 4),
         "target_runway_bass_ratio": round(target_runway_bass, 4),
         "target_landing_bass_ratio": round(target_landing_bass, 4),
@@ -825,6 +1097,36 @@ def assess_reference_template_pair(
             "target_runway_duration_sec": round(anchors.target_landing_sec - anchors.target_runway_start_sec, 4),
             "source_and_target_anchors_are_downbeats": True,
             "target_runway_and_body_are_adjacent": True,
+        },
+        "source_entry": instance.eligibility["source_entry"],
+        "target_entry": {
+            "landing_is_downbeat": True,
+            "nearest_phrase_boundary_sec": _round_optional(
+                _boundary_distance(target.phrase_boundaries, anchors.target_landing_sec),
+            ),
+            "nearest_section_boundary_sec": _round_optional(
+                _boundary_distance(
+                    [
+                        float(value)
+                        for section in target.section_profiles
+                        for value in (section.get("start_sec", 0.0), section.get("end_sec", target_duration_sec))
+                    ],
+                    anchors.target_landing_sec,
+                ),
+            ),
+            "runway_vocal_density": round(target_runway_vocal, 4),
+            "landing_vocal_onset_sec": round(vocal_onset, 4) if vocal_onset is not None else None,
+            "runway_bass_ratio": round(target_runway_bass, 4),
+            "landing_bass_ratio": round(target_landing_bass, 4),
+            "arrangement_density": round(target_arrangement_density, 4),
+            "cue_confidence": round(float(target_cue.get("confidence", 0.0)), 4),
+        },
+        "pair_context": {
+            "tempo_delta_pct": round(tempo_delta, 4),
+            "groove_distance": round(groove, 4),
+            "harmonic_compatibility": round(harmonic, 4),
+            "source_to_target_energy_change": round(target_landing_energy - source_energy, 4),
+            "stem_quality_scope": "presence/activity/confidence only; bleed/artifact quality requires audio",
         },
         "anchors": anchors.to_dict(),
     }
@@ -866,6 +1168,8 @@ def assess_reference_template_pair(
             "groove descriptors support a synchronized stem exchange",
             "target vocal remains renderer-withheld until the landing",
         ))
+        if tempo_delta > 8.0 and groove > .18 and source_arrangement_density > .80:
+            cautions.append("near-limit stretch and groove change meet a dense source arrangement; expect only borderline eligibility")
     elif archetype == ReferenceArchetype.LOOP_BUILD_COHERENT_HANDOFF:
         if source_other_activity < .55:
             rejected.append("source backing stem activity is too weak for a recognizable loop motif")
@@ -891,8 +1195,10 @@ def assess_reference_template_pair(
         energy_gap = abs(source_energy - target_landing_energy)
         if groove > .35:
             rejected.append("groove difference is too large for a restrained long blend")
-        if harmonic < .30:
-            rejected.append("harmonic compatibility is too weak for prolonged shared territory")
+        if harmonic < .50:
+            rejected.append("global harmonic compatibility is too weak for prolonged shared territory")
+        if shared_density_pressure > 1.65:
+            rejected.append("combined source/target arrangement density is too high for a restrained long blend")
         if target_drum_activity < .60 or target_bass_activity < .55:
             rejected.append("target lacks active drum/bass material for the late ownership handoff")
         if energy_gap > .32:

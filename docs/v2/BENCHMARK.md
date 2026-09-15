@@ -292,3 +292,32 @@ The `NO` above is deliberate: reverse sweep/cymbal passed deterministic synthesi
   with the same two dependency deprecation warnings. These measurements prove
   deterministic execution and rule enforcement, not perceptual success; the
   eight-file human listening gate is pending.
+
+## Generalization Round 2: eligibility and source entry
+
+- Human labels: B8_01 and C3_01 pass; B8_02 and F_02 are entry-related
+  near-passes; F_01 and D2_01 reject; C3_02 is borderline; D2_02 is a
+  borderline pass. The labels are recorded in
+  `REFERENCE_GENERALIZATION_LABELS.json` and are not ML targets.
+- B8_02's old fade began with 9.5782 seconds remaining in an active lyric
+  unit and its loop began on active vocals. The controlled replacement moves
+  the same-duration source phrase 40 beats earlier: fade on the last 0.3135
+  seconds of a phrase, loop in an instrumental gap, then 1.4164 seconds before
+  the next vocal. Its target contribution is sample-identical to B8_02.
+- AUTO_F completes its recognizable motif about 115 ms before release. Old
+  F_02 releases inside a continuing lyric; the replacement moves its source
+  phrase 12 beats earlier to a downbeat gap after a self-contained unit while
+  retaining the exact target and reset choreography.
+- C3_02 versus C3_01: tempo stretch 10.5691%/5.0407%, groove distance
+  0.2286/0.0575, source density 0.8529/0.3155, and source-vocal dominance
+  -3.688/-10.877 dB relative to master. This is compound eligibility evidence,
+  not one local defect, so no C3 rerender was made.
+- D2_01 versus D2_02: global harmonic compatibility 0.30/0.70 and shared
+  arrangement-density pressure 1.7475/1.4142. D2 now rejects below 0.50
+  harmonic compatibility or above 1.65 shared-density pressure.
+- Exactly two user-facing fixes were produced: B8
+  `2f8dc2e6bfd4c95b97cdcc38a1e7090504af4a4296c6968d9149b08825d3b1b6`
+  and F `c54353a189650e6e52e35618e537b10e628cdbd1d05182379bc03ae8dc574430`.
+  Both are finite, unclipped stereo 44.1 kHz PCM24 and deterministic.
+- Focused suite: **24 passed**; complete regression: **1126 passed in 82.45s**
+  with the same two dependency warnings. Human listening remains the gate.

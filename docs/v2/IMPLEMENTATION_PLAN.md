@@ -206,3 +206,21 @@ renders, and the private `GENERALIZATION_MANIFEST.json`. A concrete
 sample-rounding tail-bound edge case found during rendering is fixed with
 focused regression coverage. Focused tests pass at 19; full regression passes
 at 1121. Human judgment of the eight files is now the only active gate.
+
+The first cross-pair human gate produced mixed results and established a
+second bounded step: source-entry and contextual eligibility. Delivered:
+
+- durable human labels and diagnoses for all eight Round-1 renders;
+- explicit source vocal/boundary/gap/section/motif evidence and deterministic
+  local cue refinement for F and B8, including `NOT SUITABLE` when no safe cue
+  exists;
+- C3 compound-risk cautions and D2 hard rejection from the observed positive
+  and negative controls;
+- one controlled B8_02 source-entry fix with target audio/choreography held
+  invariant, and one controlled F_02 source-cue fix with target/reset behavior
+  held invariant;
+- no speculative C3 or D2 render because neither diagnosis isolated one local
+  defect.
+
+Focused tests pass at 24 and the complete regression passes at 1126. Stop for
+human comparison of the two fixes. Autonomous integration remains prohibited.

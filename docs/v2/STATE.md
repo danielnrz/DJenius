@@ -3,50 +3,46 @@
 ## CURRENT PHASE
 All roadmap phases (0-10) remain frozen. **There is no new roadmap phase.**
 The user passed the manual-reference and automated same-pair reproduction
-gates for F, C3, B8, and D2. The active gate is narrower than autonomous
-planning: determine whether analysis-only eligibility can place each of those
-four fixed choreographies on exactly two new real pairs. Candidate Composer,
-Audition Lab selection, Set Director, UI, personalization, new families, and
-full mixes remain out of scope.
+gates for F, C3, B8, and D2, then supplied labels for the first eight new-pair
+renders. The active gate is now human listening of two targeted source-entry
+fixes. Candidate Composer, Audition Lab selection, Set Director, UI,
+personalization, new families, and full mixes remain out of scope.
 
-## CROSS-PAIR GENERALIZATION CHECKPOINT (HUMAN GATE PENDING)
+## GENERALIZATION ROUND 2 CHECKPOINT (HUMAN GATE PENDING)
 
 - The four manual and four automated references are immutable and reverified
   by SHA-256. Their choreography and hashes are recorded in
   `REFERENCE_BACKED_ARCHETYPES.md`.
-- `assess_reference_template_pair` now returns deterministic eligibility,
-  explicit rejection reasons, cautions, and evidence spanning BPM/stretch,
-  phrase/downbeat fit, global harmonic relation, groove, energy, cue-local
-  bass, vocals, section density, and stem presence/activity. Its fit value is
-  analysis-only and does not invoke or imitate Audition Lab.
-- Every one of the 196 ordered pairs per archetype in the 14-track private
-  library was considered. Exactly eight unique new pairs were selected and
-  rendered; self-pairs, original reference pairs, and musically ineligible
-  candidates remain explicit in the private manifest.
-- The requested files and `GENERALIZATION_MANIFEST.json` are in
-  `/tmp/djenius_reference_dj_transition/generalization/`. All are finite,
-  unclipped, stereo 44.1 kHz PCM24 and reproduced byte-for-byte on a second
-  complete render.
-- The run found and fixed one concrete boundary edge case: sample rounding
-  could exceed B8's hard 20 ms pre-vocal tail margin by microseconds. Tail
-  endpoints now round inward. Shared target clocks and uninterrupted loop
-  state remain permanent renderer invariants.
-- Focused reference-template tests pass (**19 passed**). The complete
-  repository regression passes (**1121 passed in 82.55s**, 2 pre-existing
-  dependency deprecation warnings).
-- Human listening, not eligibility or technical metrics, decides whether
-  these new-pair performances generalize.
+- Human labels are durable in `REFERENCE_GENERALIZATION_LABELS.json`; they are
+  engineering evidence, not machine-learning targets.
+- Source-entry evidence now exposes vocal activity, coverage, phrase-boundary
+  distance, instrumental runway, section stability, transient/density context,
+  and motif repeatability. Cue refinement is deterministic and lexicographic,
+  with its evidence exposed rather than collapsed into an opaque score.
+- F requires a self-contained final-bar capture close to a vocal boundary and
+  searches other four-bar downbeat windows before returning `NOT SUITABLE`.
+  B8 prefers instrumental space or a phrase-end release into a vocal gap;
+  active-vocal entry is allowed only for stable, predictably repeating motif
+  context while preserving source phrase duration.
+- C3 marks the observed combination of >8% stretch, groove distance >0.18,
+  and source density >0.80 as borderline. D2 now hard-rejects global harmonic
+  compatibility <0.50 or shared arrangement-density pressure >1.65.
+- Exactly `GEN_B8_02_FIX.wav` and `GEN_F_02_FIX.wav` were rendered. No C3 or
+  D2 replacement was made. Target-side B8 content is sample-identical to the
+  prior B8_02 contribution; F target timing/choreography is unchanged.
+- Focused reference-template tests pass (**24 passed**). Complete regression
+  passes (**1126 passed in 82.45s**, 2 pre-existing dependency warnings).
+- Human listening of the two fixes, not eligibility or technical metrics,
+  decides whether this gate passes.
 
 ## CURRENT BRANCH
 `v2-professional-autonomous-dj`
 
 ## LATEST REFERENCE-AUTOMATION COMMIT
-`2c6574483ed52dbc40ac19704f3f2b74d7bcef57` - "Add reference template
-generalization gate". It contains analysis-only pair suitability/rejection,
-the sample-safe tail-bound fix, regression coverage, and durable private
-generalization evidence. It was pushed to
-`origin/v2-professional-autonomous-dj`; resolve the current tip from Git rather
-than treating this field as immutable.
+The Round 2 source-entry/eligibility checkpoint follows `47c1a32`; resolve the
+current tip from Git. It contains contextual cue refinement, inspectable
+eligibility/rejection evidence, two controlled private renders, focused
+regression coverage, and durable public-safe human labels.
 
 ## PHASE COMPLETION HISTORY (unchanged, factual record)
 - Phases 0-9: frozen. Phase 9 pushed at `4f71818e2f2613d14db184c23901f43474ce04fd`

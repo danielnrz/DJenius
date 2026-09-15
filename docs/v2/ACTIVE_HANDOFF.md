@@ -1,5 +1,72 @@
 # DJenius V2 Active Handoff
 
+## GENERALIZATION ROUND 2 — READY FOR HUMAN LISTENING
+
+2026-09-15. The user completed the first eight-render listening gate. Human
+labels are authoritative engineering evidence, not machine-learning targets:
+
+- `GEN_B8_01` = `PASS`; preserve unchanged as a successful new-pair reference.
+- `GEN_B8_02` = `NEAR_PASS_SOURCE_ENTRY`; effect and target connection worked,
+  but the source-to-effect entry was not smooth and may interrupt singing.
+- `GEN_C3_01` = `PASS`; preserve unchanged as successful/near-successful.
+- `GEN_C3_02` = `BORDERLINE`; diagnose against C3_01 before any rerender.
+- `GEN_D2_01` = `REJECT`; derive the eligibility condition that should have
+  refused this pair/template combination.
+- `GEN_D2_02` = `BORDERLINE_PASS`; preserve rather than making it flashy.
+- `GEN_F_01` = `REJECT_EFFECT_ENTRY`; onset was out of place and too sudden.
+- `GEN_F_02` = `NEAR_PASS_EFFECT_ENTRY`; better than F_01 but has the same
+  abrupt-onset defect.
+
+Residual forensics confirms that source-entry context, rather than the fixed
+target-side handoff, caused the B8_02 failure. Its old source fade began with
+9.5782 seconds remaining in an active lyric unit and crossed a verse-to-outro
+boundary; its loop also entered on active vocals. B8_01 instead sits in a
+stable drop/repeated-hook context. The B8 fix moves the same-duration source
+phrase 40 beats earlier: the fade begins on the final 0.3135 seconds of a
+vocal phrase, the loop begins in instrumental space, and there is 1.4164
+seconds of runway before the next vocal. A localized equal-power dry-to-loop
+handoff over bars 4.00-4.22 removes the source-entry hole. Every target anchor,
+component sample, gain, reveal, shared time map, tail, and establishment
+parameter is unchanged; the successful B8_01/AUTO_B8 envelope is untouched.
+
+F_01 and F_02 both released inside continuing vocal material. AUTO_F's
+recognizable motif completes about 115 ms before release; old F_02 instead
+released at high vocal level inside an incomplete unit. The F fix moves only
+the four-bar source phrase 12 beats earlier to a downbeat gap after a
+self-contained unit. Its target anchors, adjacent natural target samples,
+gain, reset envelope, and choreography are unchanged.
+
+C3_02 has no single local renderer defect. Compared with passing C3_01 it has
+10.5691% versus 5.0407% stretch, groove distance 0.2286 versus 0.0575, source
+arrangement density 0.8529 versus 0.3155, and a much more dominant source
+vocal (-3.688 versus -10.877 dB relative to master). This compounds into a
+borderline placement, so no C3 fix was fabricated. D2_01 likewise becomes an
+explicit pre-render reject: global harmonic compatibility is 0.30 and shared
+arrangement-density pressure is 1.7475, versus 0.70/1.4142 for borderline-pass
+D2_02. No D2 render was made.
+
+Exactly two new user-facing files are ready in
+`/tmp/djenius_reference_dj_transition/generalization/`:
+
+- `GEN_B8_02_FIX.wav` — SHA-256
+  `2f8dc2e6bfd4c95b97cdcc38a1e7090504af4a4296c6968d9149b08825d3b1b6`
+- `GEN_F_02_FIX.wav` — SHA-256
+  `c54353a189650e6e52e35618e537b10e628cdbd1d05182379bc03ae8dc574430`
+
+Both are finite, unclipped, stereo 44.1 kHz PCM24 and reproduced with the
+same hashes after final metadata changes. `GENERALIZATION_MANIFEST.json`
+contains the private detailed comparison; public-safe human labels, diagnoses,
+rules, and hashes are durable in `REFERENCE_GENERALIZATION_LABELS.json`.
+Focused tests: **24 passed**. Complete repository regression: **1126 passed in
+82.45s**, with the two existing Typer/Click deprecation warnings. Touched-file
+`ruff check` and `git diff --check` pass.
+
+**STOP/GATE:** the user must compare B8_02 with `GEN_B8_02_FIX.wav` and F_02
+with `GEN_F_02_FIX.wav`. Human listening remains authoritative. Do not render
+C3/D2 replacements, restore autonomous selection, use Audition Lab to
+overrule labels, touch Set Director/UI, create new families/full mixes, or
+force an unsuitable template.
+
 ## CROSS-PAIR GENERALIZATION GATE — READY FOR HUMAN LISTENING
 
 2026-09-15. The user passed the first human reference-automation gate:

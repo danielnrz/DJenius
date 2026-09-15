@@ -23,7 +23,7 @@ from djenius.core.reference_templates import ReferenceArchetype, ReferenceTempla
 from djenius.utils.audio_math import normalize_lufs, soft_clip
 
 
-REFERENCE_RENDERER_VERSION = "reference-template-renderer-1"
+REFERENCE_RENDERER_VERSION = "reference-template-renderer-2"
 SEAM_SAMPLES = 128
 
 
@@ -36,6 +36,7 @@ class ReferenceRenderInputs:
     source_analysis: TrackAnalysis
     target_analysis: TrackAnalysis
     sample_rate: int = 44100
+    target_trim_db_override: float | None = None
 
 
 @dataclass(frozen=True)
@@ -263,6 +264,10 @@ def _validate_inputs(instance: ReferenceTemplateInstance, inputs: ReferenceRende
         missing = set(required) - set(stems)
         if missing:
             raise ValueError(f"{role} renderer stems missing: {','.join(sorted(missing))}")
+    if inputs.target_trim_db_override is not None and (
+        not np.isfinite(inputs.target_trim_db_override) or not -12.0 <= inputs.target_trim_db_override <= 12.0
+    ):
+        raise ValueError("target trim override must be finite and within +/-12 dB")
 
 
 def _material(instance: ReferenceTemplateInstance, inputs: ReferenceRenderInputs, backend: str):
@@ -304,7 +309,11 @@ def _material(instance: ReferenceTemplateInstance, inputs: ReferenceRenderInputs
         target_bundle, n + post_length, sr, backend,
     )
     raw_after = _stereo(inputs.target_audio)[target_landing:target_end]
-    trim_db = float(np.clip(_dbfs(source_live) - _dbfs(raw_after), -3.0, 7.0))
+    trim_db = (
+        float(inputs.target_trim_db_override)
+        if inputs.target_trim_db_override is not None
+        else float(np.clip(_dbfs(source_live) - _dbfs(raw_after), -3.0, 7.0))
+    )
     trim = 10 ** (trim_db / 20)
     fitted = {name: values * trim for name, values in fitted.items()}
     intro = {name: values[:n] for name, values in fitted.items()}
@@ -369,7 +378,7 @@ def _render_c3(instance: ReferenceTemplateInstance, inputs: ReferenceRenderInput
     }
 
 
-def _human_loop(source_backing: np.ndarray, m: dict, sr: int) -> np.ndarray:
+def _human_loop(source_backing: np.ndarray, m: dict, sr: int, *, smooth_entry: bool = False) -> np.ndarray:
     bounds, axis, n = m["bounds"], m["axis"], m["n"]
     motif = _highpass(source_backing[bounds[1]:bounds[2]], 260, sr)
     result = np.zeros((n, 2), dtype=np.float32)
@@ -378,6 +387,10 @@ def _human_loop(source_backing: np.ndarray, m: dict, sr: int) -> np.ndarray:
         end = int(np.interp(end_bar, np.arange(len(bounds)), bounds))
         result[start:end] = _repeat_fit(motif[:max(1, len(motif) // divisor)], end - start)
     gain = _cosine_envelope(axis, [(0, 0), (4, 0), (4.22, .90), (6, .98), (7, 1.12), (7.55, 1.25), (7.78, 1.18), (7.94, 0), (8, 0)])
+    if smooth_entry:
+        mask = (axis >= 4.0) & (axis <= 4.22)
+        phase = (axis[mask] - 4.0) / .22
+        gain[mask, 0] = .90 * np.sin(np.pi / 2 * phase)
     return (result * gain).astype(np.float32)
 
 
@@ -450,14 +463,19 @@ def _render_b8(instance: ReferenceTemplateInstance, inputs: ReferenceRenderInput
     source_upper = src - source_low
     source_vocal = _highpass(stems["vocals"], 170, sr)
     source_backing = source_upper - source_vocal
-    loop = _human_loop(source_backing, m, sr)
+    smooth_entry = bool(instance.eligibility.get("source_entry", {}).get("adjusted", False))
+    loop = _human_loop(source_backing, m, sr, smooth_entry=smooth_entry)
     def env(points):
         return _cosine_envelope(axis, points)
-    source = (
-        source_low * env([(0, 1), (4, 1), (4.55, 0), (8, 0)])
-        + source_upper * env([(0, 1), (3.7, .96), (4.22, 0), (8, 0)])
-        + loop
-    )
+    source_upper_gain = env([(0, 1), (3.7, .96), (4.22, 0), (8, 0)])
+    if smooth_entry:
+        lead = (axis >= 3.7) & (axis < 4.0)
+        lead_phase = (axis[lead] - 3.7) / .3
+        source_upper_gain[lead, 0] = .96 + (.90 - .96) * (.5 - .5 * np.cos(np.pi * lead_phase))
+        handoff = (axis >= 4.0) & (axis <= 4.22)
+        handoff_phase = (axis[handoff] - 4.0) / .22
+        source_upper_gain[handoff, 0] = .90 * np.cos(np.pi / 2 * handoff_phase)
+    source = source_low * env([(0, 1), (4, 1), (4.55, 0), (8, 0)]) + source_upper * source_upper_gain + loop
     riser_start = int(np.interp(6.35, np.arange(len(bounds)), bounds))
     riser = synthesize_procedural_sound("noise_riser_v1", sr, duration_sec=(n - riser_start) / sr, level=.05, seed=2701, channels=2)
     riser_gain = np.interp(axis[riser_start:], [6.35, 6.65, 7.4, 8], [0, .04, .48, 1]).astype(np.float32)[:, None]
@@ -507,6 +525,7 @@ def _render_b8(instance: ReferenceTemplateInstance, inputs: ReferenceRenderInput
         "tail_margin_before_target_vocal_sec": .020,
         "loop_state_continuous_at_landing": True,
         "target_low_preview_bars": 2,
+        "source_loop_entry_crossfade": "adaptive_equal_power_4.00_to_4.22" if smooth_entry else "frozen_reference_envelope",
     }
 
 
@@ -554,7 +573,11 @@ def _render_f(instance: ReferenceTemplateInstance, inputs: ReferenceRenderInputs
     target_end = int(round(tg[anchors.target_post_end_bar_index] * sr))
     intro = _stereo(inputs.target_audio)[target_start:target_land]
     after = _stereo(inputs.target_audio)[target_land:target_end]
-    trim_db = float(np.clip(_dbfs(active) - _dbfs(after), -3, 7))
+    trim_db = (
+        float(inputs.target_trim_db_override)
+        if inputs.target_trim_db_override is not None
+        else float(np.clip(_dbfs(active) - _dbfs(after), -3, 7))
+    )
     trim = 10 ** (trim_db / 20)
     intro, after = intro * trim, after * trim
     reset = intro * np.linspace(0, 1, len(intro), dtype=np.float32)[:, None]
@@ -629,6 +652,7 @@ def render_reference_template(
         "target_stream_contract": instance.choreography["target_stream"],
         "target_time_map_backend": material["clock_backend"],
         "target_trim_db": round(float(material["trim_db"]), 6),
+        "target_trim_source": "override" if inputs.target_trim_db_override is not None else "source_loudness_match",
         "target_establishment_bars": instance.choreography["target_establishment_bars"],
         "landing_sample": landing,
         "landing_sec": round(landing / inputs.sample_rate, 6),

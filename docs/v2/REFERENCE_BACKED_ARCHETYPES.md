@@ -17,8 +17,9 @@ regions; the templates contain no approved-reference timestamps. The private
 same-pair driver records the independently known manual anchors only for the
 comparison manifest.
 
-The current gate is human listening of exactly two new private real pairs per
-archetype. Autonomous selection remains prohibited until that gate passes.
+The first cross-pair gate has human labels. The current gate is human listening
+of exactly two targeted source-entry fixes; the successful and borderline
+controls remain frozen. Autonomous selection remains prohibited.
 
 ## Frozen human reference set
 
@@ -71,8 +72,9 @@ Reference: `REFERENCE_F.wav`.
   relationships; it deliberately does not force a beatmatch.
 - Beatgrid confidence: at least 0.80 for both tracks; analysis confidence at
   least 0.75.
-- Vocal requirements: a usable outgoing vocal capture in the last source bar;
-  target pickup may contain vocal material but must remain sparse.
+- Vocal requirements: a usable, self-contained outgoing vocal/hook capture in
+  the last source bar. Release must be within 0.75 seconds of its vocal-unit
+  boundary; target pickup may contain vocal material but must remain sparse.
 - Stem requirements: source vocal; no target stems required.
 - Target cue: one natural pickup downbeat immediately before the landing
   downbeat, using adjacent samples from the same target master.
@@ -90,10 +92,12 @@ Reference: `REFERENCE_F.wav`.
   before landing (the accepted pair clears by about 41 ms).
 - Landing/establishment: clean natural-master entrance and at least four,
   normally eight, uninterrupted target bars.
-- Failure conditions: missing source vocal, no usable one-bar pickup,
-  non-adjacent pickup/body samples, or an echo reaching the landing.
-- May vary: capture location inside the last bar, tap damping, and safe target
-  trim.
+- Failure conditions: missing source vocal, no self-contained repeatable motif
+  at any eligible local downbeat window, release inside a continuing lyric,
+  no usable one-bar pickup, non-adjacent pickup/body samples, or an echo
+  reaching the landing.
+- May vary: analysis-selected four-bar source window, capture location inside
+  the last bar, tap damping, and safe target trim.
 - Must not vary freely: source-then-reset ordering, the one-pickup-bar form,
   decreasing tap sequence, natural target tempo, or prelanding tail clearance.
 
@@ -127,7 +131,9 @@ Reference: `REFERENCE_C3.wav`.
 - Landing/establishment: the already-established target owns rhythm and bass
   when the full master appears; default eight postlanding bars.
 - Failure conditions: missing stems, tempo difference above 12%, weak target
-  drum phrase, or source/target vocal overlap.
+  drum phrase, or source/target vocal overlap. The observed combination of
+  stretch above 8%, groove distance above 0.18, and source arrangement density
+  above 0.80 is explicitly borderline even when no hard condition fails.
 - May vary: capture location, echo damping/cutoffs, and safe target trim.
 - Must not vary freely: eight-bar form, four-bar drum phrase, midpoint bass
   transfer, incoming-vocal withholding, shared target clock, or tail bound.
@@ -136,14 +142,16 @@ Reference: `REFERENCE_C3.wav`.
 
 Reference: `B8_RESIDUAL_FIX.wav`.
 
-- Suitable source sections: build, drop, or energetic outro with one clean
-  backing motif.
+- Suitable source sections: verse, build, drop, or energetic outro with one
+  clean, predictably repeating backing motif and a safe manipulation entry.
 - Suitable target sections: intro into a sustained drop/chorus.
 - BPM relationship: beatmatchable, normally no more than 12% apart.
 - Beatgrid confidence: at least 0.85; analysis confidence at least 0.80.
 - Vocal requirements: source vocal separation is needed so it is not baked
-  into the loop; the first target-vocal onset must be measurable to bound the
-  tail.
+  into the loop. Prefer an instrumental gap or phrase-end fade whose loop
+  begins in a gap; an active-vocal entry is allowed only for stable-section,
+  high-similarity repeated-hook context. The first target-vocal onset must be
+  measurable to bound the tail.
 - Stem requirements: source vocal plus target drums/other/vocals.
 - Target cue: an early strong drop bar with a stable two-bar low cadence. A
   sparse intake bar is rejected in favor of a nearby stronger bar only when
@@ -163,11 +171,11 @@ Reference: `B8_RESIDUAL_FIX.wav`.
   across landing but finish 20 ms before the measured target-vocal onset.
 - Landing/establishment: full target arrives on the analysis-derived cue; its
   first gain ramp is continuous and it remains established for eight bars.
-- Failure conditions: missing stems, tempo difference above 12%, no target
-  vocal bound, unstable two-bar low cadence, a loop restart, or tail/vocal
-  overlap.
-- May vary: analysis-selected motif/capture bar, safe deck trim, and the exact
-  tail endpoint implied by target vocal onset.
+- Failure conditions: missing stems, tempo difference above 12%, no safe local
+  source-entry context, no target vocal bound, unstable two-bar low cadence, a
+  loop restart, or tail/vocal overlap.
+- May vary: analysis-selected same-duration source phrase, motif/capture bar,
+  safe deck trim, and the exact tail endpoint implied by target vocal onset.
 - Must not vary freely: eight-bar form, 4/2/1 sequence, phase continuity,
   two-bar low preview, shared target time map, reveal order, or bounded tail.
 
@@ -199,7 +207,8 @@ Reference: `REFERENCE_D2.wav`.
 - Landing/establishment: restrained completion of a target already understood
   by the listener; default eight postlanding bars.
 - Failure conditions: missing stems, tempo difference above 8%, insufficient
-  runway, or simultaneous vocal ownership.
+  runway, simultaneous vocal ownership, global harmonic compatibility below
+  0.50, or combined source/target arrangement-density pressure above 1.65.
 - May vary: safe deck trim and small band-ramp offsets. A 12-to-16-bar length
   range is not enabled until future human validation.
 - Must not vary freely: eight-bar source-bass hold, late bass-before-drums
@@ -233,6 +242,12 @@ The private generalization output and full manifest are in:
 `/tmp/djenius_reference_dj_transition/generalization/`
 
 The manifest includes eight selected new real pairs, every instantiated
-action/anchor/adaptation, and all rejected or eligible-but-not-selected pairs.
-The user must listen before any result is called successful or exposed to
-autonomous planning.
+action/anchor/adaptation, all rejected or eligible-but-not-selected pairs, the
+Round-1 human labels, forensic comparisons, and the exact two controlled
+fixes. Public-safe labels and diagnoses are also in
+`REFERENCE_GENERALIZATION_LABELS.json`.
+
+Round 2 rendered only `GEN_B8_02_FIX.wav` and `GEN_F_02_FIX.wav`. C3_02 showed
+compound tempo/groove/density/vocal risk rather than one local defect; D2_01
+showed a pair that should have been rejected. The user must listen to the two
+fixes before any further generalization or autonomous integration.

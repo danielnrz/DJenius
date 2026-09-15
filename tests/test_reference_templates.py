@@ -44,7 +44,7 @@ def _analysis(*, source: bool, shift: float = 0.0) -> TrackAnalysis:
             {"start_sec": shift + 48, "end_sec": shift + 62, "label": "verse", "energy_mean": .65, "drum_density": .7},
         ]
     )
-    vocals = [(shift + 18, shift + 21)] if source else [(shift + 32, shift + 35)]
+    vocals = [(shift + 18, shift + 21), (shift + 40, shift + 44)] if source else [(shift + 32, shift + 35)]
     return TrackAnalysis(
         bpm=120,
         bpm_confidence=.97,
@@ -219,6 +219,22 @@ def test_loop_build_render_is_sample_deterministic():
     assert first.provenance == second.provenance
 
 
+def test_target_trim_override_preserves_a_previously_approved_target_gain():
+    rendered = render_reference_template(
+        _instance(ReferenceArchetype.LOOP_BUILD_COHERENT_HANDOFF),
+        replace(_render_inputs(), target_trim_db_override=-1.25),
+        time_fit_backend="scipy",
+    )
+    assert rendered.provenance["target_trim_db"] == -1.25
+    assert rendered.provenance["target_trim_source"] == "override"
+    with pytest.raises(ValueError, match="target trim override"):
+        render_reference_template(
+            _instance(ReferenceArchetype.LOOP_BUILD_COHERENT_HANDOFF),
+            replace(_render_inputs(), target_trim_db_override=20.0),
+            time_fit_backend="scipy",
+        )
+
+
 def test_loop_build_tail_sample_quantization_never_exceeds_vocal_margin():
     target = replace(_analysis(source=False), vocal_regions=[(32.00019, 35.0)])
     instance = assess_reference_template_pair(
@@ -298,7 +314,7 @@ def test_reset_pair_requires_hook_space_reset_need_and_landing_lift():
         source=replace(source, vocal_regions=[]),
         target=target,
     )
-    assert "lacks a recognizable vocal/hook capture" in " ".join(rejected.rejection_reasons)
+    assert "no self-contained repeatable motif" in " ".join(rejected.rejection_reasons)
 
 
 def test_restrained_pair_rejects_large_groove_difference():
@@ -315,3 +331,67 @@ def test_restrained_pair_rejects_large_groove_difference():
     result = _assessment(ReferenceArchetype.RESTRAINED_OWNERSHIP_BLEND, source=source, target=target)
     assert result.eligible is False
     assert "groove difference" in " ".join(result.rejection_reasons)
+
+
+def test_f_source_entry_moves_off_an_interrupted_vocal_unit():
+    source = replace(
+        _analysis(source=True),
+        vocal_regions=[(18.0, 27.9), (38.0, 50.0)],
+        bpm=160,
+        camelot="1A",
+    )
+    target = replace(_analysis(source=False), bpm=100, camelot="7B")
+    result = _assessment(ReferenceArchetype.RESET_RELEASE, source=source, target=target)
+    assert result.eligible is True
+    entry = result.evidence["source_entry"]
+    assert entry["adjusted"] is True
+    assert entry["baseline"]["active_vocal_remaining_sec"] > .75
+    assert entry["selected"]["active_vocal_remaining_sec"] <= .75
+    assert entry["selected"]["final_bar_vocal_coverage"] >= .25
+
+
+def test_b8_source_entry_moves_to_instrumental_gap_when_baseline_is_unstable():
+    source = replace(
+        _analysis(source=True),
+        vocal_regions=[(22.0, 31.0), (38.0, 44.0)],
+    )
+    result = _assessment(ReferenceArchetype.LOOP_BUILD_COHERENT_HANDOFF, source=source)
+    assert result.eligible is True
+    entry = result.evidence["source_entry"]
+    assert entry["adjusted"] is True
+    assert entry["selection_rule"] == "instrumental_gap"
+    assert entry["baseline"]["vocal_active"] is True
+    assert entry["selected"]["vocal_active"] is False
+    assert entry["selected"]["distance_until_next_vocal_sec"] is None or (
+        entry["selected"]["distance_until_next_vocal_sec"] >= .75
+    )
+    assert entry["source_phrase_duration_change_sec"] == 0
+    rendered = render_reference_template(
+        result.instance,
+        replace(_render_inputs(), source_analysis=source),
+        time_fit_backend="scipy",
+    )
+    assert rendered.provenance["fx_tail"]["source_loop_entry_crossfade"] == "adaptive_equal_power_4.00_to_4.22"
+
+
+def test_restrained_pair_rejects_dense_harmonically_weak_shared_territory():
+    source = replace(_analysis(source=True), camelot="8A")
+    target = replace(_analysis(source=False), camelot="11A")
+    source.section_profiles[1]["drum_density"] = .88
+    target.section_profiles[1]["drum_density"] = .90
+    result = _assessment(ReferenceArchetype.RESTRAINED_OWNERSHIP_BLEND, source=source, target=target)
+    reasons = " ".join(result.rejection_reasons)
+    assert result.eligible is False
+    assert "global harmonic compatibility" in reasons
+    assert "arrangement density" in reasons
+
+
+def test_target_and_pair_context_remain_inspectable_not_opaque():
+    result = _assessment(ReferenceArchetype.LOOP_BUILD_COHERENT_HANDOFF)
+    assert result.eligible is True
+    assert result.evidence["target_entry"]["landing_is_downbeat"] is True
+    assert "runway_bass_ratio" in result.evidence["target_entry"]
+    assert set(result.evidence["pair_context"]) >= {
+        "tempo_delta_pct", "groove_distance", "harmonic_compatibility",
+        "source_to_target_energy_change", "stem_quality_scope",
+    }
