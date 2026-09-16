@@ -98,6 +98,22 @@ def _average_prompt_embeddings(features: np.ndarray, prompts_per_label: int) -> 
 
 
 def _audio_duration(filepath: str) -> float:
+    # SoundFile can trust a malformed MP3 duration header even when decoding
+    # ends much earlier.  That placed representative windows past EOF in the
+    # expanded private library.  ffprobe uses the demuxer estimate for these
+    # compressed containers; keep SoundFile as the fallback.
+    if Path(filepath).suffix.lower() in {".mp3", ".m4a", ".aac"}:
+        try:
+            result = subprocess.run(
+                ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+                 "-of", "default=noprint_wrappers=1:nokey=1", filepath],
+                check=True, capture_output=True, text=True, timeout=30,
+            )
+            duration = float(result.stdout.strip())
+            if np.isfinite(duration) and duration > 0:
+                return duration
+        except (OSError, subprocess.SubprocessError, ValueError):
+            pass
     try:
         import soundfile as sf
         return float(sf.info(filepath).duration)

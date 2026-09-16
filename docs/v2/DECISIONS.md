@@ -326,3 +326,24 @@ contradiction, not an optimization target.
 collision regardless of stem sequencing, treating whole-track groove distance
 as a mandatory close-blend margin for a staged replacement, broad threshold
 relaxation, or declaring the new plan human-approved without rendering/listening.
+
+## D065 - Keep DJ reference recordings outside candidate-song discovery
+
+**Decision:** ordinary recursive library scanning excludes any nested
+`fromDJ/` directory by default. A direct scan of the reference directory is
+allowed for shadow research, and an explicit opt-in can bypass the exclusion;
+neither automatically promotes reference audio into autonomous planning.
+During this expanded-library audit, top-level recordings longer than ten
+minutes are separately marked for content-role review before entry into the
+single-song analysis/graph batch. This is an audit/resource-safety boundary,
+not a new production duration gate: these files remain in place and are not
+silently classified as ordinary candidate songs or confirmed DJ references.
+
+**Why:** the new private material contains both ordinary songs and 35
+reference-only DJ files. The prior recursive scanner would otherwise expose
+the latter to next-song selection. The top level also contains long-form
+concert/mix/podcast/extended-work recordings; full-track stem analysis of one
+concert caused heavy swapping and its set-like content would not be a valid
+single-song planning unit without review. Keeping the two data purposes and
+the long-form ambiguity explicit protects musical interpretation without
+changing calibrated selection gates or accepted choreography.

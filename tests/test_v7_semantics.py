@@ -142,6 +142,23 @@ def test_semantic_windows_span_the_whole_track():
     assert windows[-1]["start_sec"] > 150.0
 
 
+def test_compressed_duration_prefers_decodable_demuxer_estimate(monkeypatch):
+    """An inflated MP3 header must not send CLAP windows beyond real audio."""
+    from types import SimpleNamespace
+    import soundfile
+    import djenius.audio.semantic as semantic
+
+    monkeypatch.setattr(soundfile, "info", lambda _path: SimpleNamespace(duration=338.728))
+    monkeypatch.setattr(
+        semantic.subprocess,
+        "run",
+        lambda command, **_kwargs: SimpleNamespace(stdout="208.7706\n"),
+    )
+    duration = semantic._audio_duration("track.mp3")
+    assert duration == 208.7706
+    assert semantic.representative_windows(duration)[-1]["end_sec"] < duration
+
+
 def test_prompt_ensemble_is_averaged_and_normalized():
     import numpy as np
     from djenius.audio.semantic import _average_prompt_embeddings

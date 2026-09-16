@@ -17,6 +17,7 @@ def scan_directory(
     directory: str,
     recursive: bool = True,
     exclude_patterns: Optional[list[str]] = None,
+    exclude_reference_material: bool = True,
 ) -> list[TrackMetadata]:
     """Recursively scan a directory for audio files.
 
@@ -24,6 +25,9 @@ def scan_directory(
         directory: Root directory to scan.
         recursive: Whether to recurse into subdirectories.
         exclude_patterns: Path substrings to exclude.
+        exclude_reference_material: Keep ``fromDJ`` subdirectories out of the
+            ordinary candidate-song library. Scanning a ``fromDJ`` directory
+            explicitly still returns its files for reference analysis.
 
     Returns:
         List of TrackMetadata for each discovered file.
@@ -45,6 +49,14 @@ def scan_directory(
             continue
 
         if fpath.suffix.lower() not in SUPPORTED_EXTENSIONS:
+            continue
+
+        # Reference edits/mixes are evidence, not ordinary next-song candidates.
+        # Compare parts relative to the requested root so an explicit scan of
+        # that reference directory remains possible.
+        if exclude_reference_material and any(
+            part.casefold() == "fromdj" for part in fpath.relative_to(dir_path).parts[:-1]
+        ):
             continue
 
         # Check exclusions

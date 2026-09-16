@@ -1,6 +1,72 @@
 # DJenius V2 Active Handoff
 
-## BLIND HUMAN SET-CONTEXT LABEL PACK — COMPLETE; AWAITING LABELS
+## EXPANDED LIBRARY + DJ REFERENCE STUDY — COMPLETE; NO PILOT 5
+
+2026-09-16. The twelve blind context labels were stored verbatim before the
+private mapping was revealed. Pilot-4's four edges are now `UNCERTAIN`,
+`BRIDGEABLE`, `BRIDGEABLE`, `UNCERTAIN` in set order; no edge is confirmed as
+a human pair-level mismatch. The hidden negative anchor agrees with its prior
+human reject; the hidden positive anchor retested `UNCERTAIN`, so is
+inconclusive, not negative. The private mapping/reasons and Pilot-4 label
+replay are in `/tmp/djenius_reference_dj_transition/expanded_library/`.
+Keep `NATURAL`, `BRIDGEABLE`, `MISMATCH`, and `UNCERTAIN` distinct.
+
+The top level of `testMusic/` contains **175** decodable, supported audio
+files, including two synthetic fixtures. Of the 173 real recordings, 15 are
+over ten minutes and include uncertain long-form song/mix/concert/podcast
+roles. They remain in place and are explicitly deferred from this
+single-song graph batch: **158** ordinary-length recordings were analyzed.
+This is **not** a new production duration gate. Initial valid acoustic cache
+coverage was 14/158; incremental ingestion filled the 144 missing/stale
+entries. Final validation found **158/158** valid version-6 acoustic analyses,
+**158/158** matching version-2 local CLAP profiles, unchanged source hashes,
+and **zero** `fromDJ/` files in the analysis cache. No new model was adopted.
+No exact duplicate content was found; one possible filename-version/copy
+family remains unconfirmed.
+
+The separate **35-file** `fromDJ/` corpus is excluded from ordinary recursive
+candidate scanning by default; explicit shadow reference scans still work.
+Focused tests and a real-root scan verified 175 normal results with no
+reference leaks. A malformed MP3 duration header revealed one genuine
+incremental-cache ingestion defect; compressed-file semantic duration now
+prefers ffprobe, with regression coverage. No transition template, renderer,
+choreography, context threshold, or set planner gate changed.
+
+The unchanged production decision stack evaluated **24,806** directed pairs
+without audio rendering. **2,097** pass current rules, **2,094** remain after
+explicit human-negative ordered-pair vetoes (8.44% density). The previous
+14-track-only graph had 30/182 realistic edges. The expanded graph has a
+130-track weak component, 28 isolates, a 56-track largest strong component,
+and over 1.87 million five-track static paths observed before a count cap.
+A separate stateful, plan-only replay found a valid five-track path in ten
+candidate evaluations; it is not Pilot 5 or human-approved audio. F covers
+1,968 of 2,094 usable edges, so connectivity is strongly F-dependent.
+Crucially, two of the three blind `MISMATCH` edges would pass current context rules
+without their explicit human vetoes. More library choice resolves the old
+graph scarcity but does **not** prove set-level musical judgment.
+
+The shadow DJ-reference inventory classified the 35 long-form files only
+provisionally. A deterministic coarse acoustic scan nominated **673**
+structured-change regions. Those are **not confirmed DJ handoffs or edits**;
+the behavior/coverage catalog therefore claims no recurrent missing fifth
+archetype. The reusable shadow-only region tool requires an explicit
+`fromDJ/` root and private output; it cannot enter autonomous planning.
+Detailed private artifacts are in
+`/tmp/djenius_reference_dj_transition/dj_reference_study/`. Public-safe
+reports are [EXPANDED_LIBRARY_AUDIT.md](EXPANDED_LIBRARY_AUDIT.md) and
+[DJ_REFERENCE_STUDY.md](DJ_REFERENCE_STUDY.md).
+
+Next best experiment: blind context-only listening on a small, stratified
+selection of **new expanded-graph edges**, including F-heavy accepted edges,
+rare non-F edges, and rejected near-boundary controls, before any Pilot 5.
+Do not tune production gates from this audit alone. No new WAV was rendered;
+12 frozen accepted reference hashes and the Pilot-4 master hash remain
+unchanged. Focused tests pass and complete regression passes **1173/1173**
+(two pre-existing Click/Typer deprecation warnings). Session started at
+local/fetched remote HEAD `478869a` on `v2-professional-autonomous-dj`;
+only pre-existing untracked `.claude/` was present and remains untouched.
+
+## BLIND HUMAN SET-CONTEXT LABEL PACK — COMPLETE; LABELS RECEIVED
 
 2026-09-16. Exactly twelve context-only, directed-pair blind auditions have
 been rendered under `/tmp/djenius_reference_dj_transition/context_label_pack/`:
@@ -28,9 +94,9 @@ No production code/gate/model/renderer/template changed; no Pilot 5 or new
 creative render. Full application regression was not run because production
 code is untouched. At session start, branch `v2-professional-autonomous-dj`,
 local and fetched origin HEAD both `f85e6c3`; only pre-existing untracked
-`.claude/` was present and remains untouched. **Awaiting blind human
-set-context labels.** Do not reveal the mapping or analyze outcomes until the
-listener submits all twelve labels.
+`.claude/` was present and remains untouched. The listener has since supplied
+all twelve labels; their verbatim ingestion and mapping are recorded in the
+newer expanded-library handoff entry above.
 
 ## SHADOW MUSICAL-CONTEXT BENCHMARK — COMPLETE; NO PRODUCTION CHANGE
 
