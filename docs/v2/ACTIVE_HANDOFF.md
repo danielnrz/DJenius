@@ -35,7 +35,9 @@ pre-existing untracked `.claude/` remains untouched. The Pilot-4 master SHA-256
 was reverified unchanged (`15e6a5746b9db3c0c7ba1c0291d5f794f343acde89da82c51641a9f9ff01307d`);
 all nine JSONs parse, `git diff --check` passed, and focused
 context/semantic/joint-planner tests passed **45/45**. No production code changed,
-so a full regression was not needed.
+so a full regression was not needed. The public-safe benchmark/report checkpoint
+was committed and pushed on `v2-professional-autonomous-dj`; only the
+pre-existing untracked `.claude/` remains outside Git.
 
 ## PILOT 4 SET-CONTEXT POSTMORTEM — COMPLETE; NEXT HUMAN/RESEARCH GATE
 
