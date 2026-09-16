@@ -1,5 +1,42 @@
 # DJenius V2 Active Handoff
 
+## SHADOW MUSICAL-CONTEXT BENCHMARK — COMPLETE; NO PRODUCTION CHANGE
+
+2026-09-16. The analysis-only benchmark is complete. Nine private JSONs and
+diagnostic scripts are in
+`/tmp/djenius_reference_dj_transition/context_shadow_benchmark/`; the
+public-safe report is [SET_CONTEXT_SHADOW_BENCHMARK.md](SET_CONTEXT_SHADOW_BENCHMARK.md).
+The dataset separates **3 unique human set-context passes**, **5 failures**,
+**4 Pilot-4 pair-level uncertain cases**, and one history-only adjacency.
+Source lead-in, pre-move, actual exit, target runway, landing, and two target
+establishment windows were aligned to performed template anchors and bars.
+Current CLAP plus acoustic trajectories showed one fragile `.003555` pass/fail
+gap, but adjacent windows overlap/invert; two-track context exposes a possible
+late-set pivot but is not a gate. A pinned, isolated musicnn PyTorch conversion
+was benchmarked privately on the same cases (113 short patches, no project
+installation, no production cache change). Its apparent first-establishment
+separation disappears at later establishment; no consistent incremental value
+was demonstrated. Essentia Discogs-EffNet and MERT were reviewed but not
+downloaded; model/license fit is not established for production.
+
+Conclusion **D**: current human context evidence is too small and Pilot-4
+pair labels too ambiguous to justify any production change. TRACK_4 -> TRACK_5
+remains the strongest combined-history suspect, **not** a human pair-level
+reject; TRACK_1 -> TRACK_2 is a competing immediate-context outlier. The
+Pilot-4 `RELEASE` label is unsupported as an *immediate* post-landing energy
+description (`.732 -> .884 -> .901`), but an accepted `CONTEXT_BRIDGE` uses the
+same target cue/rise, so a blanket rising-target veto would be wrong. Obtain
+pair-specific listener labels and additional independent context examples
+before changing gates or adopting a model. Pilot 4's transition engine,
+production context gates, renderer, accepted WAVs, and choreography remain
+frozen. No Pilot 5 or new WAV was created. Session start: branch
+`v2-professional-autonomous-dj`, local/origin HEAD `c751d05` after fetch;
+pre-existing untracked `.claude/` remains untouched. The Pilot-4 master SHA-256
+was reverified unchanged (`15e6a5746b9db3c0c7ba1c0291d5f794f343acde89da82c51641a9f9ff01307d`);
+all nine JSONs parse, `git diff --check` passed, and focused
+context/semantic/joint-planner tests passed **45/45**. No production code changed,
+so a full regression was not needed.
+
 ## PILOT 4 SET-CONTEXT POSTMORTEM — COMPLETE; NEXT HUMAN/RESEARCH GATE
 
 2026-09-16. Human listening finds Pilot 4's transitions substantially more
