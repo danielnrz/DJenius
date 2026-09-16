@@ -494,3 +494,39 @@ The `NO` above is deliberate: reverse sweep/cymbal passed deterministic synthesi
   planning, and continuous rendering. It is negative evidence for bounded-pool
   coverage and does **not** satisfy the requested five-track Pilot 3 product
   criterion.
+
+## Joint set pilot 4 — calibrated complete-set technical gate
+
+- Planning ran from the frozen reference-calibration checkpoint on fourteen
+  private analyzed tracks, excluding only genuine human-negative ordered
+  pairs. Four existing role-trajectory hypotheses were compared using the
+  production planner's disclosed path evidence before phase-fit tie breaks;
+  every hypothesis admitted a complete five-track path. The selected anonymous
+  order is `4 -> 2 -> 7 -> 13 -> 9`, with frozen `B8 -> D2 -> F -> F`
+  choreography and mean energies `.745 -> .750 -> .747 -> .768 -> .698`.
+  No track, cue, or archetype was manually selected.
+- The continuous five-track/four-transition PCM24 stereo 44.1 kHz render is
+  **523.551383 s** (8:43.55), SHA-256
+  `15e6a5746b9db3c0c7ba1c0291d5f794f343acde89da82c51641a9f9ff01307d`,
+  sample peak `.95`, clipping fraction `0`. Four listening excerpts are exact
+  sample slices of the master, not independently rendered transitions.
+  Middle-track establishment intervals before their outgoing move are
+  147.702132, 66.850250, and 137.299592 seconds.
+- All four selected edges pass calibrated `USABLE_FOR_PERFORMANCE`, pair,
+  cue/establishment, set-flow, and cue-local context gates; all are classified
+  `NATURAL_CONTINUATION`. Three edges have prior positive human adjacency
+  evidence and one is new. Shared multichannel target timing for B8/D2,
+  adjacent natural target masters for F, bounded FX tails, and eight
+  sample-aligned natural/template joins are recorded in private provenance.
+  The maximum exact-boundary sample delta among those joins is `.165142`;
+  this is an objective seam diagnostic, not a perceptual certification.
+- Twelve accepted manual/AUTO/generalization WAVs, Pilot 2 transition 1, and
+  the two controlled context WAVs were SHA-256-verified unchanged before and
+  after render. Focused selector/context/planner/structural regression:
+  **135 passed**. Complete regression: **1167 passed in 86.81 s**, with two
+  pre-existing dependency deprecation warnings. No production logic changed.
+- All artifacts and complete decision traces are private under
+  `/tmp/djenius_reference_dj_transition/joint_set_pilot_4/`. Automated
+  correctness does **not** establish that the song order, repeated F moves,
+  or entire set feel professionally DJ-like. The user will listen to the
+  uninterrupted set first; Pilot 5 remains prohibited until that verdict.

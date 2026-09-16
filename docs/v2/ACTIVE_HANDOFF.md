@@ -1,5 +1,64 @@
 # DJenius V2 Active Handoff
 
+## JOINT SET PILOT 4 — COMPLETE; HUMAN LISTENING GATE
+
+2026-09-16. User authorized exactly one five-track/four-transition continuous
+set from the frozen reference-calibrated checkpoint `f7a1d80`. Branch
+`v2-professional-autonomous-dj`, local and origin HEAD verified equal after
+fetch. The only pre-existing untracked work is `.claude/`, which must remain
+untouched. Use realistic history: exclude genuine human-negative ordered
+pairs, but permit prior neutral and positive edges. Do not change calibrated
+selector/context gates, templates, choreography, renderer, or library; do not
+start Pilot 5. Plan autonomously with existing joint production planner,
+render only the complete valid path, create the requested plan/decision/context/
+calibration traces and four listening excerpts, verify reference hashes,
+focused and full regression, then commit/push and stop for human listening.
+
+Planning milestone: four existing role-trajectory hypotheses were evaluated
+with the production joint planner and only the ten genuine pair-level human
+negatives excluded. All returned complete five-track paths. The disclosed
+quality-first cross-trajectory ranking selected anonymous track indexes
+`4 -> 2 -> 7 -> 13 -> 9`, archetypes `B8 -> D2 -> F -> F`, and
+`OPEN -> HOLD -> BUILD -> PEAK -> RELEASE`; the measured mean energies are
+`.745 -> .750 -> .747 -> .768 -> .698`. No track, archetype, or cue was
+hand-selected. The selected plan/cues and production-file/reference hashes
+are frozen in private
+`/tmp/djenius_reference_dj_transition/joint_set_pilot_4/PILOT4_FROZEN_PLAN_LOCK.json`.
+The plan was locked before audio rendering; it must not be replanned to improve
+the outcome after hearing/rendering it.
+
+Render milestone: that locked plan reproduced deterministically and rendered
+as one continuous **523.551383 s** (8:43.55) stereo 44.1 kHz PCM24 set at
+`/tmp/djenius_reference_dj_transition/joint_set_pilot_4/JOINT_SET_PILOT_4.wav`.
+Sample peak `.95`, clipping fraction `0`; the four source-derived excerpts are
+28.139683, 33.131973, 21.661315 and 23.658231 seconds. All four selected
+edges clear calibrated local performance and set-flow/context gates; the first
+three ordered edges have prior positive human evidence, while the last edge
+is new. B8/D2 target clocks are shared multichannel maps; F target streams
+are adjacent natural masters. The B8 source-loop tail remains continuous at
+landing and ends 0.02 s before target vocal onset. Twelve accepted manual/
+AUTO/generalization reference hashes plus Pilot 2 T1 and both controlled
+context WAV hashes were verified unchanged before and after rendering.
+Requested plan, decision, context and calibration traces are present. All
+four excerpts were verified sample-exact against the continuous master; all
+selected establishment/context/performance gates passed. Focused selector,
+context, planner and structural tests: **135 passed**. Complete regression:
+**1167 passed, two pre-existing Typer/Click deprecation warnings**. No
+production code, frozen gate, or approved reference changed. User must now
+listen to the uninterrupted set before excerpts; no Pilot 5 or further tuning
+is authorized. Technical validation is not a human musical-quality claim.
+
+Private hashes: `JOINT_SET_PILOT_4.wav`
+`15e6a5746b9db3c0c7ba1c0291d5f794f343acde89da82c51641a9f9ff01307d`;
+`TRANSITION_01.wav`
+`3fe917a81bc7111beb3ab205d26175cab043ef6e15cdbf16c42b79c8f4869243`;
+`TRANSITION_02.wav`
+`d2646595e7508b38609b313f837a3f65f378f7cf658d55629e8f49d283e33a3c`;
+`TRANSITION_03.wav`
+`53849ad3b27a347b66452fa78277ad859df3c14c006727de9669d637990c0905`;
+`TRANSITION_04.wav`
+`6141e698cceb17cfd9dfcd04b813150196f1613f859695f22c1e63596bebcd4c`.
+
 ## REFERENCE CALIBRATION REPAIR — COMPLETE; STOP
 
 2026-09-16. The complete private audit is in
