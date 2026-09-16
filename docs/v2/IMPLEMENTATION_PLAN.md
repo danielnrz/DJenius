@@ -287,3 +287,21 @@ eligible cue is tested against the unchanged performance floor before ranking.
 Focused regression passes at 82 and full regression at 1159. Stop for human
 listening of the two controlled files; no Pilot 3 or broader reconnection is
 authorized.
+
+The human passed the natural, bridge, and abstention controls. Pilot 3 was
+therefore authorized as a five-track constrained-planner target with an
+explicit longest-valid fallback. Delivered:
+
+- context-aware joint archetype selection across all frozen mechanically
+  usable options, with per-archetype context/cue/establishment evidence;
+- opt-in deterministic partial planning that never relaxes a hard gate and
+  preserves the selected terminal dead-end table;
+- four explicit trajectory attempts against the bounded private pool, with
+  all human-negative ordered pairs and the exact Pilot 2 calibration adjacency
+  excluded;
+- one continuous two-track B8 fallback plus one contextual excerpt and the
+  requested plan/decision/context manifests.
+
+The pool did not admit a third track, so the five-track Pilot 3 milestone is
+not complete. Focused tests pass at 61 and full regression at 1164. Stop for
+human review; do not create Pilot 4 or weaken/rework the proven stack.

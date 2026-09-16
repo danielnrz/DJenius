@@ -470,3 +470,27 @@ The `NO` above is deliberate: reverse sweep/cymbal passed deterministic synthesi
 - Focused context/semantic/selector/template/joint suite: **82 passed in
   7.46s**. Complete regression: **1159 passed in 84.26s**. Private identities,
   audio, and detailed diagnosis remain outside Git.
+
+## Joint set pilot 3 — conservative partial result
+
+- Human listening passed both controlled context renders and the abstention,
+  authorizing integration. The planner searched four explicit five-role
+  trajectories across fourteen analyzable tracks while excluding twelve
+  human-negative ordered pairs and the exact Pilot 2 transition-1 calibration
+  adjacency.
+- No trajectory admitted a third track without a hard-gate violation. The
+  selected longest-valid path therefore contains two tracks and one frozen F
+  `NATURAL_CONTINUATION`; requested/actual counts are recorded as `5/2` and
+  `hard_gates_weakened` is false.
+- Continuous output: **122.783673 s**, stereo 44.1 kHz PCM24, SHA-256
+  `ec23dfe62ddce72562f50e666683138bde65dff154814f7f352850ea991d12c2`,
+  peak `.682467`, clipping fraction `0`. The single excerpt is **21.800635 s**,
+  SHA-256
+  `7a9fbb9424d6a3438b29a9d17125e612e243a37ab6a66765c71fbb991012e251`.
+- The trace records every selected/rejected candidate and the terminal dead
+  end. Focused tests: **61 passed**; complete regression: **1164 passed in
+  87.93s**, with the same two dependency warnings.
+- This is positive evidence for conservative abstention, deterministic partial
+  planning, and continuous rendering. It is negative evidence for bounded-pool
+  coverage and does **not** satisfy the requested five-track Pilot 3 product
+  criterion.

@@ -22,6 +22,10 @@ from djenius.core.joint_reference_set import (
 )
 from djenius.core.models import TrackAnalysis, TrackMetadata, TrackProfile
 from djenius.core.musical_role import SetRole, initial_set_flow_state
+from djenius.core.reference_selector import (
+    ReferenceTemplateEvaluation,
+    ReferenceTransitionSelection,
+)
 from djenius.core.reference_templates import ReferenceArchetype, TemplateAnchors
 
 
@@ -225,6 +229,179 @@ def test_joint_planner_never_forces_a_transition(monkeypatch):
         for dead_end in raised.value.diagnostics["dead_ends"]
         for row in dead_end["candidate_table"]
     )
+
+
+def test_joint_planner_deterministically_completes_five_tracks(monkeypatch):
+    tracks = [_profile(letter) for letter in "ABCDE"]
+    graph = {
+        ("A", "B"): ReferenceArchetype.RESET_RELEASE,
+        ("B", "C"): ReferenceArchetype.STEM_ECHO_HANDOFF,
+        ("C", "D"): ReferenceArchetype.LOOP_BUILD_COHERENT_HANDOFF,
+        ("D", "E"): ReferenceArchetype.RESTRAINED_OWNERSHIP_BLEND,
+    }
+    _patch_graph(monkeypatch, graph)
+    config = JointSetConfig(
+        track_count=5,
+        set_role_sequence=("OPEN", "HOLD", "BUILD", "PEAK", "RELEASE"),
+        allow_partial_plan=True,
+    )
+    first = plan_joint_reference_set(tracks, config=config)
+    second = plan_joint_reference_set(reversed(tracks), config=config)
+    assert first.to_dict() == second.to_dict()
+    assert [item.id for item in first.tracks] == list("ABCDE")
+    assert first.completion == {
+        "requested_track_count": 5,
+        "actual_track_count": 5,
+        "complete": True,
+        "hard_gates_weakened": False,
+        "planning_stopped_reason": None,
+        "dead_end_count": first.completion["dead_end_count"],
+        "selected_terminal_dead_end": None,
+    }
+
+
+def test_joint_planner_returns_longest_valid_partial_without_weakening_gates(
+    monkeypatch,
+):
+    tracks = [_profile(letter) for letter in "ABCDE"]
+    graph = {
+        ("A", "B"): ReferenceArchetype.RESET_RELEASE,
+        ("B", "C"): ReferenceArchetype.STEM_ECHO_HANDOFF,
+    }
+    _patch_graph(monkeypatch, graph)
+    config = JointSetConfig(
+        track_count=5,
+        set_role_sequence=("OPEN", "HOLD", "BUILD", "PEAK", "RELEASE"),
+        allow_partial_plan=True,
+        minimum_partial_track_count=2,
+    )
+    plan = plan_joint_reference_set(tracks, config=config)
+    assert [item.id for item in plan.tracks] == list("ABC")
+    assert len(plan.transitions) == 2
+    assert plan.completion["complete"] is False
+    assert plan.completion["hard_gates_weakened"] is False
+    assert plan.completion["actual_track_count"] == 3
+    assert plan.completion["planning_stopped_reason"]
+
+
+def test_partial_plan_uses_opening_suitability_before_path_tiebreaks(monkeypatch):
+    tracks = [
+        _profile("A", energy=0.72),
+        _profile("B", energy=0.96),
+        _profile("C", energy=0.96),
+        _profile("D", energy=0.96),
+        _profile("E", energy=0.90),
+        _profile("F", energy=0.90),
+    ]
+    graph = {
+        ("A", "E"): ReferenceArchetype.RESET_RELEASE,
+        ("E", "F"): ReferenceArchetype.STEM_ECHO_HANDOFF,
+        ("B", "C"): ReferenceArchetype.RESET_RELEASE,
+        ("C", "D"): ReferenceArchetype.STEM_ECHO_HANDOFF,
+    }
+    _patch_graph(monkeypatch, graph)
+    config = JointSetConfig(
+        track_count=4,
+        set_role_sequence=("OPEN", "HOLD", "PEAK", "RELEASE"),
+        allow_partial_plan=True,
+    )
+    plan = plan_joint_reference_set(tracks, config=config)
+    assert [item.id for item in plan.tracks] == ["A", "E", "F"]
+
+
+def test_joint_planner_partial_fallback_is_opt_in(monkeypatch):
+    tracks = [_profile(letter) for letter in "ABCDE"]
+    _patch_graph(
+        monkeypatch,
+        {("A", "B"): ReferenceArchetype.RESET_RELEASE},
+    )
+    config = JointSetConfig(
+        track_count=5,
+        set_role_sequence=("OPEN", "HOLD", "BUILD", "PEAK", "RELEASE"),
+    )
+    with pytest.raises(JointSetPlanningDeadEnd):
+        plan_joint_reference_set(tracks, config=config)
+
+
+def test_joint_planner_reselects_usable_archetype_that_passes_context(monkeypatch):
+    import djenius.core.joint_reference_set as joint
+
+    source, target = _profile("A"), _profile("B")
+
+    def evaluation(archetype):
+        return ReferenceTemplateEvaluation(
+            archetype=archetype,
+            eligible=True,
+            rejection_reasons=(),
+            cautions=(),
+            selection_reasons=("test",),
+            evidence={"tempo_delta_pct": 0.0, "groove_distance": 0.0},
+            cue_search={},
+            story_rule={"qualified": True},
+            usable_for_performance=True,
+            performance_acceptance={"rule": "frozen test contract"},
+            instance=SimpleNamespace(anchors=_anchors()),
+        )
+
+    reset = evaluation(ReferenceArchetype.RESET_RELEASE)
+    blend = evaluation(ReferenceArchetype.RESTRAINED_OWNERSHIP_BLEND)
+    selection = ReferenceTransitionSelection(
+        source_track_id=source.id,
+        target_track_id=target.id,
+        evaluations=(reset, blend),
+        selected_archetype=ReferenceArchetype.RESET_RELEASE,
+        pair_transitionable=True,
+        pair_rejection_reasons=(),
+        decision="mechanical reset winner",
+        decision_trace=(),
+        selector_id="base",
+    )
+    monkeypatch.setattr(
+        joint, "select_reference_transition", lambda *_args, **_kwargs: selection
+    )
+
+    def flow(*_args, selected_archetype, state, target_phase, **_kwargs):
+        passes = selected_archetype == ReferenceArchetype.RESTRAINED_OWNERSHIP_BLEND
+        state_after = {**state.to_dict(), "phase": target_phase.value}
+        return SetFlowEvaluation(
+            passes,
+            {"context": passes},
+            {
+                "energy_change": 0.0,
+                "tempo_delta_pct": 0.0,
+                "harmonic_compatibility": 1.0,
+                "musical_role_and_set_story": {
+                    "relationship": (
+                        "NATURAL_CONTINUATION"
+                        if passes
+                        else "UNJUSTIFIED_DISCONTINUITY"
+                    ),
+                    "state_after": state_after,
+                },
+            },
+            (),
+            () if passes else ("context mismatch",),
+        )
+
+    monkeypatch.setattr(joint, "_set_flow", flow)
+    candidate = joint._evaluate_candidate(
+        source,
+        target,
+        used_track_ids={source.id},
+        prior_target_landing_sec=None,
+        set_flow_state=initial_set_flow_state(source),
+        target_phase=SetRole.HOLD,
+        config=JointSetConfig(),
+    )
+    assert candidate.retained is True
+    assert (
+        candidate.transition_selection.selected_archetype
+        == ReferenceArchetype.RESTRAINED_OWNERSHIP_BLEND
+    )
+    assert [row["retained"] for row in candidate.archetype_context_evaluations] == [
+        False,
+        True,
+    ]
 
 
 def test_establishment_floor_rejects_an_early_outgoing_cue(monkeypatch):

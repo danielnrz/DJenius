@@ -8,12 +8,36 @@ blind autonomous selector gate failed; its postmortem produced a calibrated,
 conservative `PAIR_TRANSITIONABLE`/`USABLE_FOR_PERFORMANCE` selector. One
 isolated joint-planning pilot then failed on set story. The second flow-aware
 pilot passed its first transition but exposed two musical-context failures.
-An explicit bridgeability layer and a two-render controlled gate are now
-awaiting human listening. The legacy Set
+The explicit bridgeability gate passed human listening. Pilot 3 then correctly
+hit a bounded-pool planning dead end: only a two-track/one-transition path
+cleared every performance, context, cue, and prior-human-evidence gate. That
+longest valid fallback is now awaiting human listening, but the requested
+five-track continuous-set milestone was not achieved. The legacy Set
 Director, Candidate Composer, Audition Lab, UI, personalization, generic
 families, and unrestricted/full-set automation remain disconnected.
 
-## MUSICAL CONTEXT / BRIDGEABILITY GATE (HUMAN LISTENING PENDING)
+## JOINT SET PILOT 3 (PARTIAL FALLBACK; HUMAN LISTENING PENDING)
+
+- The planner now makes context-aware archetype choice across all mechanically
+  usable frozen F/C3/B8/D2 options. A technically first-ranked archetype cannot
+  hide another frozen option that is the one satisfying cue-local context.
+- Exact completion and longest-valid partial completion are distinct results.
+  Partial fallback is opt-in, ranks path length before other disclosed
+  evidence, and records `hard_gates_weakened = false` plus the terminal
+  candidate table.
+- All explicit human-negative ordered pairs and the exact Pilot 2 transition-1
+  calibration pair were excluded. Across four plausible five-role stories,
+  the bounded fourteen-track pool supplied only two-track paths.
+- The rendered fallback is one natural-continuation F handoff, 122.783673 s,
+  stereo 44.1 kHz PCM24, sample peak `.682467`, clipping fraction `0`. Only
+  `TRANSITION_01.wav` exists because later transitions were rejected.
+- Private artifacts are under
+  `/tmp/djenius_reference_dj_transition/joint_set_pilot_3/`. Focused tests:
+  **61 passed**. Complete regression: **1164 passed in 87.93s**.
+- This checkpoint validates conservative replanning/abstention and continuous
+  partial rendering. It does not pass the five-track Pilot 3 product gate.
+
+## MUSICAL CONTEXT / BRIDGEABILITY GATE (HUMAN PASSED)
 
 - Existing cached analysis was sufficient only after using cue-local evidence:
   whole-track embedding alone could not separate the Pilot 2 failures. The

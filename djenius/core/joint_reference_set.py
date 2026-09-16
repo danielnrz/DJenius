@@ -7,7 +7,7 @@ reference selector can also supply a usable F/C3/B8/D2 performance and cues.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 import hashlib
 import json
 import math
@@ -33,7 +33,7 @@ from djenius.core.reference_templates import ReferenceArchetype
 from djenius.utils.camelot import score_key_compatibility
 
 
-JOINT_REFERENCE_SET_SCHEMA_VERSION = "joint-reference-set-3"
+JOINT_REFERENCE_SET_SCHEMA_VERSION = "joint-reference-set-4"
 
 
 @dataclass(frozen=True)
@@ -49,6 +49,8 @@ class JointSetConfig:
     max_contrast_events: int = 1
     excluded_ordered_pairs: tuple[tuple[str, str], ...] = ()
     excluded_track_sequences: tuple[tuple[str, ...], ...] = ()
+    allow_partial_plan: bool = False
+    minimum_partial_track_count: int = 2
 
 
 @dataclass(frozen=True)
@@ -79,6 +81,7 @@ class JointCandidateDecision:
     establishment: dict[str, Any]
     retained: bool
     rejection_reasons: tuple[str, ...]
+    archetype_context_evaluations: tuple[dict[str, Any], ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
         instance = self.transition_selection.selected_instance
@@ -104,6 +107,7 @@ class JointCandidateDecision:
             "establishment": self.establishment,
             "retained": self.retained,
             "rejection_reasons": list(self.rejection_reasons),
+            "archetype_context_evaluations": list(self.archetype_context_evaluations),
         }
 
 
@@ -149,6 +153,7 @@ class JointReferenceSetPlan:
     config: JointSetConfig
     plan_id: str
     schema_version: str = JOINT_REFERENCE_SET_SCHEMA_VERSION
+    completion: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -176,13 +181,16 @@ class JointReferenceSetPlan:
                 "excluded_track_sequences": [
                     list(item) for item in self.config.excluded_track_sequences
                 ],
+                "allow_partial_plan": self.config.allow_partial_plan,
+                "minimum_partial_track_count": self.config.minimum_partial_track_count,
             },
+            "completion": self.completion,
             "transitions": [item.to_dict() for item in self.transitions],
         }
 
 
 class JointSetPlanningDeadEnd(RuntimeError):
-    """Raised when no four-track path clears every performance hard gate."""
+    """Raised when no requested or permitted partial path clears every gate."""
 
     def __init__(self, message: str, diagnostics: dict[str, Any]):
         super().__init__(message)
@@ -401,7 +409,7 @@ def _evaluate_candidate(
     context_calibration: MusicalContextCalibration | None = None,
 ) -> JointCandidateDecision:
     excluded = (source.id, target.id) in set(config.excluded_ordered_pairs)
-    selection = select_reference_transition(
+    base_selection = select_reference_transition(
         source.analysis,
         target.analysis,
         source_track_id=source.id,
@@ -409,9 +417,123 @@ def _evaluate_candidate(
         source_duration_sec=source.duration_sec,
         target_duration_sec=target.duration_sec,
     )
-    instance = selection.selected_instance
-    selected_evidence: dict[str, Any] = {}
-    if selection.selected_archetype is not None:
+    options: list[tuple[tuple[int, int, str], Any, Any, dict, tuple[str, ...]]] = []
+    context_rows: list[dict[str, Any]] = []
+    for evaluation in base_selection.evaluations:
+        if not (
+            evaluation.eligible
+            and evaluation.usable_for_performance
+            and evaluation.instance is not None
+        ):
+            continue
+        archetype = evaluation.archetype
+        instance = evaluation.instance
+        selector_payload = {
+            "base_selector_id": base_selection.selector_id,
+            "joint_archetype": archetype.value,
+        }
+        selection = replace(
+            base_selection,
+            selected_archetype=archetype,
+            decision=(
+                f"joint planner retained {archetype.value}: "
+                f"{evaluation.performance_acceptance['rule']}"
+            ),
+            decision_trace=(
+                *base_selection.decision_trace,
+                {
+                    "template": archetype.value,
+                    "rule": "joint cue-local musical-context evaluation",
+                    "matched": True,
+                    "base_mechanical_winner": (
+                        base_selection.selected_archetype.value
+                        if base_selection.selected_archetype
+                        else None
+                    ),
+                },
+            ),
+            selector_id="rtsj_"
+            + hashlib.sha256(
+                json.dumps(
+                    selector_payload, sort_keys=True, separators=(",", ":")
+                ).encode()
+            ).hexdigest()[:16],
+        )
+        flow = _set_flow(
+            source,
+            target,
+            used_track_ids=used_track_ids,
+            state=set_flow_state,
+            target_phase=target_phase,
+            selected_archetype=archetype,
+            selected_evidence=evaluation.evidence,
+            config=config,
+            context_calibration=context_calibration,
+            source_context_sec=instance.anchors.source_end_sec,
+            target_context_sec=instance.anchors.target_landing_sec,
+        )
+        establishment_sec = (
+            None
+            if prior_target_landing_sec is None
+            else instance.anchors.source_start_sec - prior_target_landing_sec
+        )
+        establishment_pass = prior_target_landing_sec is None or (
+            establishment_sec is not None
+            and establishment_sec >= config.min_establishment_sec
+        )
+        establishment = {
+            "prior_target_landing_sec": prior_target_landing_sec,
+            "outgoing_source_launch_sec": instance.anchors.source_start_sec,
+            "available_establishment_sec": round(establishment_sec, 6)
+            if establishment_sec is not None
+            else None,
+            "required_minimum_sec": config.min_establishment_sec,
+            "passes": establishment_pass,
+        }
+        reasons = list(flow.rejection_reasons)
+        if excluded:
+            reasons.append("ordered_pair_excluded_by_prior_human_evidence")
+        if not establishment_pass:
+            reasons.append("insufficient_target_establishment_before_next_source_move")
+        retained = flow.passes_hard_gates and not excluded and establishment_pass
+        relationship = flow.evidence["musical_role_and_set_story"]["relationship"]
+        context_rows.append(
+            {
+                "archetype": archetype.value,
+                "base_mechanical_winner": archetype
+                == base_selection.selected_archetype,
+                "source_cue_sec": instance.anchors.source_start_sec,
+                "target_cue_sec": instance.anchors.target_landing_sec,
+                "context_relationship": relationship,
+                "set_flow": flow.to_dict(),
+                "establishment": establishment,
+                "retained": retained,
+                "rejection_reasons": list(dict.fromkeys(reasons)),
+            }
+        )
+        if retained:
+            options.append(
+                (
+                    (
+                        0 if relationship == "NATURAL_CONTINUATION" else 1,
+                        0 if archetype == base_selection.selected_archetype else 1,
+                        archetype.value,
+                    ),
+                    selection,
+                    flow,
+                    establishment,
+                    tuple(dict.fromkeys(reasons)),
+                )
+            )
+
+    if options:
+        _, selection, flow, establishment, reasons = min(
+            options, key=lambda item: item[0]
+        )
+        retained = True
+    else:
+        selection = base_selection
+        instance = selection.selected_instance
         selected_evaluation = next(
             (
                 item
@@ -420,54 +542,55 @@ def _evaluate_candidate(
             ),
             None,
         )
-        if selected_evaluation is not None:
-            selected_evidence = selected_evaluation.evidence
-    flow = _set_flow(
-        source,
-        target,
-        used_track_ids=used_track_ids,
-        state=set_flow_state,
-        target_phase=target_phase,
-        selected_archetype=selection.selected_archetype,
-        selected_evidence=selected_evidence,
-        config=config,
-        context_calibration=context_calibration,
-        source_context_sec=(instance.anchors.source_end_sec if instance else None),
-        target_context_sec=(instance.anchors.target_landing_sec if instance else None),
-    )
-    establishment_sec = (
-        None
-        if prior_target_landing_sec is None or instance is None
-        else instance.anchors.source_start_sec - prior_target_landing_sec
-    )
-    establishment_pass = prior_target_landing_sec is None or (
-        establishment_sec is not None
-        and establishment_sec >= config.min_establishment_sec
-    )
-    establishment = {
-        "prior_target_landing_sec": prior_target_landing_sec,
-        "outgoing_source_launch_sec": instance.anchors.source_start_sec
-        if instance
-        else None,
-        "available_establishment_sec": round(establishment_sec, 6)
-        if establishment_sec is not None
-        else None,
-        "required_minimum_sec": config.min_establishment_sec,
-        "passes": establishment_pass,
-    }
-    reasons = list(flow.rejection_reasons)
-    if excluded:
-        reasons.append("ordered_pair_excluded_by_prior_human_evidence")
-    if not selection.pair_transitionable:
-        reasons.extend(selection.pair_rejection_reasons or ("pair_not_transitionable",))
-    if not establishment_pass:
-        reasons.append("insufficient_target_establishment_before_next_source_move")
-    retained = (
-        flow.passes_hard_gates
-        and not excluded
-        and selection.pair_transitionable
-        and establishment_pass
-    )
+        selected_evidence = (
+            selected_evaluation.evidence if selected_evaluation is not None else {}
+        )
+        flow = _set_flow(
+            source,
+            target,
+            used_track_ids=used_track_ids,
+            state=set_flow_state,
+            target_phase=target_phase,
+            selected_archetype=selection.selected_archetype,
+            selected_evidence=selected_evidence,
+            config=config,
+            context_calibration=context_calibration,
+            source_context_sec=(instance.anchors.source_end_sec if instance else None),
+            target_context_sec=(
+                instance.anchors.target_landing_sec if instance else None
+            ),
+        )
+        establishment_sec = (
+            None
+            if prior_target_landing_sec is None or instance is None
+            else instance.anchors.source_start_sec - prior_target_landing_sec
+        )
+        establishment_pass = prior_target_landing_sec is None or (
+            establishment_sec is not None
+            and establishment_sec >= config.min_establishment_sec
+        )
+        establishment = {
+            "prior_target_landing_sec": prior_target_landing_sec,
+            "outgoing_source_launch_sec": (
+                instance.anchors.source_start_sec if instance else None
+            ),
+            "available_establishment_sec": round(establishment_sec, 6)
+            if establishment_sec is not None
+            else None,
+            "required_minimum_sec": config.min_establishment_sec,
+            "passes": establishment_pass,
+        }
+        reasons = list(flow.rejection_reasons)
+        if excluded:
+            reasons.append("ordered_pair_excluded_by_prior_human_evidence")
+        if not selection.pair_transitionable:
+            reasons.extend(
+                selection.pair_rejection_reasons or ("pair_not_transitionable",)
+            )
+        if not establishment_pass:
+            reasons.append("insufficient_target_establishment_before_next_source_move")
+        reasons = tuple(dict.fromkeys(reasons))
+        retained = False
     return JointCandidateDecision(
         current_track_id=source.id,
         candidate_track_id=target.id,
@@ -475,7 +598,8 @@ def _evaluate_candidate(
         transition_selection=selection,
         establishment=establishment,
         retained=retained,
-        rejection_reasons=tuple(dict.fromkeys(reasons)),
+        rejection_reasons=tuple(reasons),
+        archetype_context_evaluations=tuple(context_rows),
     )
 
 
@@ -497,8 +621,14 @@ def plan_joint_reference_set(
     pool = tuple(sorted(tracks, key=lambda item: item.id))
     if config.track_count < 2:
         raise ValueError("joint set must contain at least two tracks")
-    if len(pool) < config.track_count:
+    if len(pool) < config.track_count and not config.allow_partial_plan:
         raise ValueError("track pool is smaller than requested set")
+    if len(pool) < 2:
+        raise ValueError("track pool must contain at least two tracks")
+    if not 2 <= config.minimum_partial_track_count <= config.track_count:
+        raise ValueError(
+            "minimum_partial_track_count must be between two and track_count"
+        )
     if config.candidate_limit < 1:
         raise ValueError("candidate_limit must be positive")
     if len(config.set_role_sequence) != config.track_count:
@@ -519,12 +649,51 @@ def plan_joint_reference_set(
             key=lambda item: tuple(item["opening_rank_vector"]),
         )
     )
+    opening_rank_by_id = {
+        row["track_id"]: index for index, row in enumerate(opening_rows)
+    }
     by_id = {track.id: track for track in pool}
     context_calibration = calibrate_musical_context(pool)
     complete: list[
         tuple[tuple[TrackProfile, ...], tuple[JointCandidateDecision, ...], tuple]
     ] = []
+    partial: list[
+        tuple[tuple[TrackProfile, ...], tuple[JointCandidateDecision, ...], tuple]
+    ] = []
     explored: dict[str, Any] = {"openers": [], "dead_ends": []}
+
+    def path_rank(
+        path: tuple[TrackProfile, ...],
+        chosen: tuple[JointCandidateDecision, ...],
+    ) -> tuple:
+        archetypes = tuple(
+            item.transition_selection.selected_archetype.value for item in chosen
+        )
+        max_run, repeats = _path_repetition(archetypes)
+        energies = [item.mean_energy for item in path]
+        energy_jump = max(
+            (abs(b - a) for a, b in zip(energies[:-1], energies[1:])), default=0.0
+        )
+        tempo_jump = max(
+            (_tempo_delta_pct(a, b) for a, b in zip(path[:-1], path[1:])),
+            default=0.0,
+        )
+        intentional_contrasts = sum(
+            item.set_flow.evidence["musical_role_and_set_story"]["relationship"]
+            == "INTENTIONAL_BRIDGEABLE_CONTRAST"
+            for item in chosen
+        )
+        diversity_excess = max(
+            0, max_run - config.preferred_max_consecutive_same_archetype
+        )
+        return (
+            intentional_contrasts,
+            round(energy_jump, 8),
+            round(tempo_jump, 8),
+            diversity_excess,
+            repeats,
+            tuple(item.id for item in path),
+        )
 
     def search(
         path: tuple[TrackProfile, ...],
@@ -541,35 +710,7 @@ def plan_joint_reference_set(
                     }
                 )
                 return
-            archetypes = tuple(
-                item.transition_selection.selected_archetype.value for item in chosen
-            )
-            max_run, repeats = _path_repetition(archetypes)
-            energies = [item.mean_energy for item in path]
-            energy_jump = max(
-                (abs(b - a) for a, b in zip(energies[:-1], energies[1:])), default=0.0
-            )
-            tempo_jump = max(
-                (_tempo_delta_pct(a, b) for a, b in zip(path[:-1], path[1:])),
-                default=0.0,
-            )
-            intentional_contrasts = sum(
-                item.set_flow.evidence["musical_role_and_set_story"]["relationship"]
-                == "INTENTIONAL_BRIDGEABLE_CONTRAST"
-                for item in chosen
-            )
-            diversity_excess = max(
-                0, max_run - config.preferred_max_consecutive_same_archetype
-            )
-            key = (
-                intentional_contrasts,
-                round(energy_jump, 8),
-                round(tempo_jump, 8),
-                diversity_excess,
-                repeats,
-                tuple(item.id for item in path),
-            )
-            complete.append((path, chosen, key))
+            complete.append((path, chosen, path_rank(path, chosen)))
             return
         source = path[-1]
         candidates = [
@@ -600,6 +741,11 @@ def plan_joint_reference_set(
                     "candidate_table": [item.to_dict() for item in candidates],
                 }
             )
+            if (
+                config.allow_partial_plan
+                and len(path) >= config.minimum_partial_track_count
+            ):
+                partial.append((path, chosen, path_rank(path, chosen)))
         for candidate in retained:
             target = by_id[candidate.candidate_track_id]
             landing = candidate.transition_selection.selected_instance.anchors.target_landing_sec
@@ -623,19 +769,44 @@ def plan_joint_reference_set(
     # not a hidden optimization around a hand-picked first pair.
     for row in opening_rows:
         before = len(complete)
+        partial_before = len(partial)
         opener = by_id[row["track_id"]]
         search((opener,), (), None, initial_set_flow_state(opener))
         found = len(complete) > before
-        explored["openers"].append({**row, "complete_path_exists": found})
+        opener_partials = partial[partial_before:]
+        explored["openers"].append(
+            {
+                **row,
+                "complete_path_exists": found,
+                "longest_partial_track_count": max(
+                    (len(item[0]) for item in opener_partials), default=0
+                ),
+            }
+        )
         if found:
             break
 
-    if not complete:
+    is_complete = bool(complete)
+    if complete:
+        path, chosen_candidates, path_rank_vector = min(
+            complete, key=lambda item: item[2]
+        )
+    elif partial:
+        # Longest valid path wins before any musical ranking evidence. No gate is
+        # relaxed to manufacture the requested track count.
+        path, chosen_candidates, path_rank_vector = min(
+            partial,
+            key=lambda item: (
+                -len(item[0]),
+                opening_rank_by_id[item[0][0].id],
+                item[2],
+            ),
+        )
+    else:
         raise JointSetPlanningDeadEnd(
             "no candidate path satisfies set-flow, transitionability, cue, and establishment floors",
             explored,
         )
-    path, chosen_candidates, path_rank = min(complete, key=lambda item: item[2])
     decisions: list[JointTransitionDecision] = []
     prior_landing = None
     flow_state = initial_set_flow_state(path[0])
@@ -695,10 +866,15 @@ def plan_joint_reference_set(
 
     opening = {
         "selected_track_id": path[0].id,
-        "selection_rule": "first deterministic opening-suitability candidate with a complete hard-gated path",
+        "selection_rule": (
+            "first deterministic opening-suitability candidate with a complete hard-gated path"
+            if is_complete
+            else "longest hard-gated partial path after the bounded pool exhausted all complete paths"
+        ),
         "path_existence_is_hard_gate": True,
         "opening_candidates": explored["openers"],
-        "selected_path_rank_vector": list(path_rank[:-1]) + [list(path_rank[-1])],
+        "selected_path_rank_vector": list(path_rank_vector[:-1])
+        + [list(path_rank_vector[-1])],
         "path_rank_order": [
             "fewest_intentional_contrasts after all declared-role hard gates",
             "smallest_max_energy_jump",
@@ -707,7 +883,34 @@ def plan_joint_reference_set(
             "fewest_repeated_archetypes_after_quality_evidence",
             "stable_track_id_tiebreak",
         ],
+        "partial_path_precedence": [
+            "longest_hard_gated_path",
+            "best_deterministic_opening_suitability",
+            "declared_path_rank_order",
+        ],
         "musical_context_calibration": context_calibration.to_dict(),
+    }
+    completion = {
+        "requested_track_count": config.track_count,
+        "actual_track_count": len(path),
+        "complete": is_complete,
+        "hard_gates_weakened": False,
+        "planning_stopped_reason": (
+            None
+            if is_complete
+            else "bounded_candidate_pool_exhausted_without_another_hard-gated_adjacency"
+        ),
+        "dead_end_count": len(explored["dead_ends"]),
+        "selected_terminal_dead_end": next(
+            (
+                item
+                for item in explored["dead_ends"]
+                if item.get("path") == [track.id for track in path]
+            ),
+            None,
+        )
+        if not is_complete
+        else None,
     }
     payload = {
         "schema": JOINT_REFERENCE_SET_SCHEMA_VERSION,
@@ -716,6 +919,7 @@ def plan_joint_reference_set(
             item.transition_selection.selector_id for item in chosen_candidates
         ],
         "config": config.__dict__,
+        "completion": completion,
         "musical_context_calibration": context_calibration.to_dict(),
     }
     plan_id = (
@@ -724,4 +928,11 @@ def plan_joint_reference_set(
             json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
         ).hexdigest()[:16]
     )
-    return JointReferenceSetPlan(path, tuple(decisions), opening, config, plan_id)
+    return JointReferenceSetPlan(
+        path,
+        tuple(decisions),
+        opening,
+        config,
+        plan_id,
+        completion=completion,
+    )

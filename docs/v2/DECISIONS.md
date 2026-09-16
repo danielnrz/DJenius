@@ -275,3 +275,26 @@
 **Decision:** evaluate `USABLE_FOR_PERFORMANCE` for every technically eligible source/target cue combination, then rank usable combinations. Only when none is usable may the best technically eligible cue be retained as diagnostic evidence for abstention.
 **Why:** the selector could previously choose the nearest technically eligible target pickup, discover afterward that it lacked performance space, and abstain even though another nearby cue satisfied every unchanged contract. Cue placement is part of selection, so the hard performance floor must participate in the search rather than run after it.
 **Rejected:** weakening the target-pickup floor, changing F choreography, or hand-pinning a private cue.
+
+## D063 - Joint planning evaluates context per frozen archetype and may return an explicit longest valid partial
+
+**Decision:** for each ordered pair, the thin joint planner evaluates set flow
+and cue-local bridgeability independently for every technically eligible,
+`USABLE_FOR_PERFORMANCE` F/C3/B8/D2 instance. It may select a different frozen
+archetype from the reference selector's first mechanical winner when that is
+the option that clears the context gate. Exact-set completion remains the
+primary outcome. An opt-in fallback may return the longest hard-gated partial
+path, with requested/actual counts, `hard_gates_weakened = false`, and the
+terminal rejected-candidate table recorded durably.
+
+**Why:** Pilot 3 must choose track, archetype, and cues jointly; evaluating
+context only after a mechanical archetype winner leaves those decisions
+partially decoupled. The bounded library also proved that an exact requested
+length is not always feasible once human-negative evidence is respected. A
+typed partial result preserves useful audio and diagnosis without confusing an
+abstention with a crash or weakening the quality floor.
+
+**Rejected:** changing frozen templates, asking the old Audition Lab to choose
+among context failures, lowering performance/context/establishment floors,
+reusing known-negative pairs to reach an output count, or reporting a partial
+path as a complete set.

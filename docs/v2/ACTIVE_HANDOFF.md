@@ -1,6 +1,62 @@
 # DJenius V2 Active Handoff
 
-## MUSICAL CONTEXT / BRIDGEABILITY GATE — COMPLETE; HUMAN GATE PENDING
+## JOINT SET PILOT 3 — PLANNING DEAD END; HUMAN GATE PENDING
+
+2026-09-15. Human listening passed `CONTEXT_NATURAL.wav` and
+`CONTEXT_BRIDGE.wav` as acceptable and confirmed `CONTEXT_REJECT` was the
+correct abstention. The context/bridgeability gate is closed. The authorized
+task is one continuous constrained-planner Pilot 3: target five tracks/four
+transitions and roughly 6–9 minutes, while retaining only frozen F/C3/B8/D2,
+all performance/context/cue hard gates, all known human-negative ordered-pair
+evidence, and the proven continuous renderer invariants. No legacy Set
+Director, generic Candidate Composer, Audition Lab winner policy, new
+archetype, template/renderer redesign, UI, personalization, or Pilot 4 is
+authorized.
+
+Delivered 2026-09-16. The joint planner now evaluates cue-local musical
+context for every technically eligible and `USABLE_FOR_PERFORMANCE` frozen
+archetype, rather than only the reference selector's first mechanical winner.
+It may reselect an already-proven archetype when that is the one that clears
+the independent context gate. No template, selector acceptance contract, DSP,
+or renderer behavior changed.
+
+The bounded fourteen-track library could not supply a five-track path after
+hard-excluding all human-negative ordered pairs and the exact Pilot 2
+transition-1 calibration adjacency. Four interpretable trajectories were
+searched. Every one terminated after two tracks. The planner therefore used
+the authorized longest-valid fallback: anonymous library indexes `4 -> 9`,
+one frozen F transition, classified `NATURAL_CONTINUATION`. It did **not**
+weaken a gate, reuse the frozen Pilot 2 adjacency, or force a third track.
+This is a conservative planning success but **not** a successful five-track
+Pilot 3 or proof of a complete set journey.
+
+Private output is in
+`/tmp/djenius_reference_dj_transition/joint_set_pilot_3/`:
+
+- `JOINT_SET_PILOT_3.wav` — 122.783673 s, SHA-256
+  `ec23dfe62ddce72562f50e666683138bde65dff154814f7f352850ea991d12c2`;
+- `TRANSITION_01.wav` — 21.800635 s, SHA-256
+  `7a9fbb9424d6a3438b29a9d17125e612e243a37ab6a66765c71fbb991012e251`;
+- `JOINT_SET_PLAN.json`, `JOINT_SET_DECISIONS.json`, and
+  `SET_CONTEXT_TRACE.json` contain the requested plan, every selected/rejected
+  candidate, archetype/context/cue evidence, four trajectory attempts, and the
+  terminal replanning dead end. No `TRANSITION_02..04.wav` exists because no
+  additional adjacency passed every hard gate.
+
+The set and excerpt are stereo 44.1 kHz PCM24, finite, and unclipped; the
+continuous renderer and frozen target/tail invariants remain active. Focused
+role/template/joint coverage: **61 passed**. Complete regression: **1164
+passed in 87.93s**, with the same two Typer/Click dependency warnings. Touched
+files pass Ruff and `git diff --check`; repository-wide Ruff still reports the
+pre-existing legacy baseline and was not broadened into this task.
+
+**STOP/GATE:** human listening may review the two-track fallback and its one
+excerpt, but it cannot establish the requested five-track success criterion.
+Do not create Pilot 4, lower any floor, reinstate a rejected adjacency, change
+frozen choreography/renderer behavior, or reconnect the legacy Set Director,
+Candidate Composer, or Audition Lab.
+
+## MUSICAL CONTEXT / BRIDGEABILITY GATE — COMPLETE; HUMAN PASSED
 
 2026-09-15. Pilot 2 transition 1 remains frozen positive evidence: D2 connects
 an anonymous close-tempo pair as `NATURAL_CONTINUATION`; its WAV and decision
@@ -56,10 +112,10 @@ semantic, selector, template, and joint-planner regression: **82 passed in
 touched Python files; `git diff --check` remains required before commit. These
 checks establish determinism and technical correctness, not listening quality.
 
-**STOP/GATE:** human-listen only to `CONTEXT_NATURAL.wav` and
-`CONTEXT_BRIDGE.wav`; review the documented `CONTEXT_REJECT`. Do not make Pilot
-3, alter frozen templates/renderer, invent effects/archetypes, or reconnect the
-legacy Set Director/Candidate Composer/Audition Lab path.
+**HISTORICAL GATE RESULT:** the human accepted both rendered controls and the
+documented abstention, which authorized the bounded Pilot 3 now recorded
+above. The prohibition on altering frozen templates/renderer or reconnecting
+the legacy Set Director/Candidate Composer/Audition Lab path remains active.
 
 ## JOINT SET PILOT 2 — COMPLETE; HUMAN GATE PENDING
 
