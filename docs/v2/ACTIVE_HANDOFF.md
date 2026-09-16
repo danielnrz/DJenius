@@ -1,5 +1,43 @@
 # DJenius V2 Active Handoff
 
+## TRANSITION GRAPH CONNECTIVITY AUDIT — COMPLETE; STOP
+
+2026-09-16. Planning-only audit of all fourteen private tracks and **182**
+directed non-self adjacencies is complete. No audio was rendered, and no
+production thresholds, template, choreography, renderer, library, or Set
+Director behavior changed. Detailed private artifacts are in
+`/tmp/djenius_reference_dj_transition/transition_graph_audit/`; the durable
+anonymous findings and caveats are in [TRANSITION_GRAPH_AUDIT.md](TRANSITION_GRAPH_AUDIT.md).
+
+The production decision stack marks 23 pairs mechanically transitionable and
+only nine statically usable in some declared set phase. Exact Pilot 3 history
+exclusions leave six edges and no path beyond two tracks. Excluding only ten
+genuine pair-level human negatives yields eight edges, with a three-track
+longest static path; removing all history yields nine edges and still no
+four- or five-track path. The offline production joint planner under the
+realistic policy also reaches at most three tracks across all four Pilot 3
+trajectories. There is **no valid five-track plan** and no new WAV.
+
+Pilot 3 did not blanket-exclude all prior tests: its thirteen exclusions
+comprised ten pair-level human negatives, one known-good calibration edge,
+one D2-template-only rejection, and one F-cue-only rejection. Two musically
+usable edges return under realistic history; novelty contributed, but cannot
+alone explain the dead-end. Calibration exposes actual false negatives: the
+current performance floor rejects approved F and B8 performances at their
+approved cues; C3's current cue search moves the accepted target landing
+12.93 s later before rejecting it. All three known accepted set-context
+controls still pass. The present evidence supports **Conclusion E: combined
+novelty starvation, a disconnected small pool under current rules, and
+demonstrably over-conservative reference acceptance**. A recurring missing
+fifth-archetype capability is **not** established.
+
+Focused reference-template, musical-role, joint-planner, and cue-local-context
+tests: **72 passed**. Because this audit made no production code change, the
+full regression suite was not rerun. Keep all quality gates unchanged until
+the approved-reference discrepancies are addressed on explicit evidence.
+Do not start Pilot 4, add tracks/families, or render another set without a new
+human gate.
+
 ## JOINT SET PILOT 3 — PLANNING DEAD END; HUMAN GATE PENDING
 
 2026-09-15. Human listening passed `CONTEXT_NATURAL.wav` and
