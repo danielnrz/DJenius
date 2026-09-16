@@ -1,5 +1,37 @@
 # DJenius V2 Active Handoff
 
+## BLIND HUMAN SET-CONTEXT LABEL PACK — COMPLETE; AWAITING LABELS
+
+2026-09-16. Exactly twelve context-only, directed-pair blind auditions have
+been rendered under `/tmp/djenius_reference_dj_transition/context_label_pack/`:
+four Pilot-4 adjacencies, six previously unlabelled informative pairs, and two
+hidden human-labelled anchors. The private manifest/selection report retain
+the mapping and provenance; do **not** reveal either to the listener before
+all twelve labels return. Only `CTX_01.wav` through `CTX_12.wav` and
+`CONTEXT_LABEL_RESPONSE_TEMPLATE.txt` are user-facing. The six new pairs cover
+close context, boundary cases, bridgeable contrast, a performance-feasible
+context reject, whole-track/cue disagreement, and reverse direction. No
+F/C3/B8/D2 choreography or creative processing was used.
+
+Each WAV is 36.75 seconds: 16.0 s native source before the evaluated launch,
+0.75 s exact digital silence, 20.0 s native target from the evaluated landing
+cue. Stereo 44.1 kHz PCM24; constant gain only to a shared -18 LUFS per
+segment plus 5 ms click guards. Independent validation confirmed exact file
+count, twelve distinct directed pairs, cue bounds, 20 s target establishment,
+silence, per-segment LUFS range `-18.0008` to `-18.0001`, finite samples,
+maximum absolute sample peak `.545548`, no clipping, file hashes, and existing
+Pilot-4 transition references on the four appropriate manifest rows. A fresh
+process rebuilt all twelve WAVs byte-for-byte without overwriting them. The
+Pilot-4 master SHA-256 remained unchanged
+(`15e6a5746b9db3c0c7ba1c0291d5f794f343acde89da82c51641a9f9ff01307d`).
+No production code/gate/model/renderer/template changed; no Pilot 5 or new
+creative render. Full application regression was not run because production
+code is untouched. At session start, branch `v2-professional-autonomous-dj`,
+local and fetched origin HEAD both `f85e6c3`; only pre-existing untracked
+`.claude/` was present and remains untouched. **Awaiting blind human
+set-context labels.** Do not reveal the mapping or analyze outcomes until the
+listener submits all twelve labels.
+
 ## SHADOW MUSICAL-CONTEXT BENCHMARK — COMPLETE; NO PRODUCTION CHANGE
 
 2026-09-16. The analysis-only benchmark is complete. Nine private JSONs and
