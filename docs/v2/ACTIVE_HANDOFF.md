@@ -1,5 +1,43 @@
 # DJenius V2 Active Handoff
 
+## REFERENCE CALIBRATION REPAIR — COMPLETE; STOP
+
+2026-09-16. The complete private audit is in
+`/tmp/djenius_reference_dj_transition/reference_calibration/` (six requested
+JSONs); the public-safe summary and caveats are in
+[REFERENCE_CALIBRATION_AUDIT.md](REFERENCE_CALIBRATION_AUDIT.md). This task
+fixed selector-only acceptance contradictions in F, B8 and C3. Frozen
+templates, renderer, context thresholds, historical labels and approved WAVs
+were not changed. No new audio, Pilot 4, fifth archetype, or music acquisition.
+
+At the exact recorded cues, all **19/19** human-approved local performances
+now clear `USABLE_FOR_PERFORMANCE`; **9/9** recorded local failures still fail.
+All **3/3** accepted context controls pass and **5/5** context failures fail
+at their recorded phase under cue-local context replay. Four blind abstentions
+remain unlabelled for listening. The private table records every named gate,
+measured values, thresholds and numeric component margins. Six previously
+false-rejected approved instances were repaired without track/cue whitelists:
+F's bounded phrase-ending unit and quiet target runway; B8's locally stable
+staged groove/bass replacement despite whole-track groove distance; C3's
+audible stem ownership despite overlapping *raw* vocal regions. Generalized
+synthetic tests protect all three patterns and nearby negative controls.
+
+The 14-track directed graph changed from **9 to 31 / 182** statically usable
+edges with no history restriction, and from **8 to 30 / 182** under realistic
+human-negative exclusions. The realistic graph now has 98 four-track and 121
+five-track simple static paths; the production joint planner independently
+found a complete five-track **offline plan only**. This is outcome A:
+calibration repair materially restored connectivity. It is not human approval
+of the new edges or a reason to render another set without authorization.
+F still covers 27 of 31 usable edges; the graph is sparse, so future listening
+and broader validation matter, but current evidence does not establish a
+missing fifth behavior or justify a numeric library-expansion target.
+
+Focused selector/context/joint-planner/structural tests: **135 passed**. Full
+regression: **1167 passed, 2 upstream Typer/Click deprecation warnings**.
+The pre-existing untracked `.claude/` remains untouched. Stop for the next
+human instruction; do not begin Pilot 4, acquire tracks, or change floors.
+
 ## TRANSITION GRAPH CONNECTIVITY AUDIT — COMPLETE; STOP
 
 2026-09-16. Planning-only audit of all fourteen private tracks and **182**

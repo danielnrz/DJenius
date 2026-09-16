@@ -270,9 +270,10 @@ def _story_rule(assessment: ReferencePairAssessment) -> dict[str, Any]:
         }
         rule = "recognizable motif resolves a material tempo/harmonic contrast into target lift"
     elif assessment.archetype == ReferenceArchetype.STEM_ECHO_HANDOFF:
+        staged_ownership = _c3_staged_ownership_evidence(e)
         checks = {
-            "tempo_is_not_near_limit": e["tempo_delta_pct"] <= 8.0,
-            "groove_is_close": e["groove_distance"] <= .18,
+            "tempo_is_close_or_stem_sequenced": e["tempo_delta_pct"] <= 8.0 or staged_ownership,
+            "groove_is_close_or_stem_sequenced": e["groove_distance"] <= .18 or staged_ownership,
             "late_vocal_capture_is_present": e["source_capture_region_vocal_density"] >= .30,
             "source_arrangement_is_controllable": e["source_arrangement_density"] <= .80,
             "target_drums_can_take_ownership": e["target_drum_stem_activity"] >= .60,
@@ -312,13 +313,29 @@ def _story_rule(assessment: ReferencePairAssessment) -> dict[str, Any]:
     }
 
 
-def _c3_controlled_overlap_exception(assessment: ReferencePairAssessment) -> bool:
-    """Admit the evidence pattern already proven by GEN_C3_01.
+def _c3_staged_ownership_evidence(e: dict[str, Any]) -> bool:
+    """Check whether frozen C3 stem sequencing can control a dense raw overlap."""
+    entry = e.get("source_entry", {}).get("selected", {})
+    return all((
+        e.get("tempo_delta_pct", 99.0) <= 12.0,
+        e.get("groove_distance", 1.0) <= .42,
+        e.get("harmonic_compatibility", 0.0) >= .70,
+        e.get("source_arrangement_density", 1.0) <= .80,
+        e.get("shared_arrangement_density_pressure", 2.0) <= 1.60,
+        entry.get("effect_entry_vocal_activity", 1.0) <= .15,
+        e.get("source_vocal_stem_confidence", 0.0) >= .90,
+        e.get("target_vocal_stem_confidence", 0.0) >= .90,
+        e.get("target_drum_stem_activity", 0.0) >= .70,
+        e.get("target_first_landing_bar_vocal_density", 1.0) <= .65,
+    ))
 
-    This is a selector-only cue exception, not a template/DSP change.  The
-    frozen C3 choreography withholds target vocals and releases source stems
-    sequentially, so raw vocal-region overlap is not by itself disqualifying
-    when the source effect boundary is quiet and the arrangement is sparse.
+
+def _c3_controlled_overlap_exception(assessment: ReferencePairAssessment) -> bool:
+    """Judge audible ownership, not raw vocal-region overlap alone.
+
+    The frozen C3 renderer withholds target vocals and releases source stems
+    sequentially. A quiet effect boundary plus reliable stems can therefore
+    control an overlap whose unprocessed vocal regions are both dense.
     """
     if assessment.archetype != ReferenceArchetype.STEM_ECHO_HANDOFF:
         return False
@@ -328,7 +345,7 @@ def _c3_controlled_overlap_exception(assessment: ReferencePairAssessment) -> boo
         return False
     e = assessment.evidence
     entry = e.get("source_entry", {}).get("selected", {})
-    return all((
+    close_sparse_edit = all((
         e.get("groove_distance", 1.0) <= .12,
         e.get("harmonic_compatibility", 0.0) >= .50,
         e.get("source_arrangement_density", 1.0) <= .40,
@@ -337,6 +354,7 @@ def _c3_controlled_overlap_exception(assessment: ReferencePairAssessment) -> boo
         e.get("target_vocal_stem_confidence", 0.0) >= .90,
         e.get("target_first_landing_bar_vocal_density", 1.0) <= .65,
     ))
+    return close_sparse_edit or _c3_staged_ownership_evidence(e)
 
 
 def _performance_acceptance(
@@ -347,20 +365,37 @@ def _performance_acceptance(
     e = assessment.evidence
     entry = e.get("source_entry", {}).get("selected", {})
     if assessment.archetype == ReferenceArchetype.RESET_RELEASE:
+        vocal_unit_completed = (
+            not entry.get("vocal_active", True)
+            or (
+                entry.get("active_vocal_remaining_sec", 99.0) <= .75
+                and entry.get("vocal_units_intersecting_window", 99) == 1
+                and entry.get("largest_vocal_unit_window_coverage", 0.0) >= .75
+            )
+        )
+        quiet_reset_pickup = (
+            e.get("target_final_runway_bar_vocal_density", 1.0) <= .65
+            and e.get("target_runway_energy", 1.0) <= .25
+            and e.get("landing_energy_change", 0.0) >= .30
+        )
         checks = {
             "technical_story_is_complete": story["qualified"],
             "motif_is_one_self_contained_unit": (
                 entry.get("vocal_units_intersecting_window", 99) == 1
                 and entry.get("largest_vocal_unit_window_coverage", 0.0) >= .75
             ),
-            "effect_begins_after_motif_completion": not entry.get("vocal_active", True),
-            "effect_boundary_is_natural": entry.get("nearest_vocal_boundary_sec", 99.0) <= .25,
+            "effect_begins_after_motif_completion": vocal_unit_completed,
+            "effect_boundary_is_natural": entry.get("nearest_vocal_boundary_sec", 99.0) <= .75,
             "repeat_capture_is_substantial": entry.get("final_bar_vocal_coverage", 0.0) >= .75,
-            "target_pickup_is_genuinely_spacious": e.get("target_final_runway_bar_vocal_density", 1.0) <= .35,
+            "target_pickup_is_genuinely_spacious": (
+                e.get("target_final_runway_bar_vocal_density", 1.0) <= .35
+                or quiet_reset_pickup
+            ),
             "target_continuation_has_clear_lift": e.get("landing_energy_change", 0.0) >= .15,
         }
         rule = "a completed, recognizable unit repeats from a natural boundary into a spacious reset and clear target lift"
     elif assessment.archetype == ReferenceArchetype.STEM_ECHO_HANDOFF:
+        staged_ownership = _c3_staged_ownership_evidence(e)
         checks = {
             "technical_story_is_complete": story["qualified"],
             "vocal_stems_are_reliable": (
@@ -368,17 +403,37 @@ def _performance_acceptance(
                 and e.get("target_vocal_stem_confidence", 0.0) >= .90
             ),
             "source_effect_boundary_is_quiet": entry.get("effect_entry_vocal_activity", 1.0) <= .15,
-            "source_arrangement_is_sparse_enough": e.get("source_arrangement_density", 1.0) <= .65,
-            "groove_margin_is_strong": e.get("groove_distance", 1.0) <= .12,
+            "source_arrangement_is_controllable": (
+                e.get("source_arrangement_density", 1.0) <= .65 or staged_ownership
+            ),
+            "groove_is_close_or_stem_sequenced": (
+                e.get("groove_distance", 1.0) <= .12 or staged_ownership
+            ),
             "harmonic_overlap_is_supported": e.get("harmonic_compatibility", 0.0) >= .50,
-            "shared_arrangement_is_controllable": e.get("shared_arrangement_density_pressure", 2.0) <= 1.35,
+            "shared_arrangement_is_controllable": (
+                e.get("shared_arrangement_density_pressure", 2.0) <= 1.35
+                or staged_ownership
+            ),
             "target_ownership_bar_is_manageable": (
                 e.get("target_drum_stem_activity", 0.0) >= .70
                 and e.get("target_first_landing_bar_vocal_density", 1.0) <= .65
             ),
         }
-        rule = "reliable stems and a quiet edit boundary support a sparse, harmonically controlled ownership sequence"
+        rule = "reliable stems and a quiet edit boundary support a controlled, harmonically supported ownership sequence"
     elif assessment.archetype == ReferenceArchetype.LOOP_BUILD_COHERENT_HANDOFF:
+        # This choreography replaces the groove through a stable source loop
+        # and staged target-bass reveal. A whole-track groove descriptor is
+        # not a hard long-overlap margin when those local handoff cues are
+        # unusually clear; the template's technical groove ceiling still
+        # applies before this acceptance stage.
+        transformative_groove_handoff = (
+            entry.get("motif_entry_rhythm_similarity", 0.0) >= .98
+            and entry.get("motif_entry_spectral_similarity", 0.0) >= .98
+            and e.get("target_bass_change_at_landing", 0.0) >= .40
+            and e.get("landing_energy_change", 0.0) >= .30
+            and e.get("target_two_bar_energy_spread", 1.0) <= .10
+            and e.get("harmonic_compatibility", 0.0) >= .70
+        )
         checks = {
             "technical_story_is_complete": story["qualified"],
             "source_launch_is_vocal_safe_or_predictable": story["checks"].get(
@@ -387,7 +442,10 @@ def _performance_acceptance(
             "loop_motif_is_rhythmically_stable": entry.get("motif_entry_rhythm_similarity", 0.0) >= .95,
             "loop_motif_is_spectrally_stable": entry.get("motif_entry_spectral_similarity", 0.0) >= .93,
             "source_backing_can_carry_the_loop": e.get("source_other_stem_activity", 0.0) >= .90,
-            "pair_groove_has_performance_margin": e.get("groove_distance", 1.0) <= .20,
+            "pair_groove_is_close_or_deliberately_replaced": (
+                e.get("groove_distance", 1.0) <= .20
+                or transformative_groove_handoff
+            ),
             "progressive_overlap_is_harmonically_supported": e.get("harmonic_compatibility", 0.0) >= .50,
             "target_has_tail_runway": (e.get("target_vocal_onset_sec_after_landing") or 0.0) >= .50,
             "target_payoff_and_cadence_are_stable": (

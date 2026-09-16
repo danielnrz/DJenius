@@ -20,7 +20,12 @@ from djenius.core.reference_templates import (
     assess_reference_template_pair,
     instantiate_reference_template,
 )
-from djenius.core.reference_selector import _performance_acceptance, select_reference_transition
+from djenius.core.reference_selector import (
+    _c3_controlled_overlap_exception,
+    _performance_acceptance,
+    _story_rule,
+    select_reference_transition,
+)
 
 
 SR = 4000
@@ -666,3 +671,108 @@ def test_d2_performance_floor_requires_launch_or_groove_margin():
         {"qualified": True},
     )
     assert accepted["checks"]["source_launch_and_groove_have_margin"] is True
+
+
+def test_f_accepts_a_complete_unit_ending_on_the_release_grid_with_quiet_pickup():
+    evidence = {
+        "source_entry": {"selected": {
+            "vocal_active": True,
+            "active_vocal_remaining_sec": .53,
+            "nearest_vocal_boundary_sec": .53,
+            "vocal_units_intersecting_window": 1,
+            "largest_vocal_unit_window_coverage": .90,
+            "final_bar_vocal_coverage": .92,
+        }},
+        "target_final_runway_bar_vocal_density": .52,
+        "target_runway_energy": .18,
+        "landing_energy_change": .56,
+    }
+    assessment = ReferencePairAssessment(
+        ReferenceArchetype.RESET_RELEASE, True, 1.0, (), (), (), evidence,
+    )
+    accepted = _performance_acceptance(assessment, {"qualified": True})
+    assert accepted["usable"] is True
+    assert accepted["checks"]["effect_begins_after_motif_completion"] is True
+    assert accepted["checks"]["target_pickup_is_genuinely_spacious"] is True
+
+    unfinished = replace(assessment, evidence={
+        **evidence,
+        "source_entry": {"selected": {
+            **evidence["source_entry"]["selected"],
+            "active_vocal_remaining_sec": 2.0,
+        }},
+    })
+    assert _performance_acceptance(unfinished, {"qualified": True})["usable"] is False
+    loud_pickup = replace(assessment, evidence={**evidence, "target_runway_energy": .50})
+    assert _performance_acceptance(loud_pickup, {"qualified": True})["usable"] is False
+
+
+def test_b8_accepts_groove_replacement_only_with_stable_loop_and_bass_payoff():
+    evidence = {
+        "source_entry": {"selected": {
+            "motif_entry_rhythm_similarity": .99,
+            "motif_entry_spectral_similarity": .99,
+        }},
+        "source_other_stem_activity": .95,
+        "groove_distance": .36,
+        "harmonic_compatibility": .90,
+        "target_vocal_onset_sec_after_landing": .70,
+        "target_landing_energy": .94,
+        "target_two_bar_energy_spread": .03,
+        "target_bass_change_at_landing": .68,
+        "landing_energy_change": .58,
+    }
+    assessment = ReferencePairAssessment(
+        ReferenceArchetype.LOOP_BUILD_COHERENT_HANDOFF,
+        True, 1.0, (), (), (), evidence,
+    )
+    story = {"qualified": True, "checks": {"source_launch_is_vocal_safe_or_predictable": True}}
+    accepted = _performance_acceptance(assessment, story)
+    assert accepted["usable"] is True
+    assert accepted["checks"]["pair_groove_is_close_or_deliberately_replaced"] is True
+
+    weak_bass = replace(assessment, evidence={**evidence, "target_bass_change_at_landing": .20})
+    weak_bass_result = _performance_acceptance(weak_bass, story)
+    assert weak_bass_result["checks"]["bass_transfer_is_material"] is True
+    assert weak_bass_result["checks"]["pair_groove_is_close_or_deliberately_replaced"] is False
+    unstable_loop = replace(assessment, evidence={
+        **evidence,
+        "source_entry": {"selected": {
+            **evidence["source_entry"]["selected"],
+            "motif_entry_spectral_similarity": .90,
+        }},
+    })
+    assert _performance_acceptance(unstable_loop, story)["usable"] is False
+
+
+def test_c3_raw_vocal_overlap_requires_evidence_of_staged_audible_ownership():
+    evidence = {
+        "tempo_delta_pct": 9.9,
+        "groove_distance": .36,
+        "harmonic_compatibility": 1.0,
+        "source_capture_region_vocal_density": .95,
+        "source_arrangement_density": .78,
+        "shared_arrangement_density_pressure": 1.53,
+        "source_entry": {"selected": {"effect_entry_vocal_activity": .05}},
+        "source_vocal_stem_confidence": 1.0,
+        "target_vocal_stem_confidence": 1.0,
+        "target_drum_stem_activity": .73,
+        "target_first_landing_bar_vocal_density": .62,
+    }
+    assessment = ReferencePairAssessment(
+        ReferenceArchetype.STEM_ECHO_HANDOFF, False, 0.0,
+        ("source and target vocals remain active throughout the useful C3 shared window",),
+        (), (), evidence,
+    )
+    assert _c3_controlled_overlap_exception(assessment) is True
+    story = _story_rule(assessment)
+    assert story["qualified"] is True
+    assert _performance_acceptance(assessment, story)["usable"] is True
+
+    noisy_boundary = replace(assessment, evidence={
+        **evidence, "source_entry": {"selected": {"effect_entry_vocal_activity": .34}},
+    })
+    assert _c3_controlled_overlap_exception(noisy_boundary) is False
+    assert _performance_acceptance(noisy_boundary, _story_rule(noisy_boundary))["usable"] is False
+    dense_source = replace(assessment, evidence={**evidence, "source_arrangement_density": .86})
+    assert _c3_controlled_overlap_exception(dense_source) is False

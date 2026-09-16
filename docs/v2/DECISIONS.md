@@ -298,3 +298,31 @@ abstention with a crash or weakening the quality floor.
 among context failures, lowering performance/context/establishment floors,
 reusing known-negative pairs to reach an output count, or reporting a partial
 path as a complete set.
+
+## D064 - Calibrate reference acceptance against audible choreography, not mismatched proxies
+
+**Decision:** cue-level reference acceptance must preserve human-approved local
+performances and reject the recorded local failures without special-casing
+tracks, cue timestamps, or hashes. F may finish one complete vocal unit within
+its existing bounded phrase-ending tolerance and may enter a moderately vocal
+but quiet target runway with a clear lift. B8 may exceed the long-overlap-style
+whole-track groove margin only when a stable local loop and measurable staged
+bass/energy replacement jointly explain the handoff, while retaining the
+template's technical groove ceiling. C3 may control dense *raw* vocal overlap
+only when reliable stems, a quiet edit boundary, bounded backing density,
+harmony, and a manageable target ownership bar jointly establish audible
+separation. Set-context acceptance remains independent of local performance.
+
+**Why:** the graph audit's sparse result was contaminated by six current
+`USABLE_FOR_PERFORMANCE` false rejections of approved F, B8, and C3 reference
+instances. The repaired selector preserves all 19 labelled local positives,
+still rejects all nine labelled local negative cues, and leaves recorded
+context-negative decisions rejected. The 14-track graph consequently admits
+five-track plan-only paths without lowering context rules or changing any
+frozen choreography. Graph connectivity is a consequence of correcting the
+contradiction, not an optimization target.
+
+**Rejected:** private reference whitelists, treating vocal occupancy as audible
+collision regardless of stem sequencing, treating whole-track groove distance
+as a mandatory close-blend margin for a staged replacement, broad threshold
+relaxation, or declaring the new plan human-approved without rendering/listening.
