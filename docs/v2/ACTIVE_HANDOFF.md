@@ -1,5 +1,49 @@
 # DJenius V2 Active Handoff
 
+## PILOT 4 SET-CONTEXT POSTMORTEM — COMPLETE; NEXT HUMAN/RESEARCH GATE
+
+2026-09-16. Human listening finds Pilot 4's transitions substantially more
+convincing: transition 1 smooth with successful target speed-up, transition 2
+excellent in its intended subtlety, later moves good and repeated F not
+objectionable. The dominant remaining failure is music selection/context:
+some tracks do not feel like one musical journey. Freeze F/C3/B8/D2,
+renderer, envelopes, speed-up, ownership choreography and calibrated gates.
+No Pilot 5 or new audio. The forensic audit and public-safe report are in
+`docs/v2/PILOT4_SET_CONTEXT_POSTMORTEM.md`; four requested private JSONs plus
+an exact-cue offline CLAP diagnostic are in
+`/tmp/djenius_reference_dj_transition/pilot4_context_postmortem/`.
+At session start branch `v2-professional-autonomous-dj`, local/origin HEAD both
+`c4b97e09161192ecb0be9210625fa286a24cc86d` after fetch; only pre-existing
+untracked `.claude/` was present. The `hf-cli` skill was read for the model
+inventory/research task; no model was downloaded or installed.
+
+TRACK_4 -> TRACK_5 is the most likely set-context mismatch, **not** a confirmed
+pair-specific human reject: it is Pilot 4's only previously untested ordered
+edge. The planner called it NATURAL on just whole-track CLAP
+and spectral anchors, while cue style/intensity, rhythm and harmony supplied
+none. Its target lands in a rising build, and first two 20-second energy bands
+rise `.822 -> .908`, although the whole-track mean and late peak made it pass
+the RELEASE set-role gate. TRACK_2 -> TRACK_3 and TRACK_3 -> TRACK_4 repeat
+previous human context-positive ordered pairs; TRACK_1 -> TRACK_2 is locally
+excellent but not explicitly context-labelled. No exact offending edge was
+named by the listener. The current cue-local CLAP feature is prompt scores
+from four representative windows, not raw cue embeddings; the final target
+window is 19 seconds before the actual build cue. An offline probe with the
+already-cached CLAP model showed raw exact-cue cosine also cannot separate
+known context passes/failures (approved `.474`, rejected `.862`). Semantic mood,
+meter and instrumentation remain uncertain/unavailable. The short-history
+state has no context-region memory or subthreshold-drift accounting.
+
+The next scoped step is **not** a tuned threshold: benchmark a licensed
+music-specific representation on actual cue and target-establishment windows
+against the existing human labels, while inspecting a two-track context story
+and phase-vs-post-landing trajectory in shadow mode. Do not promote a hard
+gate or start Pilot 5 until this evidence is convincing. Frozen transition
+engine and all accepted audio remain unchanged; Pilot 4 WAV hash verified
+`15e6a5746b9db3c0c7ba1c0291d5f794f343acde89da82c51641a9f9ff01307d`.
+Focused context/planner/semantic tests: **45 passed**. No production code
+changed, so no full regression was needed.
+
 ## JOINT SET PILOT 4 — COMPLETE; HUMAN LISTENING GATE
 
 2026-09-16. User authorized exactly one five-track/four-transition continuous
