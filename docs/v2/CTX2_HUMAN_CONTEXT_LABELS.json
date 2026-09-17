@@ -1,0 +1,23 @@
+{
+  "schema_version": "blind-context-labels-1",
+  "provenance": "Human blind context-only listening, supplied 2026-09-17; labels recorded before private pair mapping was revealed",
+  "labels_are_context_only_not_transition_performance": true,
+  "labels": {
+    "CTX2_01": {"label": "MISMATCH", "reason": "target was not energetic enough."},
+    "CTX2_02": {"label": "MISMATCH", "reason": "target is Persian-dance oriented while source had a substantially different tone."},
+    "CTX2_03": {"label": "BRIDGEABLE", "reason": "not directly compatible, but a usable region/time may allow the move."},
+    "CTX2_04": {"label": "BRIDGEABLE", "reason": "human could perceive a position where the pair could be bridged."},
+    "CTX2_05": {"label": "MISMATCH", "reason": "tonal/context difference was too large."},
+    "CTX2_06": {"label": "BRIDGEABLE", "reason": "rhythms appear synchronizable."},
+    "CTX2_07": {"label": "UNCERTAIN", "reason": "perhaps bridgeable by a very experienced DJ."},
+    "CTX2_08": {"label": "NATURAL", "reason": "languages differ but rhythmic character feels similar."},
+    "CTX2_09": {"label": "NATURAL", "reason": "tone and rhythm feel similar."},
+    "CTX2_10": {"label": "BRIDGEABLE", "reason": "speeds differ but rhythmic compatibility suggests a well-designed transition could work."},
+    "CTX2_11": {"label": "BRIDGEABLE", "reason": "speeds differ but both have energetic rhythmic character."},
+    "CTX2_12": {"label": "UNCERTAIN", "reason": "target may be too energetic."},
+    "CTX2_13": {"label": "UNCERTAIN", "reason": "source feels slower/older dance-oriented while target has compatible speed but sad lyrical/musical context."},
+    "CTX2_14": {"label": "MISMATCH", "reason": "source was much more energetic and speed relationship felt wrong."},
+    "CTX2_15": {"label": "UNCERTAIN", "reason": "both speed and rhythm differ."},
+    "CTX2_16": {"label": "BRIDGEABLE", "reason": "source is slower but tempos are reasonably related and human could perceive transition potential."}
+  }
+}
