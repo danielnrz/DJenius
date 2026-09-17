@@ -1,6 +1,43 @@
 # DJenius V2 Active Handoff
 
-## PRIVATE RICHER-F CONTROLLED A/B — AWAITING BLIND HUMAN LISTENING
+## PRIVATE RICHER-F BLIND FAILURE — DIAGNOSED; PRODUCTION FROZEN
+
+2026-09-17. The user returned the blind result: both excerpts sounded like
+beginner song joins, neither sounded like experienced DJ work, and there was
+no meaningful preference. The sealed assignment is now revealed privately:
+`RICH_F_BLIND_1` was current F and `RICH_F_BLIND_2` was the richer private
+experiment. Six private evidence reports are in
+`/tmp/djenius_reference_dj_transition/rich_f_failure_analysis/`.
+
+The richer render was technically different, but only from 12.03 to 18.865 s
+of a 37.799 s excerpt. The added repeated drum bar was 33-37 dB below the
+unchanged full source; the first target-grid pulse was roughly -42.4 dBFS
+before mastering. Late source low-end reduction was measurable (2.9 dB in
+14-16 s), yet the target pickup/landing and all target material after 18.9 s
+were identical. B had no foreground vocal/hook repeat, consequential
+stop/restart, tempo move, or independent musical layer. Its 0.663 s
+post-landing tail differed from A by roughly 29 dB below the mix. The
+human's near-indistinguishable verdict is consistent with additions being
+background decoration, not a new perceptual musical state.
+
+The tested adjacency was `CTX2_10`, previously context-only `BRIDGEABLE`,
+with an 18.21% tempo difference and only a 2.159 s target pickup. This
+challenging pair/cue may contribute to both versions sounding weak, but this
+test does **not** prove the ordered pair globally unsuitable. The strongest
+liked real-DJ references show sustained foreground full-to-sparse-to-full
+resets or audible new rhythmic/musical layers; the private F experiment did
+not reproduce their perceptual magnitude or duration. The smallest *future*
+test proposed is one isolated source-only, phrase-boundary stop/restart
+comparison to establish whether that single foreground gesture is heard as
+intentional DJ work before another target handoff. **Do not render that test
+without separate authorization.**
+
+No production code, frozen F/C3/B8/D2 choreography, renderer, context gates,
+accepted reference WAV, or audio artifact was changed. No Pilot 5 or fifth
+archetype. This is a diagnostic-only checkpoint; no application regression
+is warranted. Stop for human review.
+
+## PRIVATE RICHER-F CONTROLLED A/B — HISTORICAL PRE-VERDICT CHECKPOINT
 
 2026-09-17. User authorized one private same-pair F-family A/B test, with
 production F, eligibility, renderer, context gates, and Pilot 5 frozen.
@@ -17,11 +54,12 @@ Private outputs at that path are exactly `RICH_F_A_CURRENT.wav` (the exact
 frozen production F render), `RICH_F_B_RICH.wav` (one experimental richer
 F-family reframe), and two byte-identical blind copies named
 `RICH_F_BLIND_1.wav`/`RICH_F_BLIND_2.wav`. The deterministic assignment is
-sealed in `RICH_F_BLIND_MANIFEST.json`: **do not reveal it before the user's
-blind verdict**. The private builder script is `build_rich_f_ab.py`; it
-refuses to overwrite an existing WAV. B retains the first two dry source
-bars, repeats one complete source-drum bar quietly while source bass/harmony
-clears, carries source-derived upper rhythmic pulses over the same natural
+sealed in `RICH_F_BLIND_MANIFEST.json` until the user's blind verdict, now
+received and disclosed above. The private builder script is
+`build_rich_f_ab.py`; it refuses to overwrite an existing WAV. B retains
+the first two dry source bars, repeats one complete source-drum bar quietly
+while source bass/harmony clears, carries source-derived upper rhythmic pulses
+over the same natural
 target pickup, and darkens a bounded vocal-delay schedule through landing.
 No forced tempo ramp, fifth archetype, fromDJ waveform, or production code
 change was used.
@@ -35,9 +73,9 @@ are finite and unclipped; all four WAVs have identical frame count, and the
 blind copies match their sealed masters byte-for-byte. A is verified against
 the current production render. The frozen manual `REFERENCE_F.wav` hash
 remains unchanged. No application regression was run because production
-code did not change. **Await blind human ratings and preference; do not
-disclose the assignment, revise either file, change production F, or start
-Pilot 5.**
+code did not change. This historical checkpoint is superseded by the
+post-verdict analysis above. Do not revise either file, change production F,
+or start Pilot 5.
 
 ## REAL-DJ HUMAN LABELS AND DEEP ANALYSIS — COMPLETE
 
