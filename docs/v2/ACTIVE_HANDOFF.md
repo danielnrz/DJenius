@@ -1,5 +1,48 @@
 # DJenius V2 Active Handoff
 
+## SOURCE-ONLY FOREGROUND STOP/RESTART PROOF — AWAITING BLIND HUMAN LISTENING
+
+2026-09-17. The user explicitly authorized one private source-only blind
+control versus phrase-boundary stop/restart gesture, with an optional single
+tail version only if useful. Production F/C3/B8/D2, renderer, context gates,
+Pilot 5, and all accepted references remain frozen. No target song or
+song-to-song transition is permitted. Branch
+`v2-professional-autonomous-dj`; local/fetched origin HEAD matched
+`5c88ca6196d14587c22c2484c316c10a37f38944` at session start; only
+pre-existing untracked `.claude/` was present. Selected one anonymous
+normal-library passage: the last two beats of an instrumental bar have
+about -15.8 dBFS source energy but negligible vocal energy, followed by
+a vocal-led downbeat. An approximately 31.46 s downbeat-aligned excerpt
+allows seven bars of lead-in and eight bars of continuation. The output is
+under `/tmp/djenius_reference_dj_transition/foreground_reset_gesture/`:
+`RESET_CONTROL.wav`, `RESET_GESTURE.wav`, and two byte-identical blind
+copies `RESET_BLIND_1.wav`/`RESET_BLIND_2.wav`. The assignment is sealed
+privately in `RESET_BLIND_MANIFEST.json`; **do not disclose it before the
+human verdict**. `RESET_RESPONSE_TEMPLATE.txt` provides the requested
+listening questions. The optional tail version was deliberately omitted
+to isolate the clean stop/restart gesture.
+
+Both files use the same exact 31.463 s source interval, sample clock,
+fixed mastering gain/soft-clip transfer, and post-restart playback. The
+gesture mutes 0.975 s from beat 3 of an instrumental bar and restarts on
+the next analyzed downbeat. Original audio in that interval was active
+at -15.78 dBFS; vocal-stem level was -52.26 dBFS, so the stopped material
+is not an active vocal phrase and the original song did not contain a
+native stop. Digital silence during the intervention is a foreground
+change, not another -30 dB layer. The stop uses a 25 ms click guard and
+restart uses a 12 ms click guard. Adjacent-sample deltas at stop/restart
+are .01475/.00363 versus global p99.9 .20948. Control and gesture are
+-14.000/-14.026 LUFS under the same mastering treatment, both peak .8442
+and neither clips. Stereo 44.1 kHz PCM24 files are 31.463 s each.
+The private builder's verify-only run regenerated both masters and both
+blind copies byte-for-byte, re-decoded the PCM, checked the exact silent
+gap, absence of clipping, and sealed blind hash/role consistency without
+printing the mapping. Validation evidence is private in
+`RESET_GESTURE_VALIDATION.json`. No production code, reference WAV, model,
+template, renderer, or context gate changed; no target audio, FX tail,
+Pilot 5, or fifth archetype. No full application regression is needed
+for this private render. **Stop for blind human listening.**
+
 ## PRIVATE RICHER-F BLIND FAILURE — DIAGNOSED; PRODUCTION FROZEN
 
 2026-09-17. The user returned the blind result: both excerpts sounded like
