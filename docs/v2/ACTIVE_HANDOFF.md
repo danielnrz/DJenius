@@ -1,5 +1,48 @@
 # DJenius V2 Active Handoff
 
+## REAL-DJ HUMAN LABELS AND DEEP ANALYSIS — COMPLETE
+
+2026-09-17. Branch `v2-professional-autonomous-dj`; local and fetched origin
+HEAD both `797673d8dca7dfafc8b5909234142c2448718ba4`. Only pre-existing
+untracked `.claude/` was present and remains untouched. The eight human
+DJREF action/preference labels and exact supplied descriptions were persisted
+privately in
+`/tmp/djenius_reference_dj_transition/dj_reference_deep_analysis/HUMAN_DJ_REFERENCE_LABELS.json`
+before detailed waveform analysis. All eight are `DJ_ACTION`; six are `LIKE`,
+one `DISLIKE`, one `NEUTRAL`. The exact 40-second unchanged clips were measured
+at two-second resolution for level, low/high spectral balance, percussive
+fraction, spectral changes, repeat likeness, and unverified local pulse.
+Private requested deliverables are under
+`/tmp/djenius_reference_dj_transition/dj_reference_deep_analysis/`:
+ten named JSONs plus `PRIVATE_WAVEFORM_MEASUREMENTS.json` and the private
+measurement script. Public-safe report:
+[`DJ_REFERENCE_DEEP_ANALYSIS.md`](DJ_REFERENCE_DEEP_ANALYSIS.md).
+
+The strongest observable sequence is `DJREF_03`: very close 2-second repeats
+for about 12 seconds, a sharp pause/reduction, then fuller return. The
+listener says this treatment makes sad/slow material usable in a remix.
+`DJREF_06` similarly uses full -> sparse pulsing -> full; the human hears
+slowdown, but a true tempo ramp is not independently established. `DJREF_04`
+is human-heard as multi-layered; `DJREF_05` as music plus drums. No independent
+original/stem alignment proves source identities or exact mixer controls.
+Liked references generally evolve through consequential musical states;
+disliked `DJREF_07` has a brief effect/return and a comparatively steady
+remaining bed. Neutral `DJREF_08` shows that stage count alone is insufficient.
+No fifth archetype is justified: the recurrent reset core is F-like, while
+the distinctive multi-layer/drum/tempo variants lack independent repeated
+confirmation. Best next experiment is a *future* private same-pair human A/B
+test of frozen F against one manually specified richer reset on a
+contextually difficult but plausibly transformable adjacency. No such
+variant was implemented or rendered here. No extra follow-up listening pack
+is required yet.
+
+All eleven private JSONs parse; the eight IDs and six/one/one labels align
+across labels, timelines, and measurements; `git diff --check` passes.
+No production code or audio was changed, so no application regression was
+run. Only public-safe report/handoff edits are intended for Git; pre-existing
+`.claude/` remains untouched. Production gates, four archetypes, renderer,
+and Pilot 5 remain frozen. Stop for human direction after the analysis.
+
 ## CTX2 LABEL INGESTION + REAL-DJ SHADOW MINING — COMPLETE
 
 2026-09-17. User supplied sixteen blind CTX2 labels. All sixteen four-way
