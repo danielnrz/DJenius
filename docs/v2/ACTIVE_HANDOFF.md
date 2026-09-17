@@ -42,6 +42,8 @@ No production code or audio was changed, so no application regression was
 run. Only public-safe report/handoff edits are intended for Git; pre-existing
 `.claude/` remains untouched. Production gates, four archetypes, renderer,
 and Pilot 5 remain frozen. Stop for human direction after the analysis.
+The validated public-safe checkpoint was committed and pushed as `c7b8781`
+(`Document human-labeled DJ reference choreography study`).
 
 ## CTX2 LABEL INGESTION + REAL-DJ SHADOW MINING — COMPLETE
 
