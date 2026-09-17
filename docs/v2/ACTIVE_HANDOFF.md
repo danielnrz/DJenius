@@ -1,5 +1,44 @@
 # DJenius V2 Active Handoff
 
+## PRIVATE RICHER-F CONTROLLED A/B — AWAITING BLIND HUMAN LISTENING
+
+2026-09-17. User authorized one private same-pair F-family A/B test, with
+production F, eligibility, renderer, context gates, and Pilot 5 frozen.
+Branch `v2-professional-autonomous-dj`; local/fetched origin HEAD matched
+`dffa137bacf137563089a0f78e009b001893f62d` at session start; only
+pre-existing untracked `.claude/` was present and remains untouched. The
+selected expanded-library adjacency is anonymous `CTX2_10`: human-labelled
+`BRIDGEABLE`, current selector chooses and accepts F, and the pair has a
+material tempo/feel contrast with a valid source motif and sparse target
+pickup. Private track identities, exact cues, and supporting evidence are in
+`/tmp/djenius_reference_dj_transition/rich_f_ab_experiment/RICH_F_CHOREOGRAPHY_COMPARISON.json`.
+
+Private outputs at that path are exactly `RICH_F_A_CURRENT.wav` (the exact
+frozen production F render), `RICH_F_B_RICH.wav` (one experimental richer
+F-family reframe), and two byte-identical blind copies named
+`RICH_F_BLIND_1.wav`/`RICH_F_BLIND_2.wav`. The deterministic assignment is
+sealed in `RICH_F_BLIND_MANIFEST.json`: **do not reveal it before the user's
+blind verdict**. The private builder script is `build_rich_f_ab.py`; it
+refuses to overwrite an existing WAV. B retains the first two dry source
+bars, repeats one complete source-drum bar quietly while source bass/harmony
+clears, carries source-derived upper rhythmic pulses over the same natural
+target pickup, and darkens a bounded vocal-delay schedule through landing.
+No forced tempo ramp, fifth archetype, fromDJ waveform, or production code
+change was used.
+
+Both files are 37.799184 s, 44.1 kHz stereo PCM24 with identical source and
+target cues, transition duration, landing sample, target input stream/trim,
+and mastering gain/soft-clip/peak-cap transfer. Integrated loudness differs
+only `0.0474 LU`; after B's `0.6634 s` postlanding source tail the final
+target is sample-identical within `5.96e-8` before PCM quantization. Both
+are finite and unclipped; all four WAVs have identical frame count, and the
+blind copies match their sealed masters byte-for-byte. A is verified against
+the current production render. The frozen manual `REFERENCE_F.wav` hash
+remains unchanged. No application regression was run because production
+code did not change. **Await blind human ratings and preference; do not
+disclose the assignment, revise either file, change production F, or start
+Pilot 5.**
+
 ## REAL-DJ HUMAN LABELS AND DEEP ANALYSIS — COMPLETE
 
 2026-09-17. Branch `v2-professional-autonomous-dj`; local and fetched origin
