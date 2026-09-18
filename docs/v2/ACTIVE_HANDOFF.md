@@ -1,6 +1,49 @@
 # DJenius V2 Active Handoff
 
-## SOURCE-ONLY FOREGROUND STOP/RESTART PROOF — AWAITING BLIND HUMAN LISTENING
+## SOURCE-ONLY RHYTHMIC REFRAME — AWAITING BLIND HUMAN LISTENING
+
+2026-09-17. The user returned the stop/restart blind labels: neither file
+was perceived as DJ work or an intentional action, both rated OK, no
+preference. The mapping has been unsealed and recorded privately in
+`/tmp/djenius_reference_dj_transition/foreground_reset_gesture/RESET_HUMAN_VERDICT.json`:
+`RESET_BLIND_1` was untouched control and `RESET_BLIND_2` was the
+0.975 s stop/restart. This is a human FAIL despite technically foreground
+silence; do not integrate or vary its duration.
+
+The newly authorized task was exactly one private source-only multi-stage
+rhythmic-reframe proof. No target, transition, production template change,
+new archetype, or Pilot 5. The chosen normal-library 16-bar chorus window
+has a stable native two-bar full-mix RMS span of only 0.262 dB, prominent
+vocals and drums, strong beatgrid confidence .981, and stems whose summed
+reconstruction is 25.3 dB below the source in error. Private outputs under
+`/tmp/djenius_reference_dj_transition/rhythmic_reframe_proof/` are
+`REFRAME_CONTROL.wav`, `REFRAME_PERFORMANCE.wav`, and exactly two blind
+copies `REFRAME_BLIND_1.wav`/`REFRAME_BLIND_2.wav`. Their deterministic
+assignment is sealed in `REFRAME_BLIND_MANIFEST.json`; **do not reveal
+before the human verdict**. `REFRAME_RESPONSE_TEMPLATE.txt` contains the
+listening questions; `REFRAME_VALIDATION.json` and
+`REFRAME_STAGE_ANALYSIS.json` contain private cue/level evidence.
+
+The 30.720 s source-only choreography is: four bars untouched; two bars
+bringing forward one previously heard four-bar source-drum framework;
+two bars reducing bass/harmony; four bars of sustained vocal-plus-foreground
+drum state; then full original song returns exactly on a downbeat for four
+bars. The same source interval and fixed mastering transfer are used for
+both conditions. No impact, echo, slowdown, target, extra loop, or FX chain.
+The performed rhythmic framework is 2.23 dB below the transformed mix,
+not a background -30 dB decoration. The altered state lasts 7.663 s and
+changes mid-band energy by -3.03 dB. Control and performance are
+sample-identical before preparation and after payoff. Both are finite,
+unclipped stereo 44.1 kHz PCM24; control/performance integrated loudness
+is -14.000/-14.774 LUFS under the same fixed gain. The payoff seam's
+adjacent-sample delta .1697 is below global p99.9 .2203. The private
+verify-only pass re-rendered all four WAV payloads byte-for-byte,
+re-decoded them, and verified sealed blind hashes without printing the
+assignment. Human listening, not these signal checks, decides whether
+the performance is DJ-like. No application regression was run because
+production code was not changed. **Stop for the blind verdict.**
+
+## SOURCE-ONLY FOREGROUND STOP/RESTART PROOF — HISTORICAL PRE-VERDICT CHECKPOINT
 
 2026-09-17. The user explicitly authorized one private source-only blind
 control versus phrase-boundary stop/restart gesture, with an optional single
@@ -16,9 +59,9 @@ a vocal-led downbeat. An approximately 31.46 s downbeat-aligned excerpt
 allows seven bars of lead-in and eight bars of continuation. The output is
 under `/tmp/djenius_reference_dj_transition/foreground_reset_gesture/`:
 `RESET_CONTROL.wav`, `RESET_GESTURE.wav`, and two byte-identical blind
-copies `RESET_BLIND_1.wav`/`RESET_BLIND_2.wav`. The assignment is sealed
-privately in `RESET_BLIND_MANIFEST.json`; **do not disclose it before the
-human verdict**. `RESET_RESPONSE_TEMPLATE.txt` provides the requested
+copies `RESET_BLIND_1.wav`/`RESET_BLIND_2.wav`. The assignment was sealed
+privately in `RESET_BLIND_MANIFEST.json` until the human verdict, now
+received and disclosed above. `RESET_RESPONSE_TEMPLATE.txt` provides the requested
 listening questions. The optional tail version was deliberately omitted
 to isolate the clean stop/restart gesture.
 
@@ -41,7 +84,8 @@ printing the mapping. Validation evidence is private in
 `RESET_GESTURE_VALIDATION.json`. No production code, reference WAV, model,
 template, renderer, or context gate changed; no target audio, FX tail,
 Pilot 5, or fifth archetype. No full application regression is needed
-for this private render. **Stop for blind human listening.**
+for this private render. This historical checkpoint is superseded by the
+failed human listening result above.
 
 ## PRIVATE RICHER-F BLIND FAILURE — DIAGNOSED; PRODUCTION FROZEN
 
