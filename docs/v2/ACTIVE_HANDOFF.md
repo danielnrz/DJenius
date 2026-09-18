@@ -1,6 +1,47 @@
 # DJenius V2 Active Handoff
 
-## SOURCE-ONLY RHYTHMIC REFRAME — AWAITING BLIND HUMAN LISTENING
+## RENDERER / REAL-DJ CAPABILITY AUDIT — SOURCE-ONLY R&D STOPPED
+
+2026-09-18. The user returned the reframe blind labels. Both clips were
+`LIKE`, but neither was heard as DJ work or as a different performance state;
+no preference. The private mapping is now unsealed: `REFRAME_BLIND_1` was the
+rhythmic-reframe performance and `REFRAME_BLIND_2` untouched control. The
+performance was called too subtle, control ordinary playback. The gate
+**FAILED**. Do not create another source-only gesture/variant, promote this
+reframe, modify frozen F/C3/B8/D2, or start Pilot 5.
+
+The requested read-only audit traced legacy/typed-recipe DSP, the frozen
+reference-template renderer, experimental scripts, cached stems, and the six
+human-LIKED DJREF finished-audio timelines. Private outputs under
+`/tmp/djenius_reference_dj_transition/renderer_capability_audit/` include
+all ten requested JSON files plus a read-only measurement script/result.
+Public-safe report: `docs/v2/RENDERER_DJ_CAPABILITY_AUDIT.md`.
+The reframe's repeated same-source drum phrase had `.9306` correlation with
+the natural drum envelope; the source vocal continued untouched, bass and
+other retained `.30/.25`, and the held state was only about `2.1–2.6 dB`
+quieter in two-second blocks despite a loop layer `2.23 dB` below the
+performed mix. Waveform difference therefore did not create perceptually
+distinct ownership. DJREF finished masters show more consequential
+full/sparse/pulsed/layered states, but exact DJ controls are unverified
+without aligned originals.
+
+The renderer can already make convincing fixed two-deck stem/loop/tail
+handoffs in F/C3/B8/D2. The demonstrated limitation is **not** an inability
+to subtract a stem: it is the absence of a reusable independent foreground
+rhythm/layer ownership executor outside bespoke templates, compounded in
+the private experiment by replaying almost the same rhythm. The top future
+primitive recommendation is a beat-addressed distinct rhythm-replacement
+lane with explicit source-drum/bass clearance and independent timing,
+gain/filter/release. This is a recommendation only, not an implementation
+authorization. Synthetic deterministic DSP/ownership proof should precede
+any separately authorized song-to-song human A/B. No new audio or production
+change occurred during this audit; full application regression is not
+indicated. Private JSON syntax, the original reframe WAV hashes, and all
+four manual plus four automated accepted-reference hashes were reverified;
+tracked changes are only this handoff and the public-safe report. **Stop for
+user review.**
+
+## SOURCE-ONLY RHYTHMIC REFRAME — HISTORICAL PRE-VERDICT CHECKPOINT
 
 2026-09-17. The user returned the stop/restart blind labels: neither file
 was perceived as DJ work or an intentional action, both rated OK, no
@@ -19,8 +60,8 @@ reconstruction is 25.3 dB below the source in error. Private outputs under
 `/tmp/djenius_reference_dj_transition/rhythmic_reframe_proof/` are
 `REFRAME_CONTROL.wav`, `REFRAME_PERFORMANCE.wav`, and exactly two blind
 copies `REFRAME_BLIND_1.wav`/`REFRAME_BLIND_2.wav`. Their deterministic
-assignment is sealed in `REFRAME_BLIND_MANIFEST.json`; **do not reveal
-before the human verdict**. `REFRAME_RESPONSE_TEMPLATE.txt` contains the
+assignment was sealed in `REFRAME_BLIND_MANIFEST.json` until the human
+verdict, now disclosed above. `REFRAME_RESPONSE_TEMPLATE.txt` contains the
 listening questions; `REFRAME_VALIDATION.json` and
 `REFRAME_STAGE_ANALYSIS.json` contain private cue/level evidence.
 
@@ -41,7 +82,8 @@ verify-only pass re-rendered all four WAV payloads byte-for-byte,
 re-decoded them, and verified sealed blind hashes without printing the
 assignment. Human listening, not these signal checks, decides whether
 the performance is DJ-like. No application regression was run because
-production code was not changed. **Stop for the blind verdict.**
+production code was not changed. This historical checkpoint is superseded by
+the failed human verdict above.
 
 ## SOURCE-ONLY FOREGROUND STOP/RESTART PROOF — HISTORICAL PRE-VERDICT CHECKPOINT
 
