@@ -1,5 +1,47 @@
 # DJenius V2 Active Handoff
 
+## OWNERSHIP STATE-CONTRAST A/B — AWAITING BLIND HUMAN LISTENING
+
+2026-09-18. The user authorized one private, two-condition A/B that changes
+only the retained source `other`/harmonic-stem attenuation depth in the
+existing phase-corrected ownership performance. Listening files are
+`/tmp/djenius_reference_dj_transition/rhythmic_ownership_contrast_ab/`
+`OWNERSHIP_CONTRAST_BLIND_1.wav` and `OWNERSHIP_CONTRAST_BLIND_2.wav`.
+Their deterministic mapping is sealed in
+`OWNERSHIP_CONTRAST_BLIND_MANIFEST.json`; **do not reveal it before the
+human verdict**. The directory also contains `OWNERSHIP_CONTRAST_ANALYSIS.json`
+and `OWNERSHIP_CONTRAST_RESPONSE_TEMPLATE.txt`. There are only two new WAVs;
+condition names are held in the private mapping, not separate unblinded
+audio copies.
+
+The baseline is byte-identical to the earlier human-preferred
+phase-corrected ownership WAV. Prior cached-stem evidence shows `other`
+is `6.7065 dB` above the donor in the held `170–2800 Hz` band. The
+experimental attenuation is the **minimum analytic cut to parity**:
+held `other` gain `0.4620` (`-6.7065 dB`), applied through the *same*
+existing entry/held/release envelope. Vocal gain stays unity; donor
+recording, phase, gain, spectrum and groove, source drum/bass controls,
+timing, mastering transfer, length, and payoff do not change. Cached
+stem reconstruction error is about `25.3 dB` below the master, but this
+does **not** certify zero vocal bleed in the `other` estimate; source
+recognizability remains a human gate.
+
+In the held state, the donor-to-retained-`other` midrange gap changes
+from `-6.71 dB` to approximately `0 dB`. The vocal-to-donor midrange
+relationship is unchanged. Finished-mix held RMS changes from `-1.67`
+to `-3.06 dB` versus untouched source. Full-clip integrated loudness
+changes `-0.405 LU`, with `-1.531 LU` in the owned state; no compensating
+mastering was applied because sparsity is the tested variable. There is
+no clipping, no unsafe boundary jump, and audio outside the existing
+lane—including the payoff—is sample-identical. A verify-only rerender
+matched both blind PCM24 WAVs byte-for-byte; two private synthetic
+routing tests passed. These measurements establish a controlled
+structural contrast, **not** that it sounds like good DJ work.
+
+**Stop for blind human listening.** No production archetype, ownership
+lane, context rule, fifth archetype, target-song transition, or Pilot 5
+was changed. Do not make attenuation variants after this gate.
+
 ## OWNERSHIP TEXTURE A/B FAILED — STRUCTURAL SALIENCE IS THE BOTTLENECK
 
 2026-09-18. After the user's blind verdict, the sealed hashes were checked:
