@@ -1,5 +1,42 @@
 # DJenius V2 Active Handoff
 
+## OWNERSHIP DONOR TEXTURE-ONLY A/B — AWAITING BLIND HUMAN LISTENING
+
+2026-09-18. The user authorized one private, two-condition blind A/B of the
+phase-corrected rhythmic-ownership proof. The two listening WAVs and sealed
+mapping are under
+`/tmp/djenius_reference_dj_transition/rhythmic_ownership_texture_ab/`:
+`OWNERSHIP_TEXTURE_BLIND_1.wav`, `OWNERSHIP_TEXTURE_BLIND_2.wav`,
+`OWNERSHIP_TEXTURE_BLIND_MANIFEST.json`, plus
+`OWNERSHIP_TEXTURE_RESPONSE_TEMPLATE.txt`. **Do not reveal the mapping
+before the human verdict.** `OWNERSHIP_TEXTURE_ANALYSIS.json` contains the
+private objective audit.
+
+The baseline is byte-identical to the previous human-preferred
+phase-corrected ownership render. The only intervention is a fixed
+zero-phase, smooth +3 dB shelf on the *same donor* above 2 kHz, with
+unity below 500 Hz. This was selected before rendering as a conservative
+fraction of the measured ~9.7 dB upper-percussion deficit; it does not
+try to clone source drums. Source/donor recordings, phase (`10,592`
+sample advance), time-fit, stem routing, drum/bass attenuation, gain
+envelopes, mastering transfer, length, and payoff are unchanged. The
+two results are sample-identical outside the donor lane, and their raw
+difference is accounted for by the donor shelf alone.
+
+Measured donor 1–4 kHz and 4–10 kHz energy rose `2.75/3.00 dB`; donor and
+finished-mix <250 Hz levels moved by less than `0.000001 dB`. Full/held
+loudness changed only `+0.017/+0.049 LU`, with no clipping or unsafe
+boundary jump. Kick-like and snare-like 16th-grid accent phase remained
+essentially unchanged. These checks rule out a gross level, low-end, or
+phase confound; **they do not establish a perceptual improvement**. Two
+synthetic DSP tests passed; a verify-only rerender reproduced both blind
+PCM24 WAVs byte-for-byte. Accepted reference audio remains frozen.
+
+**Stop for human A/B listening.** No production F/C3/B8/D2 change,
+ownership-lane promotion, context change, fifth archetype, target-song
+render, or Pilot 5. If the treated version does not win on integration
+and reduced amateur impression, do not generate more EQ variants.
+
 ## OWNERSHIP PHASE A/B HUMAN VERDICT — IMPROVED, NOT PRODUCTION-READY
 
 2026-09-18. After receiving the blind verdict, the sealed mapping and WAV
