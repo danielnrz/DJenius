@@ -1,5 +1,37 @@
 # DJenius V2 Active Handoff
 
+## RHYTHMIC OWNERSHIP PHASE-ONLY A/B — AWAITING BLIND HUMAN LISTENING
+
+2026-09-18. The user authorized a single controlled A/B to test the measured
+donor-rhythm accent-phase error in the human-audible but amateur-sounding
+ownership transfer. Private artifacts are in
+`/tmp/djenius_reference_dj_transition/rhythmic_ownership_phase_ab/`.
+Only `OWNERSHIP_PHASE_BLIND_1.wav` and `OWNERSHIP_PHASE_BLIND_2.wav` are
+listening files. Their deterministic condition mapping is sealed in
+`OWNERSHIP_PHASE_BLIND_MANIFEST.json`; **do not reveal it before the human
+verdict**. The response form is `OWNERSHIP_PHASE_RESPONSE_TEMPLATE.txt`.
+
+The correction was fixed *before rendering* from prior low- and mid-band
+accent measurements: advance the existing independent drum signal by two
+16th notes (`10,592` samples, `0.240181` s, half a beat). No donor tempo/stretch,
+source interval, stem routing, gain, ownership timing/envelopes, mastering,
+or payoff changed. The current-phase control is byte-identical to the
+previous human-heard `OWNERSHIP_C.wav`; outside the donor-lane window the two
+new renders are sample-identical. Low-band accent correlation changes from
+`-.943` to `+.940`, mid-band from `-.430` to `+.937`, and broadband onset
+correlation from `.016` to `.444`. These are alignment checks, **not** a
+listening success claim. Both versions are unclipped and pass the same
+sample-discontinuity audit. The private `OWNERSHIP_PHASE_ANALYSIS.json` records
+the waveform/control proof and measurement limits.
+
+Two synthetic phase-routing tests passed. A verify-only rerender reproduced
+both blind PCM24 WAVs byte-for-byte without disclosing the mapping. No
+production code, F/C3/B8/D2 choreography, context gate, or accepted audio
+changed, so no full application regression is warranted. **Stop now for
+human listening.** If corrected phase improves correlation but still sounds
+amateur, do not keep making phase variants; move to the documented secondary
+cause in a later, separately scoped task. Pilot 5 remains paused.
+
 ## RHYTHMIC OWNERSHIP BLIND REVEAL — DISTINCT DJ STATE, QUALITY GATE FAILED
 
 2026-09-18. The user returned all three blind labels. The sealed hashes and
