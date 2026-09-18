@@ -1,5 +1,42 @@
 # DJenius V2 Active Handoff
 
+## OWNERSHIP PHASE A/B HUMAN VERDICT — IMPROVED, NOT PRODUCTION-READY
+
+2026-09-18. After receiving the blind verdict, the sealed mapping and WAV
+SHA-256 hashes were verified: `OWNERSHIP_PHASE_BLIND_1` was
+**PHASE_CORRECTED** and `OWNERSHIP_PHASE_BLIND_2` was **CURRENT_PHASE**
+(byte-identical to the prior `OWNERSHIP_C.wav`). The human chose corrected
+phase for overall preference, professionalism, and DJ-likeness; perceived
+intentional rhythm control was `YES` versus `SOMEWHAT`. Both files were
+`LIKE` and groove-coherent, but DJ work and amateur quality were still
+`SOMEWHAT`. The corrected condition's new-musical-state rating was
+`SOMEWHAT` versus `YES` for current phase. This supports a real
+within-pair phase improvement, **not** an experienced-DJ-quality pass or
+an instruction to maximize groove correlation.
+
+Five private follow-up JSON reports are under
+`/tmp/djenius_reference_dj_transition/rhythmic_ownership_phase_followup/`.
+Low/mid 16th-grid accent correlation moved from `-.943/-.430` to
+`+.940/+.937`; broadband onset correlation moved from `.016` to `.444`.
+The donor remains a distinct track's drum stem, and the corrected finished
+mix is rhythmically different from untouched source. No clipping or abrupt
+entry/exit was found. The strongest *measured but unproven* remaining
+material-quality candidate is donor upper-percussion/transient texture:
+about `9.7 dB` less >1 kHz energy than the original drum stem. Entry and
+payoff phrase alignment is uncertain; the final payoff is unchanged source
+playback. None of those residual issues was isolated by this phase-only
+human comparison.
+
+For future experimental ownership work, provisionally require
+**musically salient accent-phase compatibility**, preserving independent
+rhythmic identity and verifying quality by human listening. This is not a
+production numerical gate. The next recommended *single* test variable,
+if separately authorized, is the same donor's upper-percussion/transient
+spectral balance while holding corrected phase, source/donor material,
+routing, levels, envelopes, duration, and payoff fixed. Do not render it
+now. No new audio or production changes were made in this follow-up; the
+ownership lane remains private. Pilot 5 remains paused.
+
 ## RHYTHMIC OWNERSHIP PHASE-ONLY A/B — AWAITING BLIND HUMAN LISTENING
 
 2026-09-18. The user authorized a single controlled A/B to test the measured
