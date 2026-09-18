@@ -1,5 +1,54 @@
 # DJenius V2 Active Handoff
 
+## RHYTHMIC OWNERSHIP BLIND REVEAL — DISTINCT DJ STATE, QUALITY GATE FAILED
+
+2026-09-18. The user returned all three blind labels. The sealed hashes and
+byte-identical blind copies were checked before mapping them to conditions:
+`OWNERSHIP_BLIND_1` was **ADDITIVE**, `OWNERSHIP_BLIND_2` was **CONTROL**,
+and `OWNERSHIP_BLIND_3` was **OWNERSHIP_TRANSFER**. The human rated all three
+`LIKE`, but heard no DJ work or new state in additive/control. Only ownership
+transfer was heard as DJ work and a new musical state; active rhythm control
+was `SOMEWHAT`. It was the most DJ-like file, yet felt like an **amateur edit**
+and was not preferred. Thus the foreground-ownership perceptibility threshold
+passed, while the experienced-DJ/quality gate did **not**. Do not promote the
+lane or change production choreography.
+
+Seven private requested JSON reports plus reproducible read-only measurement
+scripts are under
+`/tmp/djenius_reference_dj_transition/rhythmic_ownership_followup/`.
+The strongest measurable quality concern is rhythm **accent phase**, not
+clicking or an abrupt gain mute. Source and independent low-band 16th-grid
+patterns correlate `-.943` at their rendered phase, but about `+.947` with
+an approximately two-16th-slot (half-beat) offset; corresponding mid-band
+patterns change from `-.430` to `+.936`. This offset recurs through the
+two-bar preparation, all four ownership bars, and the one-bar release. The
+private donor search had checked tempo, level/steadiness and distinctness,
+but not *accent-phase compatibility*. A downbeat/tempo match was therefore
+insufficient for an integrated groove.
+
+The central state genuinely clears source drums/bass by roughly `34/26 dB`
+and retains vocal/harmonic source identity; its replacement is audible. But
+the independent rhythm has about `9.7 dB` less >1 kHz transient energy than
+the original source drum stem. The held full-mix level changes only about
+`1.0–2.4 dB` from untouched playback across the four bars. Source vocals
+remain active but uncut; lyric/syllable conflict is unproven. Entry and exit
+gain envelopes are gradual and sample-click-safe; the return becomes
+sample-identical original playback. The source section's internal four-bar
+phrase phase is not certified, so entry/payoff phrase mismatch remains a
+secondary uncertainty, not a diagnosed fact. Finished DJREF_04/05/06 audio
+has more consequential staged thinning/pulsing/layering, but their exact
+stems and controls are unknown; do not infer those details.
+
+The **single recommended next variable**, if separately authorized, is the
+independent lane's transient/accent phase relative to the source groove
+(approximately an eighth-note correction), holding the same source, donor
+rhythm, cue interval, envelopes, levels, mastering, and duration fixed. This
+is a strong measured hypothesis, **not** proof of the human's subjective
+cause or permission to render another version now. No new WAV, production
+code, archetype, context rule, or Pilot 5 was created during this follow-up.
+The existing handoff section below describes the pre-verdict experiment and
+is retained as history.
+
 ## PRIVATE RHYTHMIC OWNERSHIP LANE PROOF — AWAITING BLIND HUMAN LISTENING
 
 2026-09-18. The user explicitly authorized one source-only, three-way blind
