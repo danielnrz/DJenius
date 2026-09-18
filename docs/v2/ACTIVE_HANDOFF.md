@@ -1,5 +1,44 @@
 # DJenius V2 Active Handoff
 
+## OWNERSHIP TEXTURE A/B FAILED — STRUCTURAL SALIENCE IS THE BOTTLENECK
+
+2026-09-18. After the user's blind verdict, the sealed hashes were checked:
+`OWNERSHIP_TEXTURE_BLIND_1` was **TRANSIENT_TEXTURE_CORRECTED** and
+`OWNERSHIP_TEXTURE_BLIND_2` was the **PHASE_CORRECTED_BASELINE**, byte-identical
+to the previous human-preferred phase render. The human noticed no specific
+DJ action in either, heard both as essentially ordinary music, and found
+no meaningful difference. The +3 dB donor upper-band treatment therefore
+failed the perceptual test. **No more EQ/transient/brightness variants.**
+The earlier ownership and phase blind preferences remain valid as local
+comparisons, but this repeat result shows the gesture is not robustly
+salient; do not blame the listener or promote it to production.
+
+Seven private requested reports are in
+`/tmp/djenius_reference_dj_transition/ownership_salience_followup/`.
+On the exact phase-corrected render, the two-bar preparation differs from
+untouched source by only `-0.67 dB` overall, with unchanged upper-transient
+rate; the four-bar/`7.69 s` held state differs by `-1.67 dB` overall and
+`-0.78 dB` in the main midrange; the release differs by `-0.57 dB`; then
+`7.69 s` of payoff is sample-identical to normal playback. The drum/bass
+transfer is real: source rhythm is roughly `34/26 dB` attenuated and the
+donor owns the low band. But retained vocal plus harmonic/other source
+material exceeds the donor by about `11 dB` across `170–2800 Hz`, so the
+central arrangement can still read as an ordinary song variation. This is
+a measured explanation for weak salience, **not** proof of the human's
+moment-by-moment perception. Liked DJREF_03/05/06 show clearer sparse or
+reset states in finished masters; their unknown stems/controls cannot be
+assumed or copied.
+
+The selected *next structural variable*, only if later authorized, is
+**OWNERSHIP_STATE_CONTRAST**: vary attenuation depth of the retained source
+`other`/harmonic-bed stem through the existing ownership envelope while
+holding the vocal, donor, phase, timing, source drum/bass controls,
+mastering, and payoff fixed. This tests whether a more legible sparse
+vocal-plus-independent-rhythm state is what is missing. Entry cue and
+unchanged payoff remain secondary contributors; phrase boundaries are not
+certified. No new audio, production code, F/C3/B8/D2 change, context gate,
+fifth archetype, or Pilot 5 was made in this follow-up. **Stop here.**
+
 ## OWNERSHIP DONOR TEXTURE-ONLY A/B — AWAITING BLIND HUMAN LISTENING
 
 2026-09-18. The user authorized one private, two-condition blind A/B of the
