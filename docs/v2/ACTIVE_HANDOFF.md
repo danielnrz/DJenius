@@ -1,5 +1,58 @@
 # DJenius V2 Active Handoff
 
+## PRIVATE RHYTHMIC OWNERSHIP LANE PROOF — AWAITING BLIND HUMAN LISTENING
+
+2026-09-18. The user explicitly authorized one source-only, three-way blind
+rhythmic-ownership experiment after the renderer-capability audit. This
+supersedes that audit's earlier prohibition on *further source-only renders*
+for this one controlled proof only. Pilot 5, context gates, production
+F/C3/B8/D2, the renderer, and the fifth-archetype decision remain frozen.
+At session start, local and fetched origin HEAD matched `99a97cc`; the only
+pre-existing untracked path was `.claude/`, untouched. No production code or
+accepted reference audio was modified.
+
+The private experiment and test-only reusable `IndependentRhythmLane` module
+are under `/tmp/djenius_reference_dj_transition/rhythmic_ownership_proof/`.
+One anonymous normal-library source uses a stable 16-bar, 30.720 s chorus
+window with beatgrid confidence `.981`, prominent source identity, and cached
+four-stem reconstruction error 25.30 dB below the full master. A distinct
+normal-library drum stem (not `fromDJ`) uses a compatible 7-bar excerpt,
+time-fit by only about 0.69%. Its held rhythmic envelope correlates `-.327`
+with the original source drums, unlike the failed same-source repeat.
+
+`OWNERSHIP_A.wav` is untouched source. `OWNERSHIP_B.wav` adds that independent
+rhythm while source drums/bass stay intact. `OWNERSHIP_C.wav` uses the **exact
+same external rhythmic material, gain, and timing** as B, but clears source
+drums/bass over two bars, holds independent rhythmic ownership for four
+bars (7.686 s), then restores the original rhythm over one bar before four
+bars of normal payoff. All versions share the same 16-bar source interval,
+downbeat clock, length, mastering transfer, and PCM format. No target song,
+fromDJ waveform, echo, riser, slowdown, or creative extra effect was used.
+
+In C's held state, the source drum/bass stem contributions are reduced
+`33.98/26.02 dB`; the independent lane sits `4.86 dB` below the transformed
+mix. The retained vocal+harmonic identity is `1.98 dB` below that mix. The
+source-to-independent drum-envelope correlation is `-.327`; the A-to-C
+mixed rhythmic-envelope correlation is `.199`. These are objective routing
+and perceptibility checks, **not** proof that the human will hear skilled DJ
+performance. Integrated loudness A/B/C is `-14.000/-13.800/-14.455 LUFS`
+under one fixed gain/soft-clip transfer; all are finite and unclipped. Bar
+boundary sample jumps are below ordinary global p99.9 transient deltas.
+
+Exactly three deterministic blind copies, `OWNERSHIP_BLIND_1.wav` through
+`OWNERSHIP_BLIND_3.wav`, and `OWNERSHIP_RESPONSE_TEMPLATE.txt` are ready. The
+private mapping is sealed in `OWNERSHIP_BLIND_MANIFEST.json`; **do not reveal
+it before the human verdict**. `OWNERSHIP_STATE_ANALYSIS.json` contains all
+private provenance and stage evidence. Five synthetic private lane tests
+passed; a verify-only rerender reproduced all six PCM24 WAV payloads
+byte-for-byte and checked the sealed mapping without printing it. No full
+application regression is warranted because production code did not change.
+
+**Next action:** stop for the user's blind A/B/C listening response. If C is
+not clearly more DJ-like than control and additive overlay, do not make more
+rhythm-lane variants; reassess capability gaps as requested. No Pilot 5 or
+song-to-song transition is authorized by this checkpoint.
+
 ## RENDERER / REAL-DJ CAPABILITY AUDIT — SOURCE-ONLY R&D STOPPED
 
 2026-09-18. The user returned the reframe blind labels. Both clips were
