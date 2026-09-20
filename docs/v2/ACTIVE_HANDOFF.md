@@ -1,6 +1,81 @@
 # DJenius V2 Active Handoff
 
-## KICK-GATE VALIDATION A/B — AWAITING BLIND HUMAN LISTENING
+## 4/4 KICK GATE IS NOT NECESSARY — T5 → T9 D2 INTEGRATION IS EXECUTABLE
+
+2026-09-20. The sealed kick-gate mapping was revealed after the human verdict
+and both hashes matched. `KICK_GATE_BLIND_1` was the **CONTROL**;
+`KICK_GATE_BLIND_2` was **THREE_OF_FOUR_OWNERSHIP**. The human reported both
+versions sounded good, both sounded rhythmically correct, no obvious groove
+conflict, and **preferred BLIND 2** — the 3/4 ownership render. This is
+**CASE A**.
+
+**The gate question is answered: NO, a mild downbeat-preserving 3/4 kick-slot
+donor does not create an audible rhythmic conflict.** Exact `4/4` overlap must
+therefore no longer be interpreted as a universal *necessary* condition for
+groove correctness. The correct framing is that **`4/4` is a strong sufficient
+condition, and mild downbeat-preserving `3/4` can also be musically valid.**
+This is explicitly **not** a finding that any 3/4 donor is acceptable, nor that
+the 3/4 donor is superior.
+
+The demonstrated exception is narrow and specific: `3/4` kick overlap with the
+**downbeat slot retained**; the one missing accent displaced by a single
+sixteenth (`120.82 ms`) onto a structurally strong beat; full `4/4` snare
+overlap; `0.3%` tempo fit; kick/snare accent correlations `0.792`/`0.839`; a
+donor drum stem `87%` low band with `1.62 dB` bar-level steadiness.
+
+**The pre-registered confound did not materialise.** The donor was less distinct
+than the validated one, so an indistinguishable verdict would not have
+vindicated anything. Instead the human *preferred* the ownership condition over
+untouched playback, so the conditions were distinguishable and the null reading
+is excluded.
+
+**One gap is flagged rather than glossed.** The verdict came as a summary rather
+than field by field, so there is no explicit *DJ work audible* or *new musical
+state* answer for the ownership condition on this source. What is established is
+that it sounded good, sounded rhythmically correct, and was preferred over
+ordinary playback. What is not established is whether the human consciously
+registered it as DJ work on `T5`. That does not block the integration test,
+whose question is whether ownership improves a real transition, but the
+source-only DJ-salience claim should not be asserted for this source.
+
+An **experimental** donor rule is now recorded: a donor MAY pass with `3/4` kick
+overlap when it is downbeat-preserving, the missing accent's displacement is
+small and lands on a structurally strong position, snare compatibility stays
+strong, tempo fit is acceptable, continuous accent compatibility is acceptable,
+the donor stays sufficiently distinct, and no groove conflict is expected.
+**Production code is unchanged** — the validated build still asserts `4/4` kick
+and `4/4` snare. This is evidence for a later authorized redesign, not
+permission for a broad production change or a donor sweep.
+
+**The sole blocker on `T5 -> T9` is therefore cleared and the integration A/B is
+executable.** Critically, the donor was validated at **precisely the window the
+integration will use** — entry `58`, owned `60`, release `64`, exit `65` — so the
+validation transfers without relocation, which is exactly what failed on the
+previous pair.
+
+The pre-registered A/B, unchanged: **CONTROL** is the existing frozen
+human-supported `T5 -> T9` D2 transition; **EXPERIMENT** is the same window with
+the ownership performance at source bars `58–65`, then one complete untouched
+source phrase at bars `65–69`, then the **exact frozen D2** from bar `69`, then
+identical target landing and continuation. Only the presence of the earlier
+ownership performance differs. Source interval, transition cue, target cue, time
+map, stems, gain, bass arrival, landing, establishment, post-landing playback,
+mastering and total duration all stay frozen, and the frozen transition audio is
+reused byte-for-byte so the target side cannot differ.
+
+Three residual risks are recorded before any render: source-only DJ-salience on
+`T5` was not itemised, so the gesture may prove perceptible but unhelpful; D2 is
+itself an ownership-style blend, so ownership before it could still read as two
+related gestures; and one pair with one listener would support ownership as a
+**pre-transition performance primitive**, not as a transition archetype.
+
+Five private reports are under
+`/tmp/djenius_reference_dj_transition/kick_gate_ab/`. **No audio was rendered in
+this task and no D2 integration was built.** No production donor rule,
+F/C3/B8/D2, renderer, context gate, ownership internals, fifth archetype, or
+Pilot 5 changed, no further donor was searched, and no library was expanded.
+
+## KICK-GATE VALIDATION A/B — HISTORICAL EXPERIMENT (REVEALED)
 
 2026-09-20. The authorized gate-validation experiment is under
 `/tmp/djenius_reference_dj_transition/kick_gate_ab/`. Listen only to
