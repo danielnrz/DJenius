@@ -1,6 +1,99 @@
 # DJenius V2 Active Handoff
 
-## T5 → T9 D2 OWNERSHIP INTEGRATION A/B — AWAITING BLIND HUMAN LISTENING
+## GENERALIZATION BATCH — TWO PAIRS AWAITING BLIND HUMAN LISTENING
+
+2026-09-20. **Working protocol changed to autonomous R&D.** The agent now
+carries research, candidate selection, rendering, validation, documentation and
+Git forward without per-step approval, and stops only when human ears are the
+next required resource.
+
+**First positive real-transition integration.** The sealed `T5 → T9` D2 mapping
+was revealed and both hashes matched: `BLIND_1` was `D2_CONTROL`, `BLIND_2` was
+`OWNERSHIP_BREATHE_D2` — the condition the human preferred on **every**
+comparative axis (preferred, more professional, more DJ-like, better
+choreography, better complete performance). **PERFORM → BREATHE → RESTRAINED
+TRANSITION → LAND** outperformed plain D2 on this pair, and ownership did not
+damage the handoff (both rated the transition `OK`).
+
+Two details matter more than the win itself. The breathing phrase was rated
+**NATURAL** with ownership present and **POINTLESS** without it — the same
+untouched bars only acquire purpose once a gesture precedes them. And this is a
+**comparative win, not a professional quality pass**: the winner was only
+`SOMEWHAT` DJ-like and still described as an amateur edit, with nothing standing
+out in the control. The D2 transition itself scored only `OK` in **both**
+conditions, so the shared ceiling is the transition's own quality rather than
+the ownership gesture. The choreography principle is frozen as
+**PRE-TRANSITION PERFORMANCE ROLE — PROVISIONALLY VALIDATED**, not a transition
+archetype. `T5 → T9` will not be tuned further.
+
+**The generalization batch is rendered and sealed** under
+`/tmp/djenius_reference_dj_transition/generalization_batch/`. Listen to
+`PAIR_A_BLIND_1/2.wav` and `PAIR_B_BLIND_1/2.wav` with the two response
+templates in that directory. Mappings are sealed per pair and must not be
+revealed before the verdicts.
+
+**Candidate search was exhaustive and mostly negative, which shapes the design.**
+All nine human-positive transition contexts with usable archetypes were
+evaluated at both 4-bar and 8-bar phrase lengths. Six were rejected outright:
+three sources have no clean ownership window at any phrase length (silent or
+near-silent drums and bass, a musical one-bar drum break, vocal gaps, or a
+section boundary inside the window), and one has a clean window but only `5` of
+`145` library tracks are tempo-eligible at its tempo with none passing. The
+library therefore yields **exactly one** clean ownership-capable source window
+that also has a passing donor.
+
+That window feeds **two different targets through two different frozen
+transition families**, so the batch tests generalization across **transition
+family and target** while holding the source-side gesture constant. It does not
+test generalization across sources; combined with the earlier preferred result
+on a different source, the accumulated evidence spans **two sources and three
+transition instances**. `PAIR_A` is a `C3` stem-echo handoff whose frozen manual
+reference has an automated twin reproducing every cue within `30 ms`; `PAIR_B`
+is a `D2` restrained blend whose render carries a human `BORDERLINE_PASS`. `B8`
+was excluded — the failed ownership+B8 evidence stands.
+
+The donor selected for this window is **full `4/4` on both kick and snare**
+(source and donor strong slots identical), so **this batch does not depend on
+the experimental 3/4 relaxation at all** and cannot be confounded by it. Kick
+and snare accent correlations are `0.794` and `0.594` at `3.5%` stretch with
+`1.23 dB` bar-level steadiness.
+
+Both pairs share the frozen ownership core — lane bars entry `77`, owned `79`,
+release `83`, exit `84`, drum keep `0.02`, bass keep `0.05`, none of the five
+rejected refinements — and a `4`-bar untouched recovery phrase with a donor
+residual peak of **exactly `0.0`**, sample-identical to untouched source before
+mastering. Both joins are **pure butt joins** with no crossfade. Within each
+pair the establishment, the recovery phrase, the transition and the entire
+target side are bit-identical; only the ownership lane differs. Source-side
+manipulation is `20.0%` and `18.0%` of the window, against `46%` in the failed
+B8 integration.
+
+One mastering decision is recorded rather than buried. At the loudness-matched
+gain the donor's transients pushed the ownership lead `1.85 dB` into soft clip
+while the control never reached the threshold, which would have applied limiting
+to one condition only. The shared gain is therefore the quieter of the
+target-loudness gain and the gain at which the louder condition still avoids the
+threshold, applied identically to both, and the renderer asserts that soft clip
+never engages. This also *improved* join continuity, reducing the level step at
+the transition from `-0.94`/`-1.42 dB` to `+0.90`/`+0.43 dB`. Integrated
+loudness differs by `+0.053` and `+0.047 LU`, far below audibility, and neither
+condition clips.
+
+Eighteen private tests pass and verify-only regeneration reproduced all four
+blind WAVs byte-for-byte. Blind files are byte-identical in size within each
+pair and no unblinded render exists.
+
+**Stop for blind human listening on both pairs.** If ownership wins both, the
+pre-transition role generalizes across transition family and target. If it wins
+neither, the `T5 → T9` result is context-specific. A split result localises the
+effect to a transition family. Per the standing quality target, note that a
+comparative win is still not a professional pass: `SOMEWHAT DJ-like` and
+`amateur edit` mean progress with work remaining.
+
+No production donor gate, F/C3/B8/D2, renderer, context rule, ownership
+internals, fifth archetype, or Pilot 5 changed, and no fromDJ material was used.
+
+## T5 → T9 D2 OWNERSHIP INTEGRATION A/B — HISTORICAL (REVEALED)
 
 2026-09-20. The pre-registered integration A/B is under
 `/tmp/djenius_reference_dj_transition/t5_t9_d2_ab/`. Listen only to
