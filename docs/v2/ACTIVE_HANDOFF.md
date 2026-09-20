@@ -1,6 +1,85 @@
 # DJenius V2 Active Handoff
 
-## HELD-STATE DENSITY A/B — AWAITING BLIND HUMAN LISTENING
+## DENSITY RAMP REJECTED — PAYOFF/RETURN IS THE NEXT VARIABLE
+
+2026-09-20. The resealed density mapping was revealed after the human verdict
+and both SHA-256 values matched. `OWNERSHIP_DENSITY_BLIND_1` was
+**DEVELOPED_DONOR_DENSITY**; `OWNERSHIP_DENSITY_BLIND_2` was the
+**FROZEN_DISTINCT_DONOR_BASELINE** (`8a8a8155…`, the accepted render). The
+human found **no meaningful perceptual difference**, so
+`HELD_STATE_DONOR_DENSITY_RAMP` **fails the human gate** under the
+not-perceptually-distinguishable clause. Close it: no larger ramp, no second
+schedule, no added percussion, no louder version, no variant 2/3/4.
+
+A `+60%` increase in audible high-band percussion events per held bar
+(`15/22/16/17` → `15/22/23/24`) and a reversal of the spectral-flux decay
+(`-9%` → `+13%`), delivered for `+0.134 dB` held RMS and `+0.064 LU`, produced
+no detectable perceptual change. **Measured within-state density is not a
+driver of perceived DJ quality at this magnitude.** Two consecutive
+within-ownership-state variables have now failed (micro-timing, density).
+
+**Seal-integrity disclosure.** The earlier accidental hash display was declared
+void and the pair was resealed, but the deterministic reseal happened to land
+on the **same** association — so the leaked line was in fact still correct.
+Bias risk is judged **low but non-zero**: the human returned a null result,
+which is the outcome least likely to be manufactured by knowing the mapping.
+Going forward, never print a hash or size comparison against a known control
+while a blind is open.
+
+The complaint has changed again, from `it can be more` to **`the dance energy
+is good only for the part that the effect is added, not the complete music`**.
+That is about energy failing to survive the gesture, so the payoff/return was
+audited on the preferred render.
+
+**The handback is symmetric and self-cancelling.** In the release bar the donor
+lane envelope sits at `0.500` while source drum keep is `0.510` and bass keep
+is `0.525` — near-exact mirror images, so total energy is conserved and the
+accumulated tension is cancelled rather than released. Final owned bar to first
+returned bar delivers `+2.06 dB` broadband, `+3.69 dB` kick, `+3.42 dB` low
+band. Return bars 1–4 versus the five pre-entry bars: `+0.04 dB` RMS,
+`-0.35 dB` kick, `-0.13 dB` low band. From bar 93 the output is
+sample-identical to untouched playback. The gesture resolves to exactly the
+arrangement it interrupted. Liked reference returns are `+10.77` to
+`+25.64 dB`.
+
+**Failure mode B is ruled out on energy grounds.** Post-return bars average
+`-6.33 dBFS` against a chorus average of `-6.42`, sitting at the `65th`
+percentile of their own section; the return falls inside the chorus, not a
+breakdown. But the source is **dynamically flat** — `0.77 dB` across 33
+consecutive bars — so there is no phrase-level arrival nearby to land on and
+any payoff must be *manufactured*, not inherited. A secondary cue defect does
+exist: full restoration completes at bar 93, one bar past the 4-bar phase grid
+anchored at the chorus start (bar 80), while the release bar 92 is the aligned
+one. Because the track has almost no phrase articulation, that offset is likely
+a weak perceptual contributor here. **Diagnosis: a combination dominated by
+weak return mechanics.**
+
+Three of the four liked references end their gesture in a **new** state
+stronger than what preceded it, and in all three the currency of the arrival is
+**low-end ownership** (`DJREF_03` low-fraction change `-.857` then `+25.64 dB`;
+`DJREF_04` low fraction `.26 → .57` sustained; `DJREF_06` near-zero then
+`.70–.82` on return). `DJREF_05` has no return because the thinning is itself
+the destination. None hands back to the untouched prior arrangement; ours is
+the only structure that does.
+
+The single recommended next variable is **PAYOFF_LOW_END_ARRIVAL_SHAPE**:
+change only the shape and phase anchor of **source low-end (bass and kick)
+restoration** at the handback — replace the symmetric mid-bar crossfade with a
+single deterministic low-end arrival on the phrase-aligned bar-92 downbeat,
+leaving the donor withdrawal curve and all mid/high restoration exactly as they
+are. It targets the dominant defect, uses the currency every liked reference
+uses, and moves the largest existing contrast component onto the phrase grid
+without spending a second variable. Held bars 1–4 must stay bit-identical; one
+failed A/B ends the variable.
+
+Nine private analysis reports are under
+`/tmp/djenius_reference_dj_transition/ownership_density_followup/`.
+**No audio was rendered in this task.** No production F/C3/B8/D2, renderer,
+context gate, donor identity, donor timing, ownership state, entry, fifth
+archetype, target song, ownership promotion, or Pilot 5 changed. **Await
+explicit authorization before building the payoff A/B.**
+
+## HELD-STATE DENSITY A/B — HISTORICAL EXPERIMENT (REVEALED)
 
 2026-09-20. The authorized one-variable held-state development A/B is under
 `/tmp/djenius_reference_dj_transition/rhythmic_ownership_density_ab/`.
