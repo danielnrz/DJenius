@@ -1,6 +1,85 @@
 # DJenius V2 Active Handoff
 
-## GENERALIZATION BATCH — TWO PAIRS AWAITING BLIND HUMAN LISTENING
+## SELECTIVE-PERFORMANCE MINI-SET — AWAITING BLIND HUMAN LISTENING
+
+2026-09-20. Both generalization mappings were revealed and both seals verified.
+The human judged on one variable — *which version sounds more like actual DJing*
+— and preferred `BLIND_2` in both pairs. The mappings differed, so the result is
+a **SPLIT**: `PAIR_A` (`C3` stem-echo) → **control won, ownership lost**;
+`PAIR_B` (`D2` restrained) → **ownership won**.
+
+**The split is unusually clean causally.** `PAIR_A` and `PAIR_B` shared a
+**bit-identical source side** — same source, same gesture, same donor, same
+recovery phrase — and differed only in transition family and target. The
+transition family is therefore isolated as the cause.
+
+Across four integration tests the pattern is consistent: `D2` restrained on `T5`
+**won**, `D2` restrained on `T4` **won**, `C3` stem-echo on `T4` **lost**, `B8`
+loop-build on `T3` **lost badly**. The context-selection hypothesis: **ownership
+helps before a transition that hands over by revealing the TARGET while leaving
+the source largely intact, and hurts before a transition that is itself an
+expressive gesture performed ON the source.** `D2` sequences target stems in
+while the source keeps bass ownership for eight bars; `C3` echoes **source**
+stems; `B8` loop-shortens **source** material. Two source-side performances in a
+row compete even with a breathing phrase between them.
+
+One negative result is recorded rather than hidden: a search for an **objective
+signal discriminator** — waveform correlation and level delta between each
+transition's first `8 s` and untouched source at the same cue — was **not
+discriminative**, sitting near zero for every family. The rule currently rests
+on recorded archetype **design** facts, not a measured feature, so it cannot yet
+classify an unfamiliar family without reading its definition.
+
+**The next question is no longer whether ownership can improve one transition,
+but whether DJenius can decide WHEN to perform and when to leave the music
+alone.** The mini-set is rendered and sealed under
+`/tmp/djenius_reference_dj_transition/miniset/`. Listen to
+`MINISET_BLIND_1.wav` and `MINISET_BLIND_2.wav` with
+`MINISET_RESPONSE_TEMPLATE.txt`, which is deliberately seven questions long.
+
+Four tracks, three transitions, `5.81` minutes. Every edge reuses a frozen
+human-supported render **byte-for-byte** and three different families appear
+(`D2`, `B8`, `C3`). The two conditions are identical in track order,
+transitions, cues, landings, untouched spans, mastering and duration. They
+differ by **exactly one contiguous region**: a single `13.5 s` ownership gesture
+worth `4.0%` of the set.
+
+**Selectivity is the point.** Of three decision points the rule performed at one
+and deliberately withheld at two, each for two independent reasons: before the
+`B8` edge because that family is proven incompatible *and* the source window
+holds a musical one-bar drum break with two vocal-free bars; before the `C3`
+edge because that family just lost its gate *and* the source window is
+effectively silent. `DO_NOTHING` is encoded as a first-class action and the
+default. The set keeps `>40%` of its length as untouched playback with a longest
+unbroken run of `132.9 s`, against `46%` **manipulation** in the failed `B8`
+integration. Budget: `0.17` gestures per minute against an experimental ceiling
+of `0.5`.
+
+All six joins are pure butt joins, soft clip never engages in either condition,
+integrated loudness differs by `+0.010 LU`, and neither clips. Eleven private
+tests pass — including one asserting the conditions differ in exactly one
+contiguous region — and verify-only regeneration reproduced both files
+byte-for-byte.
+
+**A power limitation is stated up front.** The two sets are `96%` identical
+audio, so a null verdict may reflect low salience rather than a wrong decision
+rule. Only one placement in any available chain satisfies the rule, so
+selectivity is demonstrated by the two refusals rather than by several gestures.
+Mid-track ownership away from transitions remains untested and was deliberately
+not used.
+
+**Stop for blind human listening.** If the selective set wins, the next analysis
+must separate correct placement, correct restraint, ownership itself, pacing,
+and interaction with transition families — a win is not proof that DJenius is
+solved. If the baseline wins, the question becomes whether the action was
+misplaced or simply unnecessary, and the bottleneck is decision-making rather
+than DSP.
+
+No production behaviour, donor gate, F/C3/B8/D2, renderer, context rule,
+ownership internals, fifth archetype, or Pilot 5 changed; no new archetype was
+invented, no rejected experiment reopened, and no fromDJ material used.
+
+## GENERALIZATION BATCH — HISTORICAL (REVEALED)
 
 2026-09-20. **Working protocol changed to autonomous R&D.** The agent now
 carries research, candidate selection, rendering, validation, documentation and
