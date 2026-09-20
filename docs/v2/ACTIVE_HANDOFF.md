@@ -1,6 +1,74 @@
 # DJenius V2 Active Handoff
 
-## SEPARATION A/B BLOCKED — DONOR CANNOT BE RELOCATED ON THIS PAIR
+## NO CLEAN OWNERSHIP INTEGRATION CONTEXT EXISTS IN THE CURRENT LIBRARY
+
+2026-09-20. A full candidate search for a clean ownership integration context
+completed. **No audio was rendered and no candidate qualifies.** Twelve
+human-positive ordered pairs were found across the frozen 182-edge graph, the
+generalization manifest, the context-bridgeability controlled test and the
+automated reference manifest; eight had a usable archetype at their graph cues
+and were carried into a structural and ownership-window audit.
+
+**Structural families.** `A_BUILD_HEAVY` (B8 loop build) is **incompatible** —
+its human PASS rests on a stable source section, which ownership removes, and
+that is the measured cause of the failed integration. `D_RESTRAINED_OWNERSHIP_
+HANDOFF` (D2 restrained blend) is **most compatible**, since a gradual handover
+is least likely to read as a second source-side performance.
+`C_SHARED_TERRITORY_STEM_EDIT` (C3) is plausible. `B_RESET_RELEASE` (F) is
+plausible with risk, because F reduces rather than builds but is itself a large
+gesture.
+
+**The closest candidate is `T5 -> T9` with the frozen D2 reference**, and it
+fails only on donor availability. Its human evidence is `manual D2` plus
+`AUTO_D2` with `pair_transitionable` true, `human_pair_negative` null and D2
+`usable_for_performance` true; its rejections are again set-context role
+judgements. A frozen rendered artifact exists at exactly the graph cue, with an
+automated twin reproducing every cue within `30 ms`. Its ownership window is the
+best found anywhere — drums `-15.36`, bass `-23.04`, vocals `-13.35 dBFS`,
+stable across bars `54–73` with no dropouts, entirely inside one verse section
+— and its 4-bar recovery phrase measures `-15.31 / -23.34 / -13.68 dBFS`,
+indistinguishable from the surrounding material. **But no donor passes.** The
+source's kick accents occupy strong sixteenth slots `[0, 3, 7, 8]`, stable
+across every window position tested, and across **2768** donor/excerpt/phase
+combinations from 35 tempo-eligible library tracks the best kick top-slot
+overlap reached is **3 of 4**. The frozen gate requires 4 of 4.
+
+Two candidates were rejected on **source suitability**, not donors. `T7 -> T13`
+(F, `CONTEXT_NATURAL PASS`) has two donors that pass the gates, but its
+ownership window straddles a musical one-bar drum break — stem `-67.30 dBFS`,
+and the full-mix low band also drops to `-25.53` against `-18.3` typical, so it
+is not a stem artifact — and vocals are absent across two of the four owned bars
+(`-42.20` and `-54.71 dBFS`), so source identity would not be retained.
+`T2 -> T7` (D2) and `T2 -> T3` (C3) share a window that is effectively silent,
+drums `-64.16` and bass `-52.70 dBFS`, leaving nothing for clearance to clear.
+`T12 -> T9` (F, `CONTEXT_BRIDGE PASS`) has a good window but only `5` of `145`
+library tracks are tempo-eligible at `86.1` BPM and none passes.
+
+**No frozen gate was weakened to manufacture a candidate.** One tension is
+worth recording rather than acting on: applied to three new sources, the frozen
+4-of-4 kick-and-snare accent-slot gate admits zero donors for two of them and
+two for the third. That is evidence the requirement may be over-fitted to the
+original pair, but it is asserted directly in the validated build, so it was
+respected. Whether it should generalize to new sources is a question for the
+user, not a change to make unilaterally.
+
+The `T5 -> T9` A/B is **pre-registered in full but blocked**, recorded so it can
+run unchanged if a suitable donor becomes available: ownership at source bars
+`58–65`, untouched source `65–69`, then the identical frozen transition with
+source interval, transition cue, target cue, time map, stems, gain, bass
+arrival, landing, establishment, post-landing playback, mastering and total
+duration all frozen. Unblocking needs a donor whose kick strong slots match
+`[0, 3, 7, 8]` within the frozen `+/-3.5%` stretch window; the current
+162-track normal library contains none, and expanding the library is a library
+question rather than an experiment.
+
+Six private reports are under
+`/tmp/djenius_reference_dj_transition/ownership_integration_candidate_search/`.
+**No audio was rendered in this task.** No production F/C3/B8/D2, renderer,
+context gate, donor, ownership internals, fifth archetype, target entry,
+ownership promotion, or Pilot 5 changed.
+
+## SEPARATION A/B BLOCKED — RELOCATION VALIDATION (HISTORICAL)
 
 2026-09-20. The authorized `OWNERSHIP_TO_TRANSITION_SEPARATION_BARS` experiment
 ran its pre-render validation gate and **stopped before rendering**. No audio
