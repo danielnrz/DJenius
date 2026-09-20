@@ -1,6 +1,79 @@
 # DJenius V2 Active Handoff
 
-## MICRO-OFFSET REJECTED — HELD-STATE DEVELOPMENT IS THE NEXT VARIABLE
+## HELD-STATE DENSITY A/B — AWAITING BLIND HUMAN LISTENING
+
+2026-09-20. The authorized one-variable held-state development A/B is under
+`/tmp/djenius_reference_dj_transition/rhythmic_ownership_density_ab/`.
+Listen only to `OWNERSHIP_DENSITY_BLIND_1.wav` and
+`OWNERSHIP_DENSITY_BLIND_2.wav`. The mapping is sealed in
+`OWNERSHIP_DENSITY_BLIND_MANIFEST.json` and **must not be revealed before the
+human verdict**. `OWNERSHIP_DENSITY_ANALYSIS.json` holds the sweep and
+waveform audit; `OWNERSHIP_DENSITY_RESPONSE_TEMPLATE.txt` holds the questions.
+
+**The blind pair was resealed once.** A validation display made the original
+filename association inferable from a known control hash. Neither audio
+condition changed and both files are byte-identical to the originals; only the
+filename association was recomputed under a fresh token. The current manifest
+is authoritative and **any earlier association is invalid**. The listener must
+not compare file sizes or hashes against earlier renders.
+
+Version A is the exact human-preferred distinct-donor render, shipped as the
+accepted bytes verbatim. Version B changes exactly one conceptual variable:
+**donor rhythmic density through the held ownership state**. The donor
+contribution is split zero-phase at `2.8 kHz` into a core and its existing
+upper-percussion band; the upper band is then raised on a bar-indexed monotone
+schedule of `0 / +2 / +4 / +6 dB` across held bars 1–4, returning to baseline
+at the release downbeat. Held bar 1 is bit-identical to the baseline, so the
+listener first hears the already-validated groove. A causal filter was
+rejected for the split because `x - lowpass(x)` leaves a phase residual that
+would have altered the low band.
+
+The step size was selected deterministically, not chosen by ear. A `0.5–12 dB`
+sweep at `0.25 dB` resolution required bit-identical held bar 1, monotone
+non-decreasing audible high-band events, monotone spectral flux, bar-4 events
+at least `1.25x` bar 1, held RMS rise `<= 1.0 dB`, integrated rise
+`<= 0.5 LU`, and no clipping; the **smallest** feasible step was taken to avoid
+an over-busy result. `+2 dB` per bar was the smallest that qualified.
+
+Development is real and is not loudness. Audible high-band events per held bar
+go from the baseline's `15 / 22 / 16 / 17` to `15 / 22 / 23 / 24` (`+60%`
+bar 4 over bar 1), and spectral flux from `102 → 93` (a `-9%` decay) to
+`102 → 115` (`+13%`). The cost is `+0.134 dB` held RMS and `+0.064 LU`
+integrated. Low-band difference peaks at `3.5e-06` (about `-109 dBFS`), so
+source drum/bass ownership clearance is preserved. Neither file clips and
+boundary click checks pass at every lane point and every development downbeat.
+
+Note that `librosa` onset density is **not** usable as the development metric
+here: with a fixed delta it is amplitude-sensitive and is non-monotone even on
+the untouched baseline. It is reported as a diagnostic only. The perceptible
+event metric counts separated high-band transient peaks clearing an audibility
+floor taken from the baseline's own held high-band envelope distribution.
+
+**A reproducibility limit was discovered and is recorded.** The pipeline no
+longer reproduces the accepted baseline bit-exactly: every sample outside the
+donor lane matches, but inside it about `29%` of samples differ by at most
+`2` of `2**24` (about `-132 dBFS`), because the donor duration fit uses a
+non-bit-stable FFT resample. The originating script's own byte-identity
+assertion now fails for the same reason. Version A therefore ships the
+accepted bytes verbatim, and Version B is built by adding the density delta to
+those accepted samples. That shortcut is valid because mastering is provably
+linear on this signal, and it was checked against a full re-render (max
+disagreement `2.4e-07`). Eight private tests pass and verify-only regeneration
+reproduced both blind WAVs byte-for-byte.
+
+**Stop for blind human listening.** Success is that the performance develops
+and goes somewhere, not that more percussion is audible. If the developed
+version is merely louder, busier but worse, less coherent, equally static, or
+not distinguishable, then `HELD_STATE_DONOR_DENSITY_RAMP` fails — **do not
+build variant 2/3/4**; move to PAYOFF/RETURN as the next structural
+hypothesis. The existing weak payoff was deliberately left unfixed so that
+internal development is tested alone.
+
+No production F/C3/B8/D2, renderer, context gate, donor identity, donor
+timing, source attenuation, entry, payoff, fifth archetype, target song,
+ownership promotion, or Pilot 5 changed.
+
+## MICRO-OFFSET REJECTED — HELD-STATE DEVELOPMENT DIAGNOSIS (HISTORICAL)
 
 2026-09-20. The sealed micro-groove mapping was revealed after the human
 verdict and both SHA-256 values matched the manifest exactly.
