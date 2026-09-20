@@ -1,6 +1,70 @@
 # DJenius V2 Active Handoff
 
-## OWNERSHIP INTEGRATION FAILED — ARCHITECTURE, NOT THE PRIMITIVE
+## SEPARATION A/B BLOCKED — DONOR CANNOT BE RELOCATED ON THIS PAIR
+
+2026-09-20. The authorized `OWNERSHIP_TO_TRANSITION_SEPARATION_BARS` experiment
+ran its pre-render validation gate and **stopped before rendering**. No audio
+was produced. The proposed placement moves the whole gesture one 4-bar phrase
+earlier — entry `82`, owned `84`, release `88`, exit `89` — leaving bars
+`89–93` as untouched source before the frozen B8 cue at bar `93`.
+
+The phrase geometry itself is correct. The chorus starts at bar `80`, both the
+original and relocated owned states begin on a 4-bar phrase boundary, the lane
+span stays seven bars (`13.421` vs `13.444 s`), and the recovery gap is exactly
+one complete 4-bar phrase. **The blocker is donor compatibility at the new
+window.**
+
+At the relocated held bars the frozen donor shares only **2 of 4** strong
+snare/clap accent slots with the source (`[5, 13]`), against **4 of 4**
+(`[1, 5, 9, 13]`) at the validated window, and snare accent correlation falls
+from `0.81` to `0.54`. This is the same rule the donor was originally accepted
+under, and the validated build asserts it directly — it raises *coarse
+accent-slot compatibility evidence changed* unless four kick and four snare
+slots are shared. Kick compatibility and both distinctiveness ratios still pass;
+the snare gate does not.
+
+**The cause is donor-side, not source-side — checked rather than assumed.** The
+source plays essentially the same snare pattern in both windows (profile
+correlation `0.970`, identical top-four slots `[1, 5, 9, 13]`). The donor's
+top-four slots move from `[1, 5, 9, 13]` to `[5, 6, 13, 14]`. The mechanism is
+that the donor excerpt is uniformly resampled across the lane span while the
+source's detected downbeat grid is not uniform — bar lengths are
+`1.928/1.904/1.927/1.927 s` over the original held window against
+`1.904/1.950/1.904/1.927 s` over the relocated one — so the fitted donor drifts
+differently against the source bar grid and its snare accents move by about one
+sixteenth. Coarse accent compatibility is therefore a property of
+donor-against-*this-window*, not of the donor alone, and it does not survive a
+phrase relocation on this source.
+
+A **second, independent** problem compounds it: source bass at the relocated
+held bars is `-19.57 dBFS` against `-14.11 dBFS` at the validated window, a
+`5.46 dB` deficit (per-bar `-19.12/-20.68/-17.62/-22.04` versus
+`-18.63/-16.64/-11.44/-13.19`). Source drum/bass clearance is a defining
+element of the validated core; the validated window sits where the bass is
+strongest and the relocated window sits in a markedly thinner region, so the
+same clearance would remove substantially less and the gesture would mean less
+there.
+
+**Nothing was rescued.** No other donor was searched for or considered, the
+ownership primitive was not modified, no other placement was tried, and no
+separation sweep was run — all per instruction.
+
+**Scope of this result.** It does **not** show that a 4-bar recovery phrase is
+the wrong idea. It shows that on this pair the frozen donor cannot move one
+phrase earlier without losing the compatibility evidence it was accepted on, so
+a clean placement-only test is unavailable here; rendering anyway would confound
+separation with a degraded donor fit and the verdict would be uninterpretable.
+**The authorized A/B did not run, so the one-failed-A/B rule has not been
+consumed** — the B8 integration line is *blocked on this pair*, not closed by
+human evidence.
+
+Validation evidence is in
+`/tmp/djenius_reference_dj_transition/real_transition_ab/OWNERSHIP_RELOCATION_VALIDATION.json`.
+**No audio was rendered in this task** and no blind pair exists for it. No
+production F/C3/B8/D2, renderer, context gate, donor, ownership internals,
+fifth archetype, target entry, ownership promotion, or Pilot 5 changed.
+
+## OWNERSHIP INTEGRATION FAILED — ARCHITECTURE DIAGNOSIS (HISTORICAL)
 
 2026-09-20. The sealed real-transition mapping was revealed after the human
 verdict and both hashes matched. `REAL_TRANSITION_BLIND_1` was
