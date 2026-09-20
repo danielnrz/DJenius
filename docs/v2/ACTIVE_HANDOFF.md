@@ -1,6 +1,72 @@
 # DJenius V2 Active Handoff
 
-## REAL SONG-TO-SONG INTEGRATION A/B — AWAITING BLIND HUMAN LISTENING
+## OWNERSHIP INTEGRATION FAILED — ARCHITECTURE, NOT THE PRIMITIVE
+
+2026-09-20. The sealed real-transition mapping was revealed after the human
+verdict and both hashes matched. `REAL_TRANSITION_BLIND_1` was
+**OWNERSHIP_ENHANCED**; `REAL_TRANSITION_BLIND_2` was the **CONTROL**. The
+human strongly preferred the control: much better, clearly more like DJ work,
+substantially better transition editing, while the ownership condition's
+editing/choreography was called **awful**. **This is CASE B: the ownership
+integration failed.** Do not generalize, do not run the two-pair gate, do not
+promote ownership, and do not retune the primitive.
+
+**The verdict is specifically about choreography.** The human rated overall
+audio quality `GOOD` in **both** conditions and separated sound quality from
+editing. Three alternative explanations are measurably ruled out. Mastering and
+sample peaks are identical and the ownership condition is `-0.162 LU` *quieter*,
+so it cannot have lost on loudness. The seam is not the defect: the broadband
+step across the handoff is `+2.44 dB` in the control against `+2.61 dB` with
+ownership, a difference of `0.17 dB`, and adjacent-bar waveform correlation
+across the join is about `-0.04` in **both**. And every sample from the handoff
+onward is bit-identical, so the landing cannot differ.
+
+**Primary defect: ownership ends in a decaying trough immediately before a
+build.** The control holds a stable established source right up to the cue —
+bars 81–92 vary by only `0.53 dB`. With ownership the source descends across
+bars 86–91 (`-17.17 → -18.44 dB`, low band `-20.20 → -23.91 dB`), reaching the
+cue `2.01 dB` down and `4.47 dB` down in the low band. B8 is
+`loop_build_coherent_handoff` using loop shortening on **source** material, and
+its human PASS was diagnosed as resting on a *stable source section*. Ownership
+removes exactly that.
+
+Three contributing defects compound it. The ownership gesture was already
+measured to resolve to its exact pre-entry state with no payoff, so it spends
+tension it never repays and a second build starts immediately — a gesture
+begins, empties out, and is cut off by a different gesture. Ownership adds a
+**third** rhythmic owner (source → foreign donor → source loop-build → target
+versus the control's two), and the donor episode is undone rather than
+developed, so the listener returns to material they were just taken away from.
+And source-side manipulation occupies `28.29 s` of the `61.38 s` window,
+`46%` against the control's `24%`, consistent with an overworked-transition
+perception.
+
+**Correction to earlier reasoning.** The zero-bar adjacency was my own design
+choice, carried from the earlier instruction to avoid returning to normal source
+before the transition. This experiment falsifies that reasoning for a loop-build
+handoff: B8 was validated building *from* a stable established source and was
+handed a trough instead.
+
+The single next variable is **OWNERSHIP_TO_TRANSITION_SEPARATION_BARS**,
+currently `0`: the number of re-established, unmanipulated source bars between
+the ownership exit and the frozen transition cue. The proposed test relocates
+the ownership gesture earlier by one 4-bar phrase, to bars `82–89`, leaving
+bars `89–93` as untouched re-established source before the B8 cue at bar 93.
+It changes **placement only** — the primitive, donor, routing, gesture structure
+and proven B8 all stay frozen — and it relieves all three contributing defects
+at once. Donor/source accent-slot compatibility and pattern distances must be
+recomputed at the relocated bars before any render. One failed A/B on
+separation ends the integration-repair line for this architecture; do not sweep
+separation values.
+
+Six private reports are under
+`/tmp/djenius_reference_dj_transition/real_transition_followup/`.
+**No audio was rendered in this task.** No production F/C3/B8/D2, renderer,
+context gate, ownership internals, fifth archetype, target entry, ownership
+promotion, or Pilot 5 changed. **Await explicit authorization before any
+separation A/B.**
+
+## REAL SONG-TO-SONG INTEGRATION A/B — HISTORICAL EXPERIMENT (REVEALED)
 
 2026-09-20. **Payoff experiment revealed and closed.** Both hashes matched the
 seal. `OWNERSHIP_PAYOFF_BLIND_1` was **LOW_END_ARRIVAL_PAYOFF**;
