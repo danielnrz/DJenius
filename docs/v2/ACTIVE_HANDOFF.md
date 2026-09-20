@@ -1,6 +1,79 @@
 # DJenius V2 Active Handoff
 
-## NO CLEAN OWNERSHIP INTEGRATION CONTEXT EXISTS IN THE CURRENT LIBRARY
+## KICK-GATE VALIDATION A/B — AWAITING BLIND HUMAN LISTENING
+
+2026-09-20. The authorized gate-validation experiment is under
+`/tmp/djenius_reference_dj_transition/kick_gate_ab/`. Listen only to
+`KICK_GATE_BLIND_1.wav` and `KICK_GATE_BLIND_2.wav`. The mapping is sealed in
+`KICK_GATE_BLIND_MANIFEST.json` and **must not be revealed before the human
+verdict**. `KICK_GATE_VALIDATION_ANALYSIS.json` holds the audit;
+`KICK_GATE_RESPONSE_TEMPLATE.txt` holds the questions.
+
+**This is source-only.** No transition, no D2. The ownership primitive is
+frozen and the only thing under test is the donor-selection kick-slot rule:
+can `T5` support convincing rhythmic ownership with a donor meeting every
+validated requirement **except** the exact 4-of-4 kick-slot overlap?
+
+**The gate violation, documented exactly.** `T5`'s strong kick slots are
+`[0, 3, 7, 8]`; the donor's are `[0, 4, 7, 8]`. Slots `0`, `7` and `8` are
+shared, so the **downbeat is retained**. The single missing slot is `3` — the
+source's syncopated push on the 'a' of beat one — and the donor accents slot
+`4`, the downbeat of beat two, instead. Displacement is **one sixteenth,
+`120.82 ms`**, onto a structurally strong position. On measurement this reads as
+straight-versus-syncopated variation rather than a groove collision, but that
+is a hypothesis for the human gate, not a finding.
+
+Every other validated requirement is met: snare/clap slot overlap is a full
+`4/4`, the phase shift is downbeat-preserving, tempo fit is `0.3%` stretch,
+donor bar-level steadiness is `1.62 dB`, and the donor drum stem is `87%` low
+band with little harmonic contamination. Selection was multi-criteria over
+`109` qualifying 3/4 candidates, not a single metric.
+
+**This is deliberately the mildest defensible violation available**, so a
+positive result licenses only mild, downbeat-preserving 3/4 cases — not 3/4 in
+general. One honest confound is recorded: at `kick r 0.792` / `snare r 0.839`
+this donor is **less distinct** than the validated one (`0.642` / `0.81`),
+though clearly more distinct than the human-invisible reject (`0.942` /
+`0.934`). If the human cannot tell the conditions apart, insufficient
+distinctiveness is a live explanation and the kick-slot rule is **not** thereby
+vindicated.
+
+The ownership primitive is untouched: lane bars entry `58`, owned `60`, release
+`64`, exit `65`; source drum attenuation `0.98`, bass `0.95`; none of the five
+rejected refinements reintroduced. The window is the clean one identified for
+the future D2 integration — held-state drums `-15.29`, bass `-23.03`, vocals
+`-13.29 dBFS`, no dropouts, inside one verse section. The comparison clip is
+`36.78 s` of source bars `54–73`, giving four bars of context before entry and
+eight after exit.
+
+One implementation decision is recorded rather than buried. The original
+experiment normalised its new donor against an **already established donor
+lane**, which `T5` does not have. Referencing the lane gain instead placed the
+donor about `4 dB` above the source drums, made the owned state louder than
+control and pushed the peak to `0.984`. The defensible base for a new source is
+the **source drums the donor takes over from**, so the new rhythmic owner
+occupies the level of the owner it replaces. After the fix the donor sits
+`0.45 dB` below the source drums, the owned state is `0.72 dB` quieter than
+control, integrated loudness is `-0.27 LU` (so it cannot win on level), and the
+peak is `0.771` with no clipping.
+
+Ten private tests pass and verify-only regeneration reproduced both blind WAVs
+byte-for-byte. Click checks pass at every lane point in both conditions.
+
+**Stop for blind human listening.** If the 3/4 ownership sounds good, `4/4` is
+**sufficient but not necessary** — derive a better compatibility rule from slot
+overlap, continuous accent compatibility, snare alignment, downbeat alignment
+and distinctiveness, then proceed to the pre-registered `T5 -> T9` D2
+integration; do **not** simply replace it with "3/4 always passes". If it sounds
+rhythmically wrong, that supports the strict gate and **no second 3/4 donor
+should be tried**. If it is indistinguishable from control, the donor is not
+useful and must not be integrated into D2.
+
+No production donor gate, F/C3/B8/D2, renderer, context rule, ownership
+internals, fifth archetype, D2 integration, or Pilot 5 changed, and no fromDJ
+material was used.
+
+## NO CLEAN INTEGRATION CONTEXT — CANDIDATE SEARCH (HISTORICAL)
 
 2026-09-20. A full candidate search for a clean ownership integration context
 completed. **No audio was rendered and no candidate qualifies.** Twelve
