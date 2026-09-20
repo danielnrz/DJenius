@@ -1,6 +1,90 @@
 # DJenius V2 Active Handoff
 
-## PAYOFF LOW-END ARRIVAL A/B — AWAITING BLIND HUMAN LISTENING
+## REAL SONG-TO-SONG INTEGRATION A/B — AWAITING BLIND HUMAN LISTENING
+
+2026-09-20. **Payoff experiment revealed and closed.** Both hashes matched the
+seal. `OWNERSHIP_PAYOFF_BLIND_1` was **LOW_END_ARRIVAL_PAYOFF**;
+`OWNERSHIP_PAYOFF_BLIND_2` was the **FROZEN_ACCEPTED_BASELINE**. The human
+found both good, both satisfying, with no meaningful preference, so
+`PAYOFF_LOW_END_ARRIVAL_SHAPE` showed no perceptual advantage and is closed.
+Build no payoff variants. **Prefer the simpler accepted ownership
+implementation** unless a later song-to-song context demonstrates a specific
+need for a different payoff.
+
+**SOURCE-ONLY OWNERSHIP R&D IS NOW CLOSED.** The frozen validated core is: true
+rhythmic ownership transfer; source drums/bass cleared enough for another
+rhythmic owner; recognizable source identity retained; a rhythmically distinct
+but musically compatible donor with appropriate phrase alignment; an ownership
+state long enough to be perceived; coherent groove. The human has described it
+as a deliberate rhythmic reframe, audible DJ work, a tight DJ-controlled groove
+and an experienced DJ performance, with good dance energy during the
+performance state. Four refinements were tested against human listening and
+**all failed or showed no advantage**: the global `-11.5 ms` micro-offset,
+transient/texture brightening, deeper harmonic attenuation, the held-state
+density ramp, and the special low-end payoff envelope. Do not reintroduce them
+and do not keep tuning the source-only example.
+
+**New phase — one controlled integration experiment. This is not Pilot 5.**
+The pair is the validated ownership source (`SOURCE_S3`, library index 3,
+`123.0` BPM, `12B`) into `TARGET_T2` (library index 2, `129.2` BPM, `10B`).
+This is the **only** edge in the frozen 182-edge transition graph whose source
+is the validated ownership source and which carries direct positive human
+evidence: `history.known_positive = ["GEN_B8_01 PASS"]`, with
+`pair_transitionable` true, the B8 archetype `usable_for_performance` with no
+technical rejection reasons, `human_pair_negative` null and
+`musically_rejected_by_human_pair_evidence` false. Tempo difference is `5.0%`
+with near-identical groove descriptors. **Honest caveat:** the edge's
+`final_edge_status` is `REJECTED`, but every reason is a set-context role
+judgement (declared PEAK trajectory, declared BUILD set role, phase-supported
+reset bridge, continuity anchors) rather than a local transition failure. This
+experiment tests local transition performance, not set planning.
+
+The integration is unusually clean because **the proven B8 source cue is bar
+93, which is exactly where the validated ownership performance already exits**.
+No cue was invented or moved, and there are **zero** bars of normal source
+between the ownership exit and the transition start. Structure: source
+establishment (bars 81–86) → ownership performance (entry 86, owned 88–92,
+exit 93) → the proven B8 from bar 93 → target landing → target establishment.
+
+The target side is not re-rendered at all. The human-PASS `GEN_B8_01` audio is
+reused **byte-for-byte in both conditions** (hash verified against its
+manifest), so target cue, time map, tempo adjustment, gain, stems, bass
+arrival, landing, establishment, post-landing playback and mastering are
+literally identical. Everything from the handoff sample onward is bit-identical
+between conditions; the only difference is the source-side preparation region.
+
+Fairness: total duration `61.38 s` in both, identical sample peaks
+(`0.805092`), no clipping, and the ownership condition is `-0.162 LU`
+**quieter** — deliberately not compensated, because normalising would alter the
+validated render, and it means the ownership version cannot win by loudness.
+Source establishment before the ownership entry is identical to within the
+PCM24 quantization floor. Click checks pass identically in both conditions at
+the ownership entry, the handoff join and the target landing. The `10 ms`
+join crossfade is identical in both. Twelve private tests pass and verify-only
+regeneration reproduced all four files byte-for-byte.
+
+Listening files are `REAL_TRANSITION_BLIND_1.wav` and
+`REAL_TRANSITION_BLIND_2.wav` under
+`/tmp/djenius_reference_dj_transition/real_transition_ab/`, with
+`REAL_TRANSITION_RESPONSE_TEMPLATE.txt` and the sealed
+`REAL_TRANSITION_BLIND_MANIFEST.json`. The required unblinded
+`REAL_TRANSITION_CONTROL.wav` and `REAL_TRANSITION_OWNERSHIP.wav` were written
+to a subdirectory named `unblinded_do_not_open_before_verdict/` — leaving them
+beside the blind pair would let a single file comparison break the seal.
+
+**Stop for blind human listening.** Success requires all of: the ownership
+performance still reads as DJ work; the target landing stays smooth; the song
+change feels more intentional; energy survives the transition; and it sounds
+like one DJ performance rather than a cool effect followed by another song. If
+ownership sounds good but the target entry degrades, the primitive is valid and
+the integration architecture needs work. If the target entry stays good but
+ownership adds nothing, do not integrate ownership into production.
+
+No Pilot 5, no full set, no second pair, no archetype search, no fifth
+archetype, no context-rule change, no change to the proven target entry, no
+added FX, no internal ownership retuning, and no production promotion.
+
+## PAYOFF LOW-END ARRIVAL A/B — HISTORICAL EXPERIMENT (REVEALED)
 
 2026-09-20. The authorized one-variable payoff A/B is under
 `/tmp/djenius_reference_dj_transition/rhythmic_ownership_payoff_ab/`.
