@@ -1,6 +1,82 @@
 # DJenius V2 Active Handoff
 
-## DENSITY RAMP REJECTED — PAYOFF/RETURN IS THE NEXT VARIABLE
+## PAYOFF LOW-END ARRIVAL A/B — AWAITING BLIND HUMAN LISTENING
+
+2026-09-20. The authorized one-variable payoff A/B is under
+`/tmp/djenius_reference_dj_transition/rhythmic_ownership_payoff_ab/`.
+Listen only to `OWNERSHIP_PAYOFF_BLIND_1.wav` and
+`OWNERSHIP_PAYOFF_BLIND_2.wav`. The mapping is sealed in
+`OWNERSHIP_PAYOFF_BLIND_MANIFEST.json` and **must not be revealed before the
+human verdict**. `OWNERSHIP_PAYOFF_ANALYSIS.json` holds the audit;
+`OWNERSHIP_PAYOFF_RESPONSE_TEMPLATE.txt` holds the questions. Following the
+previous leak, the blind was validated **without printing any per-file hash,
+size or condition association**; the analysis uses neutral `A`/`B` condition
+labels whose filename mapping lives only in the sealed manifest.
+
+Version A is the accepted human-preferred render, shipped as its bytes
+verbatim. Version B changes exactly one conceptual variable: **source low-end
+restoration shape and its phrase-grid anchor**. Only the source drum low band
+and the source bass stem are affected. In the baseline these follow
+`1 - attenuation * envelope`, the *same* raised cosine that withdraws the
+donor — which is the mathematical origin of the diagnosed symmetric handback.
+Version B instead holds the owned-state keep values and brings low-end
+ownership to full on the phrase-aligned **bar-92 downbeat**.
+
+The envelope was derived from the signal, not chosen by ear. The lowest
+significant frequency in the source low end at that point is `48.45 Hz` (5th
+percentile of low-band energy), and the arrival ramp spans two periods of it:
+`1820` samples, `41.27 ms`, `0.347` of a sixteenth note — short enough to read
+as an arrival, long enough to avoid low-frequency discontinuity.
+
+The difference is confined to the release bar. Audio before the anchor is
+identical, and from the return bar onward both versions are sample-identical,
+so the ownership state and the post-payoff source content are untouched and the
+low end returns to its normal source level. The difference is exactly the drum
+low band plus the bass stem: `95.93%` of its energy sits below `170 Hz`,
+`0.196%` above `300 Hz` and `0.037%` above `2.8 kHz`, so source drum mid/high
+and the donor withdrawal curve are unaffected. Integrated loudness differs by
+`+0.023 LU`, sample peak is **unchanged**, neither file clips, and click checks
+pass at every lane point plus the arrival anchor and ramp end. Eleven private
+tests pass and verify-only regeneration reproduced both WAVs byte-for-byte.
+
+**Two measured facts qualify how this result should be read.**
+
+First, the detected downbeat grid puts source kick peaks on the **third
+sixteenth of each beat**, and the source low end is near-silent at the bar-92
+downbeat itself; the first strong low-end event follows about `201.6 ms` later.
+The gain change therefore lands on the phrase-aligned downbeat as specified,
+but the audible arrival is heard on that later event, at full source level
+instead of the baseline's partially restored level. The near-silence at the
+anchor is also why a short ramp is click-safe here.
+
+Second, **the achievable contrast is small and this is a ceiling of the
+authorized variable, not a build defect.** In the baseline the source low end
+already supplies `68.7%` of bar-92 low-band energy because the raised-cosine
+restoration recovers quickly, with the donor supplying the other `31.3%`.
+Restoring low-end ownership from the downbeat adds `+1.94 dB` of source low
+energy but only `+1.42 dB` of total bar-92 low band: `+0.63 dB` broadband,
+`+1.26 dB` kick over the release bar, peaking at `+2.63 dB` on beat 2. Because
+donor withdrawal is frozen, no realization of this variable could produce more
+— Version B already holds full ownership from the anchor onward, which is the
+maximal-contrast reading of "arrive on the bar-92 downbeat". For comparison,
+the baseline's own final-owned-bar to returned-bar step is `+1.98 dB`
+broadband. **If the human reports no difference, that falsifies this variable
+at its ceiling; it does not falsify low-end arrival as a payoff mechanism in
+general**, since a larger gesture would require unfreezing donor withdrawal or
+moving the anchor.
+
+**Stop for blind human listening.** Success is that the dance energy created by
+the ownership state survives into the music that follows. Per the pre-registered
+failure rule, if the payoff version sounds basically identical, abruptly
+pasted, like a fake drop, merely louder, or fails to carry energy forward, then
+`PAYOFF_LOW_END_ARRIVAL_SHAPE` fails — **do not build payoff variants 2/3/4**;
+reassess phrase/cue architecture instead of continuing envelope tuning.
+
+No production F/C3/B8/D2, renderer, context gate, donor identity, donor timing,
+held-state density, ownership routing, entry, harmonic/vocal balance, fifth
+archetype, target song, ownership promotion, or Pilot 5 changed.
+
+## DENSITY RAMP REJECTED — PAYOFF DIAGNOSIS (HISTORICAL)
 
 2026-09-20. The resealed density mapping was revealed after the human verdict
 and both SHA-256 values matched. `OWNERSHIP_DENSITY_BLIND_1` was
