@@ -1,6 +1,80 @@
 # DJenius V2 Active Handoff
 
-## 4/4 KICK GATE IS NOT NECESSARY — T5 → T9 D2 INTEGRATION IS EXECUTABLE
+## T5 → T9 D2 OWNERSHIP INTEGRATION A/B — AWAITING BLIND HUMAN LISTENING
+
+2026-09-20. The pre-registered integration A/B is under
+`/tmp/djenius_reference_dj_transition/t5_t9_d2_ab/`. Listen only to
+`T5_T9_D2_BLIND_1.wav` and `T5_T9_D2_BLIND_2.wav`. The mapping is sealed in
+`T5_T9_D2_BLIND_MANIFEST.json` and **must not be revealed before the human
+verdict**. `T5_T9_D2_OWNERSHIP_INTEGRATION_ANALYSIS.json` holds the audit and
+`T5_T9_D2_RESPONSE_TEMPLATE.txt` the questions. No unblinded render exists, the
+two blind files are byte-identical in size, and no per-file hash, size or
+condition association was displayed.
+
+**The question.** Does source → validated ownership → one complete untouched
+source phrase → proven restrained D2 → target beat source → the same proven D2
+→ target? Specifically: does **PERFORM → BREATHE → TRANSITION → LAND** solve the
+choreography failure of **PERFORM → IMMEDIATELY BUILD AGAIN → LAND** that sank
+the ownership+B8 attempt?
+
+**Ownership is the exact configuration that won the kick-gate blind** — same
+donor, excerpt `[40, 47]`, shift `8`, stretch `0.997`, lane bars entry `58`,
+owned `60`, release `64`, exit `65`, drum keep `0.02`, bass keep `0.05`, vocals
+unattenuated at `-13.29 dBFS`. Kick overlap remains `3/4` with the downbeat
+retained (`[0,3,7,8]` against `[0,4,7,8]`), snare overlap a full `4/4`, and the
+donor sits `0.45 dB` below the source drums it replaces. None of the five
+rejected refinements is present.
+
+**The recovery phrase is verifiably sacred.** Bars `65–69` carry a donor residual
+peak of **exactly `0.0`**, drum- and bass-keep residual deviations of **exactly
+`0.0`**, and are **sample-identical to untouched source** before mastering. A
+pure butt join proved click-safe, so **no crossfade was used at all** (`0`
+samples) and the phrase is untouched end to end. It is also bit-identical
+between the two conditions.
+
+**D2 is fully frozen.** `REFERENCE_D2.wav` hash-verified against the frozen
+manifest and reused **byte-for-byte** in both conditions. The recovery phrase
+ends exactly at the frozen source cue — cue alignment error **`0.0 s`** — so D2
+receives a bit-identical input state in both conditions, and every sample from
+its activation onward, through the target landing at `51.22 s` and the target
+establishment, is identical.
+
+Fairness: identical start and end, identical total `75.44 s`, one shared
+mastering gain with **no separate normalisation**, and the ownership condition
+is `-0.127 LU` **quieter**, so it cannot win on level. Neither clips; click
+checks pass at every lane point, the D2 join and the target landing. Twelve
+private tests pass and verify-only regeneration reproduced both WAVs
+byte-for-byte.
+
+One structural number is worth carrying into the verdict: source-side
+manipulation occupies **`17.9%`** of this window against **`46%`** in the failed
+B8 integration — the breathing phrase and the restrained archetype together cut
+it by more than half.
+
+**The declared structural risk stands, unmitigated by design.** D2 is itself a
+restrained ownership/handoff gesture, so the clip may read as one rhythmic
+performance, breathing space and a restrained song handoff — or as an ownership
+gesture, a pause, and another similar ownership gesture. Nothing was changed to
+avoid this; it is part of what the human gate must decide.
+
+**Stop for blind human listening.** If the ownership version clearly wins while
+staying coherent, non-overworked, smooth through D2 and musically connected,
+that is the **first successful real-transition integration**, and the supported
+role must be recorded precisely as a **pre-transition performance primitive**,
+not a transition archetype — with limited generalization next, not production
+promotion. If both are good with no meaningful preference, ownership is valid on
+this source but adds no demonstrated value before D2 and must not be integrated
+by default. If the control wins, close this pair — no other separation value, no
+D2 change, no ownership retuning — and treat the primitive's useful role as
+independent mid-track performance. If the ownership part is good but feels
+unrelated, record it as a successful flourish plus a successful transition, and
+**not** as an integration success.
+
+No production donor gate, F/C3/B8/D2, renderer, context rule, ownership
+internals, fifth archetype, or Pilot 5 changed; no donor was searched or altered
+and no fromDJ material was used.
+
+## 4/4 KICK GATE IS NOT NECESSARY — GATE REVEAL (HISTORICAL)
 
 2026-09-20. The sealed kick-gate mapping was revealed after the human verdict
 and both hashes matched. `KICK_GATE_BLIND_1` was the **CONTROL**;
