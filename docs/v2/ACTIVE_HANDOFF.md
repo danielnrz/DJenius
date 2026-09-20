@@ -1,6 +1,231 @@
 # DJenius V2 Active Handoff
 
-## OWNERSHIP STATE-CONTRAST A/B — AWAITING BLIND HUMAN LISTENING
+## MICRO-OFFSET REJECTED — HELD-STATE DEVELOPMENT IS THE NEXT VARIABLE
+
+2026-09-20. The sealed micro-groove mapping was revealed after the human
+verdict and both SHA-256 values matched the manifest exactly.
+`OWNERSHIP_MICRO_BLIND_1` was **CURRENT_DISTINCT_DONOR** (the control);
+`OWNERSHIP_MICRO_BLIND_2` was **MICRO_ALIGNED_DISTINCT_DONOR**. The human
+preferred the control. Per the pre-registered rule, the `-11.5 ms`
+(`-507` sample) correction is **not adopted** and the
+`DONOR_MICRO_PHASE_OFFSET` hypothesis is closed. **Do not generate another
+timing-offset variant.**
+
+The preference was explicitly `SMALL`, so this does not establish that
+micro-alignment is harmful. It does establish something sharper: the
+micro-aligned condition measured `50.1%` better worse-anchor timing error
+yet lost. Minimising median absolute anchor error is therefore **not** a
+valid automated proxy for human groove quality in this lane, and the
+control's residual `~22 ms` snare/clap lateness is not a demonstrated
+defect. Do not gate the ownership lane on anchor-error minimisation.
+
+Both conditions read as audible DJ work, a clearly different rhythmic
+state, a tight DJ-controlled groove and an experienced DJ performance, at
+quality `LIKE`. The entire gain over every earlier ownership round is
+therefore attributable to **distinct compatible donor + true rhythmic
+ownership**, not to the timing variable, because the winner contains none
+of it.
+
+**Experimentally successful core, now frozen for the next experiment:**
+distinct rhythm donor; musical/phase compatibility; true source drum/bass
+ownership clearance; retained recognizable source identity; sustained
+independent rhythmic state; donor perceptual distinctness; musical groove
+compatibility. Frozen means these stop being variables — it is **not** a
+production promotion. The ownership lane remains private and unapproved.
+
+The human complaint has moved from `I hear nothing specific` to `good
+energy to convey for dance but it can be more`. A bar-relative energy
+audit of the preferred render (source bars `81–97`, `125.0` BPM, lane
+entry `86`, owned `88`, release `92`, exit `93`) locates that gap.
+
+Preparation moves finished level only `-0.60 dB` net of source across two
+bars; liked references clear by `-11.92` to `-21.54 dB`. Post-return is
+`+0.05 dB` versus pre-entry and `-0.00 dB` net of source — the performance
+resolves exactly to its starting state, against `+12.11`/`+25.64 dB`
+returns in the references. Both are real structural absences.
+
+But the held state is the decisive finding. Across its four bars it does
+not hold steady — it **decays**: RMS `-17.37 → -18.44 dB`, low band
+`-22.25 → -23.91 dB`, spectral flux `102.31 → 93.12` (all monotone), and
+onset density ends below its starting value (`10.38 → 9.86/s`). Net of
+source, the DJ contribution falls from `-0.69` to `-2.01 dB`. The isolated
+donor excerpt was measured separately and is **flat** (per-bar RMS spread
+`1.01 dB`, oscillating flux, no trend), so the decay is not inherited from
+the donor phrase — the lane simply has no development mechanism and
+inherits the retained source's thinning. The `+2.06 dB` lift at the return
+exists mainly because the held state sagged into it.
+
+Every human-liked reference changes something material **inside** its
+active state: `DJREF_04` escalates low-end ownership (low fraction
+`.26 → .57`), `DJREF_06` pulses with repeated dips, `DJREF_03` resets,
+`DJREF_05` progressively thins. Ours changes nothing by design. `More`
+therefore most plausibly means *directed change over time*, not louder,
+brighter, more effects, or more layers — the human already rated the
+groove tight, coherent, controlled and distinct.
+
+The single recommended next variable is **HELD_STATE_DONOR_DENSITY_RAMP**:
+a deterministic bar-indexed monotone increase in donor rhythmic density
+across held bars `2–4`, holding held bar 1 byte-identical to the validated
+render, staging the donor's already-present upper percussion content
+(`8.1%` of donor energy above `2.8 kHz`, currently delivered flat), with
+finished held loudness constrained so the test measures development rather
+than level. Control is the exact preferred WAV. Donor identity, excerpt
+bars, coarse phase, source identity, source attenuations, lane points,
+envelopes, payoff, mastering and length stay frozen. One failed A/B ends
+the hypothesis; do not iterate ramp depths.
+
+Nine private analysis reports are under
+`/tmp/djenius_reference_dj_transition/ownership_micro_followup/`.
+**No audio was rendered in this task.** No production F/C3/B8/D2, renderer,
+context gate, donor identity, fifth archetype, target song, ownership
+promotion, or Pilot 5 changed. **Await explicit authorization before
+building the density-ramp A/B.**
+
+## DISTINCT-DONOR MICRO-GROOVE A/B — HISTORICAL EXPERIMENT (REVEALED)
+
+2026-09-19. The authorized private one-variable microtiming A/B is under
+`/tmp/djenius_reference_dj_transition/rhythmic_ownership_micro_ab/`.
+Listen only to `OWNERSHIP_MICRO_BLIND_1.wav` and
+`OWNERSHIP_MICRO_BLIND_2.wav`. Their deterministic mapping is sealed in
+`OWNERSHIP_MICRO_BLIND_MANIFEST.json` and must not be revealed before the
+human verdict. `OWNERSHIP_MICROGROOVE_ANALYSIS.json` contains the objective
+sweep and waveform audit; `OWNERSHIP_MICRO_RESPONSE_TEMPLATE.txt` contains
+the requested listening questions.
+
+A deterministic `-20` to `+10 ms` sweep at `0.5 ms` resolution found a
+defensible global compromise. The selection rule minimizes the worse of
+kick and snare/clap median absolute timing error, then uses salient-onset
+error and smaller displacement as tie-breakers. Hard constraints require a
+material improvement, no salient-onset regression, displacement no larger
+than one tenth of a sixteenth note, and kick/snare pattern distances at
+least 25% greater than the prior human-invisible donor.
+
+The selected offset is `-11.5 ms` requested (`-507` samples,
+`-11.4966 ms` actual). Kick median absolute error changes from `7.812` to
+`11.134 ms`; snare/clap error improves from `22.290` to `10.952 ms`;
+salient-onset error improves from `12.982` to `9.943 ms`; and the worse
+anchor error falls by `50.1%`. This is an explicit balance rather than
+optimization of one transient class. Kick/snare pattern distances remain
+`1.34x/1.42x` those of the previously inaudible current donor, so the new
+rhythmic state remains materially distinct.
+
+The control is byte-identical to the human-tested distinct-donor render.
+The experimental condition changes only the global donor micro-offset.
+Source/donor identities, coarse phase, tempo fit, gain, spectral balance,
+stem routing/attenuation, ownership timing, entry/release envelopes, payoff,
+mastering, and total length remain frozen. Samples outside the donor lane
+are identical and the raw waveform difference is accounted for only by the
+micro-shifted donor. Finished loudness differs by `+0.0027 LU`; neither file
+clips and boundary click checks pass. Six private unit/regression tests pass,
+and verify-only regeneration reproduced both blind PCM24 WAVs byte-for-byte.
+
+The blind files were resealed once without changing either audio condition
+because a validation display made the first filename association inferable
+from a previously known control hash. The final manifest and filenames in
+the directory are authoritative; the earlier filename association is
+invalid.
+
+**Stop for blind human listening.** No production F/C3/B8/D2, renderer,
+context gate, ownership promotion, donor identity, fifth archetype, target
+song, or Pilot 5 changed. If the selected offset does not improve human
+professionalism/groove, do not generate more micro-offset variants.
+
+## DISTINCT DONOR PASSED SALIENCE, FAILED QUALITY — MICRO-GROOVE NEXT
+
+2026-09-19. After the human verdict, the sealed mapping and both WAV hashes
+were verified. `OWNERSHIP_DONOR_BLIND_1` was
+**DISTINCT_DONOR_PHASE_COMPATIBLE**; `OWNERSHIP_DONOR_BLIND_2` was
+**CURRENT_DONOR_PHASE_CORRECTED**. The distinct donor was the only condition
+heard as audible DJ work, a new musical state, intentional rhythmic control,
+a deliberate rhythmic reframe, and DJ-controlled. The human also said its
+groove belongs with the song. The current highly correlated donor was liked
+as music but contained no obvious DJ intervention.
+
+This is the strongest evidence so far for **compatibility plus
+distinctiveness** as an experimental donor-selection principle. It is not a
+production rule: the winning condition was only `OK`, groove coherence was
+only `SOMEWHAT`, and it still sounded amateur. Donor identity changed pattern
+and timbre together, so the A/B cannot attribute the result to pattern alone.
+The ownership lane remains private and unapproved.
+
+The distinct donor keeps all four top low/kick and mid/snare accent classes
+on compatible sixteenth-note slots, while correlations drop from the old
+donor's `.942/.934` to `.637/.732` and normalized pattern distances rise
+from `.371/.484` to `.598/.857`. A finer timing audit found kick peaks nearly
+centered (`0.36 ms` median signed, `7.81 ms` median absolute) but donor
+snare/clap-family peaks consistently about `22.29 ms` late (`30.32 ms` p90).
+That measured within-beat tension, together with the human's `SOMEWHAT`
+groove-coherence rating, is the leading explanation for amateur quality.
+It does not justify pushing the donor back toward maximum correlation.
+
+Entry and payoff remain secondary structural weaknesses. The two-bar entry
+changes finished level only about `-0.60 dB` and begins at inferred four-bar
+phase 2. The altered state lasts `7.69 s` and is now foreground/human-audible.
+Release begins at inferred phase 0, but full source restoration completes at
+phase 1, after which the final `7.69 s` are sample-identical to untouched
+playback. These weaknesses reduce narrative preparation/payoff, but do not
+best explain the direct groove-coherence complaint.
+
+Seven private follow-up reports are under
+`/tmp/djenius_reference_dj_transition/ownership_distinct_donor_followup/`.
+The one recommended future variable is **DONOR_MICRO_PHASE_OFFSET**: compare
+the exact winning distinct-donor render with the same render using only a
+small, objectively selected sub-sixteenth timing offset. Current measurements
+suggest an approximately `11 ms` advance as the balance point between kick
+and snare/clap peak error; it must be deterministically recomputed before any
+future render. Donor identity, coarse phase, levels, source routing, envelopes,
+entry, payoff, mastering, and duration must remain fixed. One failed A/B ends
+that hypothesis.
+
+**No new audio was rendered in this follow-up.** No production F/C3/B8/D2,
+renderer, context gate, fifth archetype, target-song transition, ownership
+promotion, or Pilot 5 changed. Stop pending separate authorization for any
+micro-offset A/B.
+
+## OWNERSHIP CONTRAST FAILED — ONE DISTINCT DONOR PROPOSED, NO AUDIO YET
+
+2026-09-19. The sealed ownership-contrast mapping was revealed after the
+human verdict: `OWNERSHIP_CONTRAST_BLIND_1` was the **SPARSE_HIGH_CONTRAST**
+version; `OWNERSHIP_CONTRAST_BLIND_2` was the **PHASE_CORRECTED_BASELINE**,
+byte-identical to the earlier preferred phase-corrected render. SHA-256
+values matched the sealed manifest. The human noticed no specific DJ action
+and no meaningful difference in either. A measured `6.7065 dB` cut to the
+retained harmonic/`other` stem did **not** make ownership robustly salient.
+Stop tuning this exact source/donor pairing: no more attenuation, EQ,
+phase, loudness, or duration variants. The ownership lane remains private
+and unapproved for production.
+
+Private follow-up reports and read-only donor metrics are at
+`/tmp/djenius_reference_dj_transition/ownership_donor_selection/`.
+The normal-library search excluded `fromDJ` and used 162 existing cached
+drum-stem analyses; the current filesystem has 175 top-level audio files,
+13 without valid cached drum stems. The corrected current donor's held
+low/mid 16th-accent correlations with the source are `.942/.934`, plausibly
+too similar for a clearly new rhythmic state, but this is a **hypothesis**,
+not a causal finding. Aggregate matching alone proved misleading: one
+apparently attractive alternate failed per-bar snare matching in three of
+four held bars.
+
+One provisional donor was selected for a *future authorized* A/B:
+an anonymized normal-library donor (`DONOR_D2`) drum stem, bars
+24–31, with the owned material at bars 26–30. Its BPM grid confidence is
+`.992`; it needs only ~`1.5%` duration fitting. A preselected +2-sixteenth
+phase gives low/mid held accent correlations `.637/.732`, versus the
+current `.942/.934`; every held bar retains moderate low/mid compatibility.
+It is therefore more distinctive without depending on a single misleading
+average. The excerpt stays inside one detected section and its drum level
+varies little across the held bars. Its top accents still coincide with the
+source's, and stem cleanliness/musical fit are **not** certified; it is a
+candidate for one falsifiable blind experiment, not a quality pass.
+
+The proposed A/B retains the exact existing phase-corrected WAV as control
+and changes only donor material (including its precommitted phase fit) under
+the same source, lane timing/routing/envelopes, gain, mastering, and payoff.
+**No audio has been rendered in this follow-up. Await human authorization
+before the donor-swap A/B.** No Pilot 5, archetype change, fifth archetype,
+or production/context-gate change.
+
+## OWNERSHIP STATE-CONTRAST A/B — HISTORICAL EXPERIMENT
 
 2026-09-18. The user authorized one private, two-condition A/B that changes
 only the retained source `other`/harmonic-stem attenuation depth in the
