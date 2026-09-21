@@ -1,6 +1,78 @@
 # DJenius V2 Active Handoff
 
-## SELECTIVE-PERFORMANCE MINI-SET — AWAITING BLIND HUMAN LISTENING
+## MINI-SET FORENSICS — TWO A/Bs AWAITING BLIND HUMAN LISTENING
+
+2026-09-21. The mini-set mapping was revealed and both seals verified:
+`MINISET_BLIND_1` was the **BASELINE**, `MINISET_BLIND_2` the **SELECTIVE**
+set. The human's own notes corroborate it independently — they reported an
+added effect at `~0:13-0:22` for `BLIND_2` only, exactly where the single
+ownership gesture sits.
+
+**The dominant finding is that six of the seven timestamped events are SHARED
+between both conditions and originate in the frozen transition renderers, not
+in the gesture under test.** Every human timestamp resolves to a structural
+event within a few seconds: `~0:30` the D2 opening (`30.00 s`), `~0:55` the D2
+landing (`53.64 s`), `~1:57` the B8 opening (`115.35 s`), `~2:11` the B8
+landing (`130.21 s`), `~2:38` a tempo join (`154.69 s`), `~4:50` the C3 opening
+(`287.62 s`). Only `~0:13-0:22` is the ownership primitive.
+
+**The ownership gesture earned the clearest positive in the whole exercise**:
+it turned a sad track into something happy and danceable and read as good DJ
+work. Its only criticism was that the state merely comes and goes.
+
+**The three "repeat" complaints all land on the OPENING BARS of frozen
+transition renders.** A repeat-necessity experiment was planned and **not
+built**, for a stated reason. Adjacent-window self-similarity was scanned at
+`0.49`, `0.98`, `1.95` and `3.90 s` around every repeat timestamp and **no
+region shows a robust literal-repetition signature** — peaks of `0.13-0.38`
+sit inside the range of untouched-source reference regions (`0.07-0.34`). An
+initial `0.58` reading did not survive multi-scale rescanning and was window
+alignment luck. The repeats are musical or technique-level, are not objectively
+localisable, and live inside artifacts that must not be modified, so any such
+render would confound the repeat with a modified archetype. This remains the
+**most frequent** complaint and is ranked the top candidate for when a renderer
+flag can omit a transition's opening move.
+
+**A measured planning defect was found instead.** Every transition renders its
+incoming track time-stretched to the outgoing tempo, and the set then continues
+that track at its **native** tempo, so the tempo steps at every join: `+2.38%`
+at `77.97 s`, **`+5.04%`** at `154.69 s` (`123.0 → 129.2 BPM`), `-2.44%` at
+`324.56 s`. The `~2:38` step is the one the human heard, called `GOOD` and
+needed, and wanted earlier. This is entirely planner-side.
+
+The `~2:11` B8 landing is recorded as a **frozen positive reference**. It is the
+only event with a real tension-and-release arc: a `14.9 s` source build
+releasing exactly on the target arrival, tempo-continuous. Its own opening
+`15 s` earlier was rated `COMPLETELY OFF` — same mechanism, opposite verdicts,
+so the payoff is what earned the rating. The D2 landing being `GOOD` but not
+audience-motivating is recorded as a cue/trajectory question, **not** a missing
+effect; no risers or impacts. The mid-vocal target entry is filed as
+`VOCAL_ENTRY_OBSERVATION` only, since the human explicitly framed it as an
+observation and the cue carries positive evidence.
+
+**Two independent blind A/Bs are rendered and sealed** under
+`/tmp/djenius_reference_dj_transition/forensic_batch/`, with one short shared
+template. `TEMPO_STATE` (`95 s`) spans the measured boundary and compares
+`TRANSITION_ONLY_ADAPT` (current, the audible revert) against
+`PERSISTENT_TEMPO_STATE`; the two are identical before the boundary.
+`OWNERSHIP_PERSISTENCE` (`68 s`) is the set opening and compares a `4`-bar
+owned state against an `8`-bar one, holding donor, clearance, release bar, exit
+bar, the untouched recovery phrase, the frozen D2 and its landing, mastering
+and duration constant. Loudness deltas are `-0.075` and `-0.094 LU`, soft clip
+never engages, nothing clips, and verify-only regeneration reproduced all four
+files byte-for-byte.
+
+Eleven forensic reports accompany them, including an action-value table that
+separates **technically clean**, **musically correct**, **actually needed** and
+**experienced-DJ value** rather than collapsing them into pass/fail — the
+evidence now contains a smooth-but-unnecessary repeat, a good-and-needed
+transformation, and an outright bad one.
+
+No production behaviour, renderer, donor gate, F/C3/B8/D2, context rule,
+ownership internals, fifth archetype, or Pilot 5 changed; no closed line was
+reopened and no new DSP was invented.
+
+## SELECTIVE-PERFORMANCE MINI-SET — HISTORICAL (REVEALED)
 
 2026-09-20. Both generalization mappings were revealed and both seals verified.
 The human judged on one variable — *which version sounds more like actual DJing*
