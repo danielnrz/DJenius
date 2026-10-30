@@ -2,6 +2,8 @@
 
 A fully local personal smart DJ application that analyzes your music library, plans DJ sets with intelligent transitions, and renders continuous DJ-style mixes.
 
+> **Resuming V2 on another computer?** Check [`docs/v2/MIGRATION_HANDOFF_2026-10-30.md`](docs/v2/MIGRATION_HANDOFF_2026-10-30.md) and [`AGENTS.md`](AGENTS.md) first. The advanced V2 work lives on branch `v2-professional-autonomous-dj` (not the default `master` branch). Private audio, stems, caches, research renders and Git stashes are **not** included in the public repository.
+
 ## Features
 
 - **Library Scanning** - Index your local music collection with metadata extraction
